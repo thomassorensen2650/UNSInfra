@@ -1,6 +1,7 @@
 using UNSInfra.UI.Components;
 using UNSInfra.Services.TopicBrowser;
 using UNSInfra.Repositories;
+using UNSInfra.Storage.Abstractions;
 using UNSInfra.Storage.InMemory;
 
 var builder = WebApplication.CreateBuilder(args);

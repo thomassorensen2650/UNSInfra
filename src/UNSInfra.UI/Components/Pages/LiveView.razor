@@ -1,1 +1,110 @@
- 
+@page "/liveview"
+@using UNSInfra.Services.TopicBrowser
+@using UNSInfra.Models.Hierarchy
+@inject ITopicBrowserService TopicBrowserService
+
+<PageTitle>Live View</PageTitle>
+
+<div class="row">
+    <div class="col-md-6">
+        <h5>Topics</h5>
+        <TopicTree Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" />
+    </div>
+    <div class="col-md-6">
+        <h5>Payload</h5>
+        @if (SelectedTopic != null && SelectedPayload != null)
+        {
+            <pre>@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })</pre>
+        }
+        else if (SelectedTopic != null)
+        {
+            <p class="text-muted">No payload available.</p>
+        }
+        else
+        {
+            <p class="text-muted">Select a topic to view its payload.</p>
+        }
+    </div>
+</div>
+
+@code {
+    private List<TopicInfo> Topics = new();
+    private HashSet<string> HighlightedPaths = new();
+    private TopicInfo? SelectedTopic;
+    private object? SelectedPayload;
+    private System.Threading.Timer? HighlightTimer;
+    private readonly object _highlightLock = new();
+
+    protected override async Task OnInitializedAsync()
+    {
+        Topics = (await TopicBrowserService.GetLatestTopicStructureAsync()).ToList();
+        TopicBrowserService.TopicDataUpdated += OnTopicDataUpdated;
+        TopicBrowserService.TopicAdded += OnTopicAdded;
+    }
+
+    private void OnTopicDataUpdated(object? sender, TopicDataUpdatedEventArgs e)
+    {
+        // Highlight the topic and all parent paths
+        var path = HierarchicalPath.FromPath(e.Topic);
+        var paths = GetAllParentPaths(path);
+        lock (_highlightLock)
+        {
+            foreach (var p in paths)
+                HighlightedPaths.Add(p);
+        }
+        InvokeAsync(StateHasChanged);
+        // Remove highlight after 1 second
+        HighlightTimer?.Dispose();
+        HighlightTimer = new System.Threading.Timer(_ =>
+        {
+            lock (_highlightLock)
+            {
+                foreach (var p in paths)
+                    HighlightedPaths.Remove(p);
+            }
+            InvokeAsync(StateHasChanged);
+        }, null, 1000, System.Threading.Timeout.Infinite);
+    }
+
+    private void OnTopicAdded(object? sender, TopicAddedEventArgs e)
+    {
+        Topics.Add(e.TopicInfo);
+        InvokeAsync(StateHasChanged);
+    }
+
+    private async Task OnTopicSelected(TopicInfo topic)
+    {
+        SelectedTopic = topic;
+        var data = await TopicBrowserService.GetDataForTopicAsync(topic.Topic);
+        SelectedPayload = data?.Value;
+    }
+
+    private static List<string> GetAllParentPaths(HierarchicalPath path)
+    {
+        var parts = new[]
+        {
+            path.Enterprise,
+            path.Site,
+            path.Area,
+            path.WorkCenter,
+            path.WorkUnit,
+            path.Property
+        };
+        var result = new List<string>();
+        string current = "";
+        for (int i = 0; i < parts.Length; i++)
+        {
+            if (string.IsNullOrEmpty(parts[i])) break;
+            current = string.IsNullOrEmpty(current) ? parts[i] : $"{current}/{parts[i]}";
+            result.Add(current);
+        }
+        return result;
+    }
+
+    public void Dispose()
+    {
+        TopicBrowserService.TopicDataUpdated -= OnTopicDataUpdated;
+        TopicBrowserService.TopicAdded -= OnTopicAdded;
+        HighlightTimer?.Dispose();
+    }
+} 

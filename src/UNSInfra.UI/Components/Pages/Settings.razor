@@ -13,20 +13,20 @@
                 <h5>Topic Statistics</h5>
             </div>
             <div class="card-body">
-                @if (TopicStats != null)
+                @if (TopicStatss != null)
                 {
                     <dl class="row">
                         <dt class="col-sm-6">Total Topics:</dt>
-                        <dd class="col-sm-6">@TopicStats.TotalTopics</dd>
+                        <dd class="col-sm-6">@TopicStatss.TotalTopics</dd>
                         
                         <dt class="col-sm-6">Verified Topics:</dt>
-                        <dd class="col-sm-6">@TopicStats.VerifiedTopics</dd>
+                        <dd class="col-sm-6">@TopicStatss.VerifiedTopics</dd>
                         
                         <dt class="col-sm-6">Unverified Topics:</dt>
-                        <dd class="col-sm-6">@TopicStats.UnverifiedTopics</dd>
+                        <dd class="col-sm-6">@TopicStatss.UnverifiedTopics</dd>
                         
                         <dt class="col-sm-6">Active Topics:</dt>
-                        <dd class="col-sm-6">@TopicStats.ActiveTopics</dd>
+                        <dd class="col-sm-6">@TopicStatss.ActiveTopics</dd>
                     </dl>
                 }
                 else
@@ -70,7 +70,7 @@
 </div>
 
 @code {
-    private TopicStats? TopicStats { get; set; }
+    private TopicStats? TopicStatss { get; set; }
     private DateTime LastRefresh { get; set; } = DateTime.UtcNow;
 
     protected override async Task OnInitializedAsync()
@@ -85,7 +85,7 @@
             var topics = await TopicBrowserService.GetLatestTopicStructureAsync();
             var topicList = topics.ToList();
             
-            TopicStats = new TopicStats
+            TopicStatss = new TopicStats
             {
                 TotalTopics = topicList.Count,
                 VerifiedTopics = topicList.Count(t => t.IsVerified),

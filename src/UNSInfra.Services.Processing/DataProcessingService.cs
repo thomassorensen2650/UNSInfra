@@ -6,8 +6,6 @@ namespace UNSInfra.Services.Processing
     using UNSInfra.Repositories;
     using UNSInfra.Storage.Abstractions;
     using UNSInfra.Validation;
-    using UNSInfra.Services.DataIngestion;
-
     // ==================== MAIN DATA PROCESSING SERVICE ====================
 
     public class DataProcessingService
