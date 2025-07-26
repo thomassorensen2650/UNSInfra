@@ -1,15 +1,16 @@
+using System.Collections.Concurrent;
 using UNSInfra.Models.Hierarchy;
 
 namespace UNSInfra.Repositories;
 
 /// <summary>
 /// In-memory implementation of topic configuration repository for development and testing.
-/// Stores configurations and rules in dictionary structures.
+/// Stores configurations and rules in thread-safe dictionary structures.
 /// </summary>
 public class InMemoryTopicConfigurationRepository : ITopicConfigurationRepository
 {
-    private readonly Dictionary<string, TopicConfiguration> _configurations = new();
-    private readonly Dictionary<string, TopicMappingRule> _mappingRules = new();
+    private readonly ConcurrentDictionary<string, TopicConfiguration> _configurations = new();
+    private readonly ConcurrentDictionary<string, TopicMappingRule> _mappingRules = new();
 
     /// <summary>
     /// Retrieves the topic configuration for a specific topic from memory.
@@ -30,7 +31,7 @@ public class InMemoryTopicConfigurationRepository : ITopicConfigurationRepositor
     public Task SaveTopicConfigurationAsync(TopicConfiguration configuration)
     {
         configuration.ModifiedAt = DateTime.UtcNow;
-        _configurations[configuration.Topic] = configuration;
+        _configurations.AddOrUpdate(configuration.Topic, configuration, (key, existing) => configuration);
         return Task.CompletedTask;
     }
 
@@ -41,7 +42,8 @@ public class InMemoryTopicConfigurationRepository : ITopicConfigurationRepositor
     /// <returns>A collection of topic configurations</returns>
     public Task<IEnumerable<TopicConfiguration>> GetAllTopicConfigurationsAsync(bool verifiedOnly = false)
     {
-        var configurations = _configurations.Values.AsEnumerable();
+        // Create a snapshot to avoid collection modified exceptions
+        var configurations = _configurations.Values.ToList().AsEnumerable();
         if (verifiedOnly)
         {
             configurations = configurations.Where(c => c.IsVerified);
@@ -55,7 +57,8 @@ public class InMemoryTopicConfigurationRepository : ITopicConfigurationRepositor
     /// <returns>A collection of unverified topic configurations</returns>
     public Task<IEnumerable<TopicConfiguration>> GetUnverifiedTopicConfigurationsAsync()
     {
-        var unverified = _configurations.Values.Where(c => !c.IsVerified);
+        // Create a snapshot to avoid collection modified exceptions
+        var unverified = _configurations.Values.ToList().Where(c => !c.IsVerified);
         return Task.FromResult(unverified);
     }
 
@@ -66,10 +69,10 @@ public class InMemoryTopicConfigurationRepository : ITopicConfigurationRepositor
     /// <returns>A completed task</returns>
     public Task DeleteTopicConfigurationAsync(string configurationId)
     {
-        var config = _configurations.Values.FirstOrDefault(c => c.Id == configurationId);
+        var config = _configurations.Values.ToList().FirstOrDefault(c => c.Id == configurationId);
         if (config != null)
         {
-            _configurations.Remove(config.Topic);
+            _configurations.TryRemove(config.Topic, out _);
         }
         return Task.CompletedTask;
     }
@@ -80,7 +83,8 @@ public class InMemoryTopicConfigurationRepository : ITopicConfigurationRepositor
     /// <returns>A collection of mapping rules ordered by priority (highest first)</returns>
     public Task<IOrderedEnumerable<TopicMappingRule>> GetTopicMappingRulesAsync()
     {
-        var rules = _mappingRules.Values.OrderByDescending(r => r.Priority);
+        // Create a snapshot to avoid collection modified exceptions
+        var rules = _mappingRules.Values.ToList().OrderByDescending(r => r.Priority);
         return Task.FromResult(rules);
     }
 
@@ -91,7 +95,7 @@ public class InMemoryTopicConfigurationRepository : ITopicConfigurationRepositor
     /// <returns>A completed task</returns>
     public Task SaveTopicMappingRuleAsync(TopicMappingRule rule)
     {
-        _mappingRules[rule.Id] = rule;
+        _mappingRules.AddOrUpdate(rule.Id, rule, (key, existing) => rule);
         return Task.CompletedTask;
     }
 
@@ -103,13 +107,15 @@ public class InMemoryTopicConfigurationRepository : ITopicConfigurationRepositor
     /// <returns>A completed task</returns>
     public Task VerifyTopicConfigurationAsync(string configurationId, string verifiedBy)
     {
-        var config = _configurations.Values.FirstOrDefault(c => c.Id == configurationId);
+        var config = _configurations.Values.ToList().FirstOrDefault(c => c.Id == configurationId);
         if (config != null)
         {
             config.IsVerified = true;
             config.ModifiedAt = DateTime.UtcNow;
             config.Metadata["VerifiedBy"] = verifiedBy;
             config.Metadata["VerifiedAt"] = DateTime.UtcNow;
+            // Update the configuration in the dictionary
+            _configurations.AddOrUpdate(config.Topic, config, (key, existing) => config);
         }
         return Task.CompletedTask;
     }

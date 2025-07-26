@@ -1,0 +1,109 @@
+@using UNSInfra.Services.TopicBrowser
+@using UNSInfra.Models.Hierarchy
+
+<style>
+.topic-tree {
+    list-style-type: none;
+    padding-left: 1em;
+}
+</style>
+
+<ul class="topic-tree">
+    @foreach (var node in RootNodes)
+    {
+        <TopicTreeNode Node="node" HighlightedPaths="HighlightedPaths" UnverifiedPaths="UnverifiedPaths" OnTopicSelected="OnTopicSelected" />
+    }
+</ul>
+
+@code {
+    [Parameter] public List<TopicInfo> Topics { get; set; } = new();
+    [Parameter] public HashSet<string> HighlightedPaths { get; set; } = new();
+    [Parameter] public EventCallback<TopicInfo> OnTopicSelected { get; set; }
+
+    private List<TopicTreeNodeModel> RootNodes = new();
+    private HashSet<string> UnverifiedPaths = new();
+
+    protected override void OnParametersSet()
+    {
+        RootNodes = BuildTree(Topics);
+        UnverifiedPaths = BuildUnverifiedPaths(Topics);
+    }
+
+    private List<TopicTreeNodeModel> BuildTree(List<TopicInfo> topics)
+    {
+        var root = new List<TopicTreeNodeModel>();
+        var lookup = new Dictionary<string, TopicTreeNodeModel>();
+        foreach (var topic in topics)
+        {
+            var pathParts = new[]
+            {
+                topic.Path.Enterprise,
+                topic.Path.Site,
+                topic.Path.Area,
+                topic.Path.WorkCenter,
+                topic.Path.WorkUnit,
+                topic.Path.Property
+            };
+            string currentPath = "";
+            TopicTreeNodeModel? parent = null;
+            for (int i = 0; i < pathParts.Length; i++)
+            {
+                if (string.IsNullOrEmpty(pathParts[i])) break;
+                currentPath = string.IsNullOrEmpty(currentPath) ? pathParts[i] : $"{currentPath}/{pathParts[i]}";
+                if (!lookup.TryGetValue(currentPath, out var node))
+                {
+                    node = new TopicTreeNodeModel
+                    {
+                        Name = pathParts[i],
+                        FullPath = currentPath,
+                        Children = new List<TopicTreeNodeModel>(),
+                        Topic = (i == pathParts.Length - 1) ? topic : null
+                    };
+                    lookup[currentPath] = node;
+                    if (parent == null)
+                        root.Add(node);
+                    else
+                        parent.Children.Add(node);
+                }
+                parent = node;
+            }
+        }
+        return root;
+    }
+
+    private HashSet<string> BuildUnverifiedPaths(List<TopicInfo> topics)
+    {
+        var unverifiedPaths = new HashSet<string>();
+        
+        foreach (var topic in topics.Where(t => !t.IsVerified))
+        {
+            var pathParts = new[]
+            {
+                topic.Path.Enterprise,
+                topic.Path.Site,
+                topic.Path.Area,
+                topic.Path.WorkCenter,
+                topic.Path.WorkUnit,
+                topic.Path.Property
+            };
+            
+            string currentPath = "";
+            for (int i = 0; i < pathParts.Length; i++)
+            {
+                if (string.IsNullOrEmpty(pathParts[i])) break;
+                currentPath = string.IsNullOrEmpty(currentPath) ? pathParts[i] : $"{currentPath}/{pathParts[i]}";
+                unverifiedPaths.Add(currentPath);
+            }
+        }
+        
+        return unverifiedPaths;
+    }
+
+    public class TopicTreeNodeModel
+    {
+        public string Name { get; set; } = string.Empty;
+        public string FullPath { get; set; } = string.Empty;
+        public List<TopicTreeNodeModel> Children { get; set; } = new();
+        public TopicInfo? Topic { get; set; } // Only set for leaf nodes
+    }
+} 

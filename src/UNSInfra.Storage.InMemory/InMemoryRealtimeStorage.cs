@@ -1,5 +1,6 @@
 namespace UNSInfra.Storage.InMemory;
 
+using System.Collections.Concurrent;
 using UNSInfra.Models.Data;
 using UNSInfra.Models.Hierarchy;
 using UNSInfra.Storage.Abstractions;
@@ -7,11 +8,11 @@ using UNSInfra.Storage.Abstractions;
 // ==================== STORAGE IMPLEMENTATIONS ====================
 public class InMemoryRealtimeStorage : IRealtimeStorage
 {
-    private readonly Dictionary<string, DataPoint> _storage = new();
+    private readonly ConcurrentDictionary<string, DataPoint> _storage = new();
 
     public Task StoreAsync(DataPoint dataPoint)
     {
-        _storage[dataPoint.Topic] = dataPoint;
+        _storage.AddOrUpdate(dataPoint.Topic, dataPoint, (key, existing) => dataPoint);
         return Task.CompletedTask;
     }
 
@@ -24,7 +25,8 @@ public class InMemoryRealtimeStorage : IRealtimeStorage
     public Task<IEnumerable<DataPoint>> GetLatestByPathAsync(HierarchicalPath path)
     {
         var pathStr = path.GetFullPath();
-        var results = _storage.Values
+        // Create a snapshot to avoid collection modified exceptions
+        var results = _storage.Values.ToList()
             .Where(dp => dp.Path.GetFullPath().StartsWith(pathStr))
             .ToList();
         return Task.FromResult(results.AsEnumerable());
@@ -32,10 +34,10 @@ public class InMemoryRealtimeStorage : IRealtimeStorage
 
     public Task DeleteAsync(string id)
     {
-        var item = _storage.FirstOrDefault(kvp => kvp.Value.Id == id);
+        var item = _storage.ToList().FirstOrDefault(kvp => kvp.Value.Id == id);
         if (!item.Equals(default))
         {
-            _storage.Remove(item.Key);
+            _storage.TryRemove(item.Key, out _);
         }
         return Task.CompletedTask;
     }

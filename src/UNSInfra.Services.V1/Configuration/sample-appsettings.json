@@ -1,16 +1,9 @@
 {
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
-    }
-  },
-  "AllowedHosts": "*",
   "Mqtt": {
-    "BrokerHost": "test.mosquitto.org",
+    "BrokerHost": "localhost",
     "BrokerPort": 1883,
     "UseTls": false,
-    "ClientId": "UNSInfra-UI-Client",
+    "ClientId": "UNSInfra-Production-Client",
     "Username": "",
     "Password": "",
     "KeepAliveInterval": 60,
@@ -20,7 +13,7 @@
     "ReconnectDelay": 5,
     "AutoReconnect": true,
     "MessageBufferSize": 1000,
-    "EnableDetailedLogging": true,
+    "EnableDetailedLogging": false,
     "TlsConfiguration": {
       "ClientCertificatePath": "",
       "ClientCertificatePassword": "",
@@ -31,7 +24,7 @@
       "TlsVersion": "1.2"
     },
     "LastWillConfiguration": {
-      "Topic": "uns/status/ui-client",
+      "Topic": "uns/status/client",
       "Payload": "{\"status\": \"offline\", \"timestamp\": \"{{timestamp}}\"}",
       "QualityOfServiceLevel": 1,
       "Retain": true,

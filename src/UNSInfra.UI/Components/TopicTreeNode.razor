@@ -1,0 +1,37 @@
+@using UNSInfra.Services.TopicBrowser
+@using UNSInfra.Models.Hierarchy
+
+<li class="topic-tree-node @(HighlightedPaths.Contains(Node.FullPath) ? "highlighted" : "") @(UnverifiedPaths.Contains(Node.FullPath) ? "unverified" : "")">
+    <span @onclick="() => { if (Node.Topic != null) OnTopicSelected.InvokeAsync(Node.Topic); }">
+        @Node.Name
+    </span>
+    @if (Node.Children.Any())
+    {
+        <ul>
+            @foreach (var child in Node.Children)
+            {
+                <TopicTreeNode Node="child" HighlightedPaths="HighlightedPaths" UnverifiedPaths="UnverifiedPaths" OnTopicSelected="OnTopicSelected" />
+            }
+        </ul>
+    }
+</li>
+
+@code {
+    [Parameter] public TopicTree.TopicTreeNodeModel Node { get; set; } = default!;
+    [Parameter] public HashSet<string> HighlightedPaths { get; set; } = new();
+    [Parameter] public HashSet<string> UnverifiedPaths { get; set; } = new();
+    [Parameter] public EventCallback<TopicInfo> OnTopicSelected { get; set; }
+}
+
+<style>
+.topic-tree-node.highlighted {
+    background-color: yellow;
+    transition: background-color 0.5s;
+}
+.topic-tree-node.unverified > span {
+    color: lightcoral;
+}
+.topic-tree-node > span {
+    cursor: pointer;
+}
+</style> 

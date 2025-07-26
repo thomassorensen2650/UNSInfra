@@ -1,0 +1,12 @@
+﻿services:
+  unsinfra.ui2:
+    image: unsinfra.ui2
+    build:
+      context: .
+      dockerfile: src/UNSInfra.UI2/UNSInfra.UI2/Dockerfile
+
+  unsinfra.ui2.client:
+    image: unsinfra.ui2.client
+    build:
+      context: .
+      dockerfile: src/UNSInfra.UI2/UNSInfra.UI2.Client/Dockerfile

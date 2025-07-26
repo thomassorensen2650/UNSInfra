@@ -33,13 +33,34 @@
     private TopicInfo? SelectedTopic;
     private object? SelectedPayload;
     private System.Threading.Timer? HighlightTimer;
+    private System.Threading.Timer? RefreshTimer;
     private readonly object _highlightLock = new();
+    private bool _refreshScheduled = false;
+    private DateTime _lastRefresh = DateTime.MinValue;
+    private const int RefreshThrottleMs = 500; // Limit UI updates to twice per second
 
     protected override async Task OnInitializedAsync()
     {
-        Topics = (await TopicBrowserService.GetLatestTopicStructureAsync()).ToList();
+        await RefreshTopics();
         TopicBrowserService.TopicDataUpdated += OnTopicDataUpdated;
         TopicBrowserService.TopicAdded += OnTopicAdded;
+        
+        // Set up periodic refresh timer
+        RefreshTimer = new System.Threading.Timer(async _ => await ScheduleRefresh(), null, RefreshThrottleMs, RefreshThrottleMs);
+    }
+
+    private async Task RefreshTopics()
+    {
+        try
+        {
+            Topics = (await TopicBrowserService.GetLatestTopicStructureAsync()).ToList();
+            _lastRefresh = DateTime.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't crash the UI
+            Console.WriteLine($"Error refreshing topics: {ex.Message}");
+        }
     }
 
     private void OnTopicDataUpdated(object? sender, TopicDataUpdatedEventArgs e)
@@ -52,7 +73,10 @@
             foreach (var p in paths)
                 HighlightedPaths.Add(p);
         }
-        InvokeAsync(StateHasChanged);
+        
+        // Schedule a throttled UI refresh instead of immediate update
+        ScheduleThrottledUpdate();
+        
         // Remove highlight after 1 second
         HighlightTimer?.Dispose();
         HighlightTimer = new System.Threading.Timer(_ =>
@@ -62,14 +86,41 @@
                 foreach (var p in paths)
                     HighlightedPaths.Remove(p);
             }
-            InvokeAsync(StateHasChanged);
+            ScheduleThrottledUpdate();
         }, null, 1000, System.Threading.Timeout.Infinite);
     }
 
     private void OnTopicAdded(object? sender, TopicAddedEventArgs e)
     {
         Topics.Add(e.TopicInfo);
-        InvokeAsync(StateHasChanged);
+        ScheduleThrottledUpdate();
+    }
+
+    private void ScheduleThrottledUpdate()
+    {
+        if (!_refreshScheduled)
+        {
+            _refreshScheduled = true;
+            InvokeAsync(async () =>
+            {
+                await Task.Delay(50); // Small delay to batch multiple rapid updates
+                _refreshScheduled = false;
+                StateHasChanged();
+            });
+        }
+    }
+
+    private async Task ScheduleRefresh()
+    {
+        // Only refresh topics periodically if there's been significant activity
+        if (DateTime.UtcNow - _lastRefresh > TimeSpan.FromSeconds(5))
+        {
+            await InvokeAsync(async () =>
+            {
+                await RefreshTopics();
+                StateHasChanged();
+            });
+        }
     }
 
     private async Task OnTopicSelected(TopicInfo topic)
@@ -106,5 +157,6 @@
         TopicBrowserService.TopicDataUpdated -= OnTopicDataUpdated;
         TopicBrowserService.TopicAdded -= OnTopicAdded;
         HighlightTimer?.Dispose();
+        RefreshTimer?.Dispose();
     }
 } 
