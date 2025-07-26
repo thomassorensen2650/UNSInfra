@@ -1,0 +1,371 @@
+@using UNSInfra.Services.TopicBrowser
+@using UNSInfra.Models.Hierarchy
+@inject ITopicBrowserService TopicBrowserService
+
+@if (TopicConfiguration != null)
+{
+    <div class="metadata-editor">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+            <h6 class="mb-0">Topic Metadata</h6>
+            <div class="d-flex gap-2">
+                @if (!TopicConfiguration.IsVerified)
+                {
+                    <button class="btn btn-success btn-sm" @onclick="VerifyTopic" disabled="@_isSaving">
+                        @if (_isSaving && _saveAction == "verify")
+                        {
+                            <div class="spinner-border spinner-border-sm me-1" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            @("Verifying...")
+                        }
+                        else
+                        {
+                            <i class="bi bi-check-circle"></i> @("Verify")
+                        }
+                    </button>
+                }
+                else
+                {
+                    <span class="badge bg-success">
+                        <i class="bi bi-check-circle"></i> Verified
+                    </span>
+                }
+                <button class="btn btn-primary btn-sm" @onclick="SaveChanges" disabled="@(_isSaving || !_hasChanges)">
+                    @if (_isSaving && _saveAction == "save")
+                    {
+                        <div class="spinner-border spinner-border-sm me-1" role="status">
+                            <span class="visually-hidden">Loading...</span>
+                        </div>
+                        @("Saving...")
+                    }
+                    else
+                    {
+                        <i class="bi bi-floppy"></i> @("Save")
+                    }
+                </button>
+            </div>
+        </div>
+
+        <div class="metadata-form">
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label small">Topic</label>
+                    <input type="text" class="form-control form-control-sm" value="@TopicConfiguration.Topic" readonly />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Source Type</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.SourceType" @oninput="OnFieldChanged" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label small">Active</label>
+                    <div class="form-check mt-2">
+                        <input class="form-check-input" type="checkbox" @bind="_editConfiguration.IsActive" @bind:after="OnFieldChanged" />
+                        <label class="form-check-label small">
+                            Active
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label small">Description</label>
+                <textarea class="form-control form-control-sm" rows="2" @bind="_editConfiguration.Description" @oninput="OnFieldChanged" placeholder="Optional description..."></textarea>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label small">Hierarchical Path</label>
+                <div class="row g-2">
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted">Enterprise</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.Enterprise" @oninput="OnFieldChanged" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted">Site</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.Site" @oninput="OnFieldChanged" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted">Area</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.Area" @oninput="OnFieldChanged" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted">Work Center</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.WorkCenter" @oninput="OnFieldChanged" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted">Work Unit</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.WorkUnit" @oninput="OnFieldChanged" />
+                    </div>
+                    <div class="col-md-2">
+                        <label class="form-label small text-muted">Property</label>
+                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.Property" @oninput="OnFieldChanged" />
+                    </div>
+                </div>
+                <div class="mt-2">
+                    <small class="text-muted">
+                        <strong>Tree path:</strong> @_editConfiguration.Path.GetFullPath()
+                    </small>
+                </div>
+            </div>
+
+            <div class="mb-3">
+                <label class="form-label small">Custom Metadata</label>
+                <div class="metadata-items">
+                    @foreach (var item in _metadataItems)
+                    {
+                        <div class="d-flex gap-2 mb-2">
+                            <input type="text" class="form-control form-control-sm" placeholder="Key" @bind="item.Key" @oninput="OnMetadataChanged" />
+                            <input type="text" class="form-control form-control-sm" placeholder="Value" @bind="item.Value" @oninput="OnMetadataChanged" />
+                            <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => RemoveMetadataItem(item)">
+                                <i class="bi bi-trash"></i>
+                            </button>
+                        </div>
+                    }
+                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="AddMetadataItem">
+                        <i class="bi bi-plus"></i> Add Metadata
+                    </button>
+                </div>
+            </div>
+
+            <div class="row text-muted">
+                <div class="col-md-6">
+                    <small>Created: @TopicConfiguration.CreatedAt.ToString("yyyy-MM-dd HH:mm")</small>
+                </div>
+                <div class="col-md-6">
+                    <small>Modified: @TopicConfiguration.ModifiedAt.ToString("yyyy-MM-dd HH:mm")</small>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public TopicInfo? SelectedTopic { get; set; }
+    [Parameter] public EventCallback OnTopicVerified { get; set; }
+    [Parameter] public EventCallback OnTopicUpdated { get; set; }
+
+    private TopicConfiguration? TopicConfiguration { get; set; }
+    private TopicConfiguration _editConfiguration = new();
+    private List<MetadataItem> _metadataItems = new();
+    private bool _hasChanges = false;
+    private bool _isSaving = false;
+    private string _saveAction = "";
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (SelectedTopic != null)
+        {
+            await LoadTopicConfiguration();
+        }
+        else
+        {
+            TopicConfiguration = null;
+            _editConfiguration = new();
+            _metadataItems.Clear();
+            _hasChanges = false;
+        }
+    }
+
+    private async Task LoadTopicConfiguration()
+    {
+        try
+        {
+            TopicConfiguration = await TopicBrowserService.GetTopicConfigurationAsync(SelectedTopic!.Topic);
+            if (TopicConfiguration != null)
+            {
+                _editConfiguration = CloneConfiguration(TopicConfiguration);
+                LoadMetadataItems();
+                _hasChanges = false;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading topic configuration: {ex.Message}");
+        }
+    }
+
+    private TopicConfiguration CloneConfiguration(TopicConfiguration config)
+    {
+        return new TopicConfiguration
+        {
+            Id = config.Id,
+            Topic = config.Topic,
+            Path = new HierarchicalPath
+            {
+                Enterprise = config.Path.Enterprise,
+                Site = config.Path.Site,
+                Area = config.Path.Area,
+                WorkCenter = config.Path.WorkCenter,
+                WorkUnit = config.Path.WorkUnit,
+                Property = config.Path.Property
+            },
+            IsVerified = config.IsVerified,
+            IsActive = config.IsActive,
+            SourceType = config.SourceType,
+            Description = config.Description,
+            CreatedAt = config.CreatedAt,
+            ModifiedAt = config.ModifiedAt,
+            CreatedBy = config.CreatedBy,
+            Metadata = new Dictionary<string, object>(config.Metadata)
+        };
+    }
+
+    private void LoadMetadataItems()
+    {
+        _metadataItems.Clear();
+        foreach (var kvp in _editConfiguration.Metadata)
+        {
+            if (kvp.Key != "AutoDiscovered" && kvp.Key != "DiscoveredAt") // Skip system metadata
+            {
+                _metadataItems.Add(new MetadataItem { Key = kvp.Key, Value = kvp.Value?.ToString() ?? "" });
+            }
+        }
+    }
+
+    private void OnFieldChanged()
+    {
+        _hasChanges = true;
+        StateHasChanged();
+    }
+
+    private void OnMetadataChanged()
+    {
+        _hasChanges = true;
+        StateHasChanged();
+    }
+
+    private void AddMetadataItem()
+    {
+        _metadataItems.Add(new MetadataItem { Key = "", Value = "" });
+        _hasChanges = true;
+        StateHasChanged();
+    }
+
+    private void RemoveMetadataItem(MetadataItem item)
+    {
+        _metadataItems.Remove(item);
+        _hasChanges = true;
+        StateHasChanged();
+    }
+
+    private async Task VerifyTopic()
+    {
+        if (_isSaving) return;
+
+        // Show loading state immediately
+        _isSaving = true;
+        _saveAction = "verify";
+        StateHasChanged();
+        
+        // Force UI to render the loading state immediately
+        await Task.Yield();
+
+        try
+        {
+            await TopicBrowserService.VerifyTopicAsync(SelectedTopic!.Topic, "User");
+            TopicConfiguration!.IsVerified = true;
+            _editConfiguration.IsVerified = true;
+            await OnTopicVerified.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error verifying topic: {ex.Message}");
+        }
+        finally
+        {
+            _isSaving = false;
+            _saveAction = "";
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveChanges()
+    {
+        if (_isSaving || !_hasChanges) return;
+
+        // Show loading state immediately
+        _isSaving = true;
+        _saveAction = "save";
+        StateHasChanged();
+        
+        // Force UI to render the loading state immediately
+        await Task.Yield();
+
+        try
+        {
+            // Update metadata from items
+            var systemMetadata = _editConfiguration.Metadata
+                .Where(kvp => kvp.Key == "AutoDiscovered" || kvp.Key == "DiscoveredAt")
+                .ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+
+            _editConfiguration.Metadata = new Dictionary<string, object>(systemMetadata);
+            foreach (var item in _metadataItems.Where(i => !string.IsNullOrWhiteSpace(i.Key)))
+            {
+                _editConfiguration.Metadata[item.Key] = item.Value;
+            }
+
+            await TopicBrowserService.UpdateTopicConfigurationAsync(_editConfiguration);
+            TopicConfiguration = CloneConfiguration(_editConfiguration);
+            _hasChanges = false;
+            await OnTopicUpdated.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving topic configuration: {ex.Message}");
+        }
+        finally
+        {
+            _isSaving = false;
+            _saveAction = "";
+            StateHasChanged();
+        }
+    }
+
+    private class MetadataItem
+    {
+        public string Key { get; set; } = "";
+        public string Value { get; set; } = "";
+    }
+}
+
+<style>
+.metadata-editor {
+    background-color: #f8f9fa;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    padding: 1rem;
+}
+
+.metadata-form .form-label {
+    margin-bottom: 0.25rem;
+    font-weight: 500;
+}
+
+.metadata-items {
+    max-height: 200px;
+    overflow-y: auto;
+}
+
+.form-control-sm {
+    font-size: 0.8rem;
+}
+
+.btn-sm {
+    font-size: 0.8rem;
+    transition: all 0.15s ease-in-out;
+}
+
+.btn-sm:active {
+    transform: scale(0.98);
+}
+
+.btn-sm:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+.btn-sm .spinner-border-sm {
+    width: 0.875rem;
+    height: 0.875rem;
+    animation: spinner-border 0.75s linear infinite;
+}
+</style>

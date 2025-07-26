@@ -285,31 +285,37 @@
         }
         
         // Handle expansion with loading state
-        node.IsExpanded = true;
-        
         if (!node.ChildrenLoaded)
         {
+            // Show loading indicator IMMEDIATELY before any async operations
             node.IsLoadingChildren = true;
-            StateHasChanged(); // Show loading state immediately
+            node.IsExpanded = true;
+            StateHasChanged(); // Force immediate UI update
+            
+            // Force the UI to render immediately
+            await Task.Yield();
             
             try
             {
-                // Add a small delay to show loading feedback, then load children on main thread
-                await Task.Delay(50); // Brief loading indicator
+                // Load children on the current thread (it's already fast)
                 LoadChildren(node);
+                
+                // Update state after loading
                 node.IsLoadingChildren = false;
-                await InvokeAsync(StateHasChanged); // Update UI after loading
+                StateHasChanged();
             }
             catch (Exception)
             {
                 node.IsLoadingChildren = false;
                 node.IsExpanded = false; // Revert on error
-                await InvokeAsync(StateHasChanged);
+                StateHasChanged();
             }
         }
         else
         {
-            StateHasChanged(); // Just expand if already loaded
+            // Just expand if already loaded
+            node.IsExpanded = true;
+            StateHasChanged();
         }
     }
 
@@ -336,23 +342,63 @@
 
     public async Task BlinkNode(string path)
     {
-        if (NodeLookup.TryGetValue(path, out var node))
+        // Start blinking all nodes in the path hierarchy from root to leaf
+        await BlinkNodeHierarchy(path);
+    }
+    
+    private async Task BlinkNodeHierarchy(string fullPath)
+    {
+        // Get all parent paths including the target path
+        var paths = GetAllPathLevels(fullPath);
+        
+        // Blink nodes from root to leaf
+        foreach (var path in paths)
         {
-            node.IsBlinking = true;
-            StateHasChanged();
-            
-            await Task.Delay(500);
-            
-            node.IsBlinking = false;
-            StateHasChanged();
+            if (NodeLookup.TryGetValue(path, out var node))
+            {
+                // Start blinking animation
+                node.IsBlinking = true;
+                await InvokeAsync(StateHasChanged);
+                
+                // Small delay to create cascade effect
+                await Task.Delay(100);
+            }
         }
         
-        // Also blink parent nodes
-        var parentPath = GetParentPath(path);
-        if (!string.IsNullOrEmpty(parentPath))
+        // Wait for the full animation duration
+        await Task.Delay(500);
+        
+        // Stop blinking all nodes
+        foreach (var path in paths)
         {
-            await BlinkNode(parentPath);
+            if (NodeLookup.TryGetValue(path, out var node))
+            {
+                node.IsBlinking = false;
+            }
         }
+        
+        await InvokeAsync(StateHasChanged);
+    }
+    
+    private List<string> GetAllPathLevels(string fullPath)
+    {
+        var parts = fullPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var paths = new List<string>();
+        var currentPath = "";
+        
+        foreach (var part in parts)
+        {
+            currentPath = string.IsNullOrEmpty(currentPath) ? part : $"{currentPath}/{part}";
+            paths.Add(currentPath);
+        }
+        
+        return paths;
+    }
+
+    public void UpdateUnverifiedPaths()
+    {
+        UnverifiedPaths = BuildUnverifiedPaths(Topics ?? new List<TopicInfo>());
+        StateHasChanged();
     }
 
     private string GetParentPath(string path)

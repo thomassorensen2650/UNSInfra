@@ -5,7 +5,7 @@
     <div class="node-content">
         @if (Node.HasChildren)
         {
-            <span class="expand-icon" @onclick="() => OnToggleExpanded.InvokeAsync(Node)">
+            <span class="expand-icon" @onclick="async () => await OnToggleExpanded.InvokeAsync(Node)">
                 @if (Node.IsLoadingChildren)
                 {
                     <div class="spinner-border spinner-border-sm" role="status" style="width: 12px; height: 12px;">
@@ -38,7 +38,7 @@
             }
         </span>
         
-        <span class="node-name" @onclick="() => { if (Node.Topic != null) OnTopicSelected.InvokeAsync(Node.Topic); }">
+        <span class="node-name" @onclick="async () => { if (Node.Topic != null) await OnTopicSelected.InvokeAsync(Node.Topic); }">
             @Node.Name
         </span>
     </div>
@@ -100,10 +100,15 @@
     margin-right: 4px;
     font-size: 12px;
     color: #6c757d;
+    transition: color 0.15s ease-in-out;
 }
 
 .expand-icon:hover {
     color: #495057;
+}
+
+.expand-icon:active {
+    transform: scale(0.95);
 }
 
 .expand-spacer {

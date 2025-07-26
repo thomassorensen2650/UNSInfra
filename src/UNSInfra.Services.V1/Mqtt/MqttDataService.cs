@@ -345,6 +345,17 @@ public class MqttDataService : IMqttDataService, IDisposable
             }
 
             var topic = args.ApplicationMessage.Topic;
+            
+            // Check for null or empty payload
+            if (args.ApplicationMessage.PayloadSegment.Array == null || args.ApplicationMessage.PayloadSegment.Count == 0)
+            {
+                if (_config.EnableDetailedLogging)
+                {
+                    _logger.LogDebug("Received message with null or empty payload on topic: {Topic}", topic);
+                }
+                return;
+            }
+            
             var payload = args.ApplicationMessage.PayloadSegment.ToArray();
 
             // Try to decode as Sparkplug B first

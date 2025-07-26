@@ -30,6 +30,28 @@ public interface ITopicBrowserService
     Task<DataPoint?> GetDataForTopicAsync(string topic);
 
     /// <summary>
+    /// Gets the topic configuration for a specific topic.
+    /// </summary>
+    /// <param name="topic">The topic name</param>
+    /// <returns>The topic configuration, or null if not found</returns>
+    Task<TopicConfiguration?> GetTopicConfigurationAsync(string topic);
+
+    /// <summary>
+    /// Verifies a topic configuration.
+    /// </summary>
+    /// <param name="topic">The topic name</param>
+    /// <param name="verifiedBy">The user who verified the configuration</param>
+    /// <returns>A task representing the asynchronous verification operation</returns>
+    Task VerifyTopicAsync(string topic, string verifiedBy);
+
+    /// <summary>
+    /// Updates a topic configuration.
+    /// </summary>
+    /// <param name="configuration">The updated configuration</param>
+    /// <returns>A task representing the asynchronous update operation</returns>
+    Task UpdateTopicConfigurationAsync(TopicConfiguration configuration);
+
+    /// <summary>
     /// Event that fires when a new topic is added to the system.
     /// </summary>
     event EventHandler<TopicAddedEventArgs> TopicAdded;

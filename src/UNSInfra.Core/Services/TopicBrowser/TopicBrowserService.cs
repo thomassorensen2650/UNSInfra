@@ -101,6 +101,42 @@ public class TopicBrowserService : ITopicBrowserService
     }
 
     /// <summary>
+    /// Gets the topic configuration for a specific topic.
+    /// </summary>
+    /// <param name="topic">The topic name</param>
+    /// <returns>The topic configuration, or null if not found</returns>
+    public async Task<TopicConfiguration?> GetTopicConfigurationAsync(string topic)
+    {
+        return await _topicRepository.GetTopicConfigurationAsync(topic);
+    }
+
+    /// <summary>
+    /// Verifies a topic configuration.
+    /// </summary>
+    /// <param name="topic">The topic name</param>
+    /// <param name="verifiedBy">The user who verified the configuration</param>
+    /// <returns>A task representing the asynchronous verification operation</returns>
+    public async Task VerifyTopicAsync(string topic, string verifiedBy)
+    {
+        var config = await _topicRepository.GetTopicConfigurationAsync(topic);
+        if (config != null)
+        {
+            await _topicRepository.VerifyTopicConfigurationAsync(config.Id, verifiedBy);
+        }
+    }
+
+    /// <summary>
+    /// Updates a topic configuration.
+    /// </summary>
+    /// <param name="configuration">The updated configuration</param>
+    /// <returns>A task representing the asynchronous update operation</returns>
+    public async Task UpdateTopicConfigurationAsync(TopicConfiguration configuration)
+    {
+        configuration.ModifiedAt = DateTime.UtcNow;
+        await _topicRepository.SaveTopicConfigurationAsync(configuration);
+    }
+
+    /// <summary>
     /// Event that fires when a new topic is added to the system.
     /// </summary>
     public event EventHandler<TopicAddedEventArgs>? TopicAdded;
