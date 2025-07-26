@@ -11,7 +11,7 @@
 <ul class="topic-tree">
     @foreach (var node in RootNodes)
     {
-        <TopicTreeNode Node="node" HighlightedPaths="HighlightedPaths" UnverifiedPaths="UnverifiedPaths" OnTopicSelected="OnTopicSelected" />
+        <TopicTreeNode Node="node" HighlightedPaths="HighlightedPaths" UnverifiedPaths="UnverifiedPaths" SelectedNodePath="SelectedNodePath" OnTopicSelected="HandleTopicSelected" OnToggleExpanded="ToggleExpansion" />
     }
 </ul>
 
@@ -19,56 +19,220 @@
     [Parameter] public List<TopicInfo> Topics { get; set; } = new();
     [Parameter] public HashSet<string> HighlightedPaths { get; set; } = new();
     [Parameter] public EventCallback<TopicInfo> OnTopicSelected { get; set; }
+    
+    private string? SelectedNodePath { get; set; }
 
     private List<TopicTreeNodeModel> RootNodes = new();
     private HashSet<string> UnverifiedPaths = new();
+    private Dictionary<string, TopicTreeNodeModel> NodeLookup = new();
+    private Dictionary<string, List<TopicInfo>> TopicsByPath = new();
+    private Dictionary<string, List<string>> ChildrenLookup = new(); // Parent path -> immediate child names (ordered)
+    private int _lastTopicsHash = 0;
+    private readonly Dictionary<string, DateTime> _expansionCooldowns = new(); // Prevent rapid successive clicks
+    private int _lastTopicsCount = 0; // Track if we're just adding new topics
 
     protected override void OnParametersSet()
     {
-        RootNodes = BuildTree(Topics);
-        UnverifiedPaths = BuildUnverifiedPaths(Topics);
-    }
-
-    private List<TopicTreeNodeModel> BuildTree(List<TopicInfo> topics)
-    {
-        var root = new List<TopicTreeNodeModel>();
-        var lookup = new Dictionary<string, TopicTreeNodeModel>();
-        foreach (var topic in topics)
+        // Check if we're just adding new topics or if there are other changes
+        var currentHash = GetTopicsHashCode();
+        var currentCount = Topics?.Count ?? 0;
+        
+        if (currentHash != _lastTopicsHash)
         {
-            var pathParts = new[]
+            bool isJustAddingTopics = currentCount > _lastTopicsCount && 
+                                      _lastTopicsCount > 0 && // Not initial load
+                                      currentCount - _lastTopicsCount <= 5; // Only a few new topics
+            
+            if (isJustAddingTopics)
             {
-                topic.Path.Enterprise,
-                topic.Path.Site,
-                topic.Path.Area,
-                topic.Path.WorkCenter,
-                topic.Path.WorkUnit,
-                topic.Path.Property
-            };
+                // Incremental update - just add new topics without full rebuild
+                AddNewTopicsIncrementally();
+            }
+            else
+            {
+                // Full rebuild needed
+                var expansionState = SaveExpansionState();
+                var selectedPath = SelectedNodePath;
+                
+                BuildTreeStructure(Topics ?? new List<TopicInfo>());
+                UnverifiedPaths = BuildUnverifiedPaths(Topics);
+                
+                RestoreExpansionState(expansionState);
+                SelectedNodePath = selectedPath;
+            }
+            
+            _lastTopicsHash = currentHash;
+            _lastTopicsCount = currentCount;
+        }
+    }
+    
+    private int GetTopicsHashCode()
+    {
+        if (Topics == null || Topics.Count == 0) 
+            return 0;
+            
+        var hash = Topics.Count;
+        foreach (var topic in Topics)
+        {
+            hash = hash * 31 + topic.Topic.GetHashCode();
+            hash = hash * 31 + topic.Path.GetFullPath().GetHashCode();
+        }
+        return hash;
+    }
+    
+    private void AddNewTopicsIncrementally()
+    {
+        // Get the new topics (assuming they're at the end of the list)
+        var newTopics = Topics.Skip(_lastTopicsCount).ToList();
+        
+        foreach (var topic in newTopics)
+        {
+            var pathParts = GetPathParts(topic.Path);
             string currentPath = "";
-            TopicTreeNodeModel? parent = null;
+            
+            for (int i = 0; i < pathParts.Length; i++)
+            {
+                if (string.IsNullOrEmpty(pathParts[i])) break;
+                
+                var parentPath = currentPath;
+                currentPath = string.IsNullOrEmpty(currentPath) ? pathParts[i] : $"{currentPath}/{pathParts[i]}";
+                
+                // Add to TopicsByPath
+                if (!TopicsByPath.ContainsKey(currentPath))
+                    TopicsByPath[currentPath] = new List<TopicInfo>();
+                
+                // Add to ChildrenLookup (maintain order by adding new items at the end)
+                if (!ChildrenLookup.ContainsKey(parentPath))
+                    ChildrenLookup[parentPath] = new List<string>();
+                if (!ChildrenLookup[parentPath].Contains(pathParts[i]))
+                    ChildrenLookup[parentPath].Add(pathParts[i]);
+                
+                if (i == pathParts.Length - 1) // Leaf node
+                    TopicsByPath[currentPath].Add(topic);
+            }
+        }
+        
+        // Update existing nodes that might now have new children
+        UpdateNodesWithNewChildren();
+        
+        // Update unverified paths for new topics
+        foreach (var topic in newTopics.Where(t => !t.IsVerified))
+        {
+            var pathParts = GetPathParts(topic.Path);
+            string currentPath = "";
             for (int i = 0; i < pathParts.Length; i++)
             {
                 if (string.IsNullOrEmpty(pathParts[i])) break;
                 currentPath = string.IsNullOrEmpty(currentPath) ? pathParts[i] : $"{currentPath}/{pathParts[i]}";
-                if (!lookup.TryGetValue(currentPath, out var node))
-                {
-                    node = new TopicTreeNodeModel
-                    {
-                        Name = pathParts[i],
-                        FullPath = currentPath,
-                        Children = new List<TopicTreeNodeModel>(),
-                        Topic = (i == pathParts.Length - 1) ? topic : null
-                    };
-                    lookup[currentPath] = node;
-                    if (parent == null)
-                        root.Add(node);
-                    else
-                        parent.Children.Add(node);
-                }
-                parent = node;
+                UnverifiedPaths.Add(currentPath);
             }
         }
-        return root;
+    }
+    
+    private void UpdateNodesWithNewChildren()
+    {
+        // Update existing nodes that might now have children
+        foreach (var node in NodeLookup.Values)
+        {
+            if (!node.HasChildren && ChildrenLookup.ContainsKey(node.FullPath) && ChildrenLookup[node.FullPath].Count > 0)
+            {
+                node.HasChildren = true;
+            }
+        }
+        
+        // Add any new root nodes
+        var rootChildNames = ChildrenLookup.GetValueOrDefault("", new List<string>());
+        var existingRootNames = RootNodes.Select(n => n.Name).ToHashSet();
+        
+        foreach (var childName in rootChildNames)
+        {
+            if (!existingRootNames.Contains(childName))
+            {
+                var node = CreateNode(childName, childName);
+                RootNodes.Add(node); // Add new nodes at the bottom
+                NodeLookup[childName] = node;
+            }
+        }
+    }
+
+    private void BuildTreeStructure(List<TopicInfo> topics)
+    {
+        NodeLookup.Clear();
+        TopicsByPath.Clear();
+        ChildrenLookup.Clear();
+        var root = new List<TopicTreeNodeModel>();
+
+        // Sort topics by creation time to ensure new topics appear at the bottom
+        var sortedTopics = topics.OrderBy(t => t.CreatedAt).ToList();
+
+        // First, organize topics by their path structure and build children lookup
+        foreach (var topic in sortedTopics)
+        {
+            var pathParts = GetPathParts(topic.Path);
+            string currentPath = "";
+            
+            for (int i = 0; i < pathParts.Length; i++)
+            {
+                if (string.IsNullOrEmpty(pathParts[i])) break;
+                
+                var parentPath = currentPath;
+                currentPath = string.IsNullOrEmpty(currentPath) ? pathParts[i] : $"{currentPath}/{pathParts[i]}";
+                
+                if (!TopicsByPath.ContainsKey(currentPath))
+                    TopicsByPath[currentPath] = new List<TopicInfo>();
+                
+                // Build children lookup for fast expansion (maintain order)
+                if (!ChildrenLookup.ContainsKey(parentPath))
+                    ChildrenLookup[parentPath] = new List<string>();
+                if (!ChildrenLookup[parentPath].Contains(pathParts[i]))
+                    ChildrenLookup[parentPath].Add(pathParts[i]);
+                
+                if (i == pathParts.Length - 1) // Leaf node
+                    TopicsByPath[currentPath].Add(topic);
+            }
+        }
+
+        // Build only the root level nodes initially - use fast lookup
+        var rootChildNames = ChildrenLookup.GetValueOrDefault("", new List<string>());
+        foreach (var childName in rootChildNames)
+        {
+            var node = CreateNode(childName, childName);
+            root.Add(node);
+            NodeLookup[childName] = node;
+        }
+
+        RootNodes = root;
+    }
+
+    private TopicTreeNodeModel CreateNode(string name, string fullPath)
+    {
+        var hasData = TopicsByPath.ContainsKey(fullPath) && TopicsByPath[fullPath].Any();
+        var hasChildren = ChildrenLookup.ContainsKey(fullPath) && ChildrenLookup[fullPath].Count > 0;
+        
+        return new TopicTreeNodeModel
+        {
+            Name = name,
+            FullPath = fullPath,
+            Children = new List<TopicTreeNodeModel>(),
+            Topic = hasData ? TopicsByPath[fullPath].FirstOrDefault() : null,
+            HasChildren = hasChildren,
+            ChildrenLoaded = false,
+            IsExpanded = false
+        };
+    }
+
+
+    private string[] GetPathParts(HierarchicalPath path)
+    {
+        return new[]
+        {
+            path.Enterprise,
+            path.Site,
+            path.Area,
+            path.WorkCenter,
+            path.WorkUnit,
+            path.Property
+        };
     }
 
     private HashSet<string> BuildUnverifiedPaths(List<TopicInfo> topics)
@@ -99,11 +263,165 @@
         return unverifiedPaths;
     }
 
+    public async Task ToggleExpansion(TopicTreeNodeModel node)
+    {
+        if (!node.HasChildren) return;
+        
+        // Debounce rapid clicks
+        var now = DateTime.UtcNow;
+        if (_expansionCooldowns.TryGetValue(node.FullPath, out var lastExpansion) && 
+            (now - lastExpansion).TotalMilliseconds < 200)
+        {
+            return; // Ignore rapid successive clicks
+        }
+        _expansionCooldowns[node.FullPath] = now;
+        
+        // Handle collapse immediately
+        if (node.IsExpanded)
+        {
+            node.IsExpanded = false;
+            StateHasChanged();
+            return;
+        }
+        
+        // Handle expansion with loading state
+        node.IsExpanded = true;
+        
+        if (!node.ChildrenLoaded)
+        {
+            node.IsLoadingChildren = true;
+            StateHasChanged(); // Show loading state immediately
+            
+            try
+            {
+                // Add a small delay to show loading feedback, then load children on main thread
+                await Task.Delay(50); // Brief loading indicator
+                LoadChildren(node);
+                node.IsLoadingChildren = false;
+                await InvokeAsync(StateHasChanged); // Update UI after loading
+            }
+            catch (Exception)
+            {
+                node.IsLoadingChildren = false;
+                node.IsExpanded = false; // Revert on error
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        else
+        {
+            StateHasChanged(); // Just expand if already loaded
+        }
+    }
+
+    private void LoadChildren(TopicTreeNodeModel node)
+    {
+        // Use fast lookup instead of iterating through all paths
+        var childNames = ChildrenLookup.GetValueOrDefault(node.FullPath, new List<string>());
+        node.Children.Clear();
+        
+        // Pre-allocate collection for better performance
+        var newChildren = new List<TopicTreeNodeModel>(childNames.Count);
+        
+        foreach (var childName in childNames)
+        {
+            var childFullPath = string.IsNullOrEmpty(node.FullPath) ? childName : $"{node.FullPath}/{childName}";
+            var childNode = CreateNode(childName, childFullPath);
+            newChildren.Add(childNode);
+            NodeLookup[childFullPath] = childNode;
+        }
+        
+        node.Children = newChildren;
+        node.ChildrenLoaded = true;
+    }
+
+    public async Task BlinkNode(string path)
+    {
+        if (NodeLookup.TryGetValue(path, out var node))
+        {
+            node.IsBlinking = true;
+            StateHasChanged();
+            
+            await Task.Delay(500);
+            
+            node.IsBlinking = false;
+            StateHasChanged();
+        }
+        
+        // Also blink parent nodes
+        var parentPath = GetParentPath(path);
+        if (!string.IsNullOrEmpty(parentPath))
+        {
+            await BlinkNode(parentPath);
+        }
+    }
+
+    private string GetParentPath(string path)
+    {
+        var lastSlash = path.LastIndexOf('/');
+        return lastSlash > 0 ? path.Substring(0, lastSlash) : "";
+    }
+
+    private async Task HandleTopicSelected(TopicInfo topic)
+    {
+        // Build the path the same way as Node.FullPath to ensure consistency
+        var pathParts = GetPathParts(topic.Path);
+        var parts = pathParts.Where(p => !string.IsNullOrEmpty(p)).ToArray();
+        SelectedNodePath = string.Join("/", parts);
+        
+        Console.WriteLine($"Selected topic: {topic.Topic}, Path: {SelectedNodePath}");
+        
+        StateHasChanged();
+        await OnTopicSelected.InvokeAsync(topic);
+    }
+    
+    private HashSet<string> SaveExpansionState()
+    {
+        var expandedPaths = new HashSet<string>();
+        if (RootNodes != null && RootNodes.Count > 0)
+        {
+            CollectExpandedPaths(RootNodes, expandedPaths);
+        }
+        return expandedPaths;
+    }
+    
+    private void CollectExpandedPaths(List<TopicTreeNodeModel> nodes, HashSet<string> expandedPaths)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.IsExpanded)
+            {
+                expandedPaths.Add(node.FullPath);
+                CollectExpandedPaths(node.Children, expandedPaths);
+            }
+        }
+    }
+    
+    private void RestoreExpansionState(HashSet<string> expandedPaths)
+    {
+        foreach (var path in expandedPaths)
+        {
+            if (NodeLookup.TryGetValue(path, out var node))
+            {
+                node.IsExpanded = true;
+                if (node.HasChildren && !node.ChildrenLoaded)
+                {
+                    LoadChildren(node);
+                }
+            }
+        }
+    }
+
     public class TopicTreeNodeModel
     {
         public string Name { get; set; } = string.Empty;
         public string FullPath { get; set; } = string.Empty;
         public List<TopicTreeNodeModel> Children { get; set; } = new();
         public TopicInfo? Topic { get; set; } // Only set for leaf nodes
+        public bool IsExpanded { get; set; } = false; // Collapsed by default
+        public bool HasChildren { get; set; } = false;
+        public bool ChildrenLoaded { get; set; } = false;
+        public bool HasData => Topic != null;
+        public bool IsBlinking { get; set; } = false;
+        public bool IsLoadingChildren { get; set; } = false;
     }
 } 

@@ -1,16 +1,54 @@
 @using UNSInfra.Services.TopicBrowser
 @using UNSInfra.Models.Hierarchy
 
-<li class="topic-tree-node @(HighlightedPaths.Contains(Node.FullPath) ? "highlighted" : "") @(UnverifiedPaths.Contains(Node.FullPath) ? "unverified" : "")">
-    <span @onclick="() => { if (Node.Topic != null) OnTopicSelected.InvokeAsync(Node.Topic); }">
-        @Node.Name
-    </span>
-    @if (Node.Children.Any())
+<li class="topic-tree-node @(HighlightedPaths.Contains(Node.FullPath) ? "highlighted" : "") @(UnverifiedPaths.Contains(Node.FullPath) ? "unverified" : "") @(Node.IsBlinking ? "blinking" : "") @(GetSelectedClass())">
+    <div class="node-content">
+        @if (Node.HasChildren)
+        {
+            <span class="expand-icon" @onclick="() => OnToggleExpanded.InvokeAsync(Node)">
+                @if (Node.IsLoadingChildren)
+                {
+                    <div class="spinner-border spinner-border-sm" role="status" style="width: 12px; height: 12px;">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                }
+                else if (Node.IsExpanded)
+                {
+                    <i class="bi bi-chevron-down"></i>
+                }
+                else
+                {
+                    <i class="bi bi-chevron-right"></i>
+                }
+            </span>
+        }
+        else
+        {
+            <span class="expand-spacer"></span>
+        }
+        
+        <span class="node-icon">
+            @if (Node.HasData)
+            {
+                <i class="bi bi-file-earmark-text text-primary"></i>
+            }
+            else
+            {
+                <i class="bi bi-folder text-warning"></i>
+            }
+        </span>
+        
+        <span class="node-name" @onclick="() => { if (Node.Topic != null) OnTopicSelected.InvokeAsync(Node.Topic); }">
+            @Node.Name
+        </span>
+    </div>
+    
+    @if (Node.HasChildren && Node.IsExpanded && Node.ChildrenLoaded)
     {
-        <ul>
+        <ul class="child-nodes">
             @foreach (var child in Node.Children)
             {
-                <TopicTreeNode Node="child" HighlightedPaths="HighlightedPaths" UnverifiedPaths="UnverifiedPaths" OnTopicSelected="OnTopicSelected" />
+                <TopicTreeNode Node="child" HighlightedPaths="HighlightedPaths" UnverifiedPaths="UnverifiedPaths" SelectedNodePath="SelectedNodePath" OnTopicSelected="OnTopicSelected" OnToggleExpanded="OnToggleExpanded" />
             }
         </ul>
     }
@@ -20,18 +58,111 @@
     [Parameter] public TopicTree.TopicTreeNodeModel Node { get; set; } = default!;
     [Parameter] public HashSet<string> HighlightedPaths { get; set; } = new();
     [Parameter] public HashSet<string> UnverifiedPaths { get; set; } = new();
+    [Parameter] public string? SelectedNodePath { get; set; }
     [Parameter] public EventCallback<TopicInfo> OnTopicSelected { get; set; }
+    [Parameter] public EventCallback<TopicTree.TopicTreeNodeModel> OnToggleExpanded { get; set; }
+    
+    private string GetSelectedClass()
+    {
+        // Only apply selection to nodes that have actual topic data, not folders
+        if (!Node.HasData) return "";
+        
+        var isSelected = SelectedNodePath == Node.FullPath;
+        Console.WriteLine($"Node: {Node.Name}, FullPath: '{Node.FullPath}', SelectedPath: '{SelectedNodePath}', IsSelected: {isSelected}");
+        return isSelected ? "selected" : "";
+    }
 }
 
 <style>
-.topic-tree-node.highlighted {
-    background-color: yellow;
-    transition: background-color 0.5s;
+.topic-tree-node {
+    margin: 2px 0;
 }
-.topic-tree-node.unverified > span {
-    color: lightcoral;
+
+.node-content {
+    display: flex;
+    align-items: center;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: background-color 0.3s ease;
 }
-.topic-tree-node > span {
+
+.node-content:hover {
+    background-color: #f8f9fa;
+}
+
+.expand-icon {
     cursor: pointer;
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 4px;
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.expand-icon:hover {
+    color: #495057;
+}
+
+.expand-spacer {
+    width: 16px;
+    margin-right: 4px;
+}
+
+.node-icon {
+    margin-right: 6px;
+    font-size: 14px;
+}
+
+.node-name {
+    cursor: pointer;
+    user-select: none;
+    flex: 1;
+}
+
+.node-name:hover {
+    color: #0d6efd;
+}
+
+.child-nodes {
+    list-style: none;
+    padding-left: 20px;
+    margin: 0;
+}
+
+.topic-tree-node.highlighted .node-content {
+    background-color: #fff3cd;
+    border: 1px solid #ffeaa7;
+}
+
+.topic-tree-node.unverified .node-name {
+    color: #dc3545;
+}
+
+.topic-tree-node.selected .node-content {
+    background-color: #0d6efd !important;
+    color: white !important;
+    border-radius: 4px;
+    border: 1px solid #0d6efd !important;
+}
+
+.topic-tree-node.selected .expand-icon {
+    color: white;
+}
+
+.topic-tree-node.selected .node-icon {
+    color: white !important;
+}
+
+.topic-tree-node.blinking .node-content {
+    animation: blink 0.5s ease-in-out;
+}
+
+@@keyframes blink {
+    0% { background-color: #d1ecf1; }
+    50% { background-color: #bee5eb; }
+    100% { background-color: #d1ecf1; }
 }
 </style> 

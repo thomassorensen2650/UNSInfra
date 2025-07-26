@@ -7,8 +7,31 @@
 
 <div class="row">
     <div class="col-md-6">
-        <h5>Topics</h5>
-        <TopicTree Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" />
+        <div class="d-flex justify-content-between align-items-center mb-2">
+            <h5 class="mb-0">Topics</h5>
+            @if (_isLoadingTopics)
+            {
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <small class="text-muted">Updating...</small>
+                </div>
+            }
+        </div>
+        @if (_isInitialLoad && Topics.Count == 0)
+        {
+            <div class="d-flex align-items-center justify-content-center py-4">
+                <div class="spinner-border spinner-border-sm me-2" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="text-muted">Loading topics...</span>
+            </div>
+        }
+        else
+        {
+            <TopicTree @ref="TopicTreeComponent" Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" />
+        }
     </div>
     <div class="col-md-6">
         <h5>Payload</h5>
@@ -16,9 +39,14 @@
         {
             <pre>@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })</pre>
         }
-        else if (SelectedTopic != null)
+        else if (SelectedTopic != null && SelectedPayload == null)
         {
-            <p class="text-muted">No payload available.</p>
+            <div class="d-flex align-items-center">
+                <div class="spinner-border spinner-border-sm me-2" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <span class="text-muted">Loading payload...</span>
+            </div>
         }
         else
         {
@@ -32,12 +60,13 @@
     private HashSet<string> HighlightedPaths = new();
     private TopicInfo? SelectedTopic;
     private object? SelectedPayload;
-    private System.Threading.Timer? HighlightTimer;
     private System.Threading.Timer? RefreshTimer;
-    private readonly object _highlightLock = new();
     private bool _refreshScheduled = false;
     private DateTime _lastRefresh = DateTime.MinValue;
-    private const int RefreshThrottleMs = 500; // Limit UI updates to twice per second
+    private const int RefreshThrottleMs = 2000; // Limit UI updates to every 2 seconds for better performance
+    private TopicTree? TopicTreeComponent;
+    private bool _isLoadingTopics = false;
+    private bool _isInitialLoad = true;
 
     protected override async Task OnInitializedAsync()
     {
@@ -53,41 +82,57 @@
     {
         try
         {
-            Topics = (await TopicBrowserService.GetLatestTopicStructureAsync()).ToList();
+            // Only show loading indicator for non-initial loads (updates)
+            if (!_isInitialLoad)
+            {
+                _isLoadingTopics = true;
+                StateHasChanged(); // Show updating indicator
+            }
+            
+            var newTopics = (await TopicBrowserService.GetLatestTopicStructureAsync()).ToList();
+            
+            // Update topics smoothly
+            Topics = newTopics;
             _lastRefresh = DateTime.UtcNow;
+            _isInitialLoad = false;
+            
+            if (_isLoadingTopics)
+            {
+                _isLoadingTopics = false;
+                StateHasChanged(); // Hide updating indicator
+            }
+            else
+            {
+                StateHasChanged(); // Initial load - just show topics
+            }
         }
         catch (Exception ex)
         {
             // Log error but don't crash the UI
             Console.WriteLine($"Error refreshing topics: {ex.Message}");
+            _isLoadingTopics = false;
+            _isInitialLoad = false;
+            StateHasChanged();
         }
     }
 
     private void OnTopicDataUpdated(object? sender, TopicDataUpdatedEventArgs e)
     {
-        // Highlight the topic and all parent paths
+        // Trigger blinking animation for the topic path (less disruptive than highlighting)
         var path = HierarchicalPath.FromPath(e.Topic);
-        var paths = GetAllParentPaths(path);
-        lock (_highlightLock)
+        var fullPath = path.GetFullPath();
+        
+        // Start blinking animation in the tree - this is sufficient for showing updates
+        if (TopicTreeComponent != null)
         {
-            foreach (var p in paths)
-                HighlightedPaths.Add(p);
+            _ = Task.Run(async () => await TopicTreeComponent.BlinkNode(fullPath));
         }
         
-        // Schedule a throttled UI refresh instead of immediate update
-        ScheduleThrottledUpdate();
+        // Remove the persistent yellow highlighting to reduce visual noise
+        // The blinking animation already shows data updates effectively
         
-        // Remove highlight after 1 second
-        HighlightTimer?.Dispose();
-        HighlightTimer = new System.Threading.Timer(_ =>
-        {
-            lock (_highlightLock)
-            {
-                foreach (var p in paths)
-                    HighlightedPaths.Remove(p);
-            }
-            ScheduleThrottledUpdate();
-        }, null, 1000, System.Threading.Timeout.Infinite);
+        // Schedule a throttled UI refresh
+        ScheduleThrottledUpdate();
     }
 
     private void OnTopicAdded(object? sender, TopicAddedEventArgs e)
@@ -126,8 +171,29 @@
     private async Task OnTopicSelected(TopicInfo topic)
     {
         SelectedTopic = topic;
-        var data = await TopicBrowserService.GetDataForTopicAsync(topic.Topic);
-        SelectedPayload = data?.Value;
+        SelectedPayload = null; // Clear immediately for faster UI response
+        StateHasChanged(); // Update UI immediately
+        
+        // Fetch data asynchronously without blocking UI
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                var data = await TopicBrowserService.GetDataForTopicAsync(topic.Topic);
+                await InvokeAsync(() =>
+                {
+                    if (SelectedTopic?.Topic == topic.Topic) // Only update if still selected
+                    {
+                        SelectedPayload = data?.Value;
+                        StateHasChanged();
+                    }
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error fetching data for topic {topic.Topic}: {ex.Message}");
+            }
+        });
     }
 
     private static List<string> GetAllParentPaths(HierarchicalPath path)
@@ -156,7 +222,6 @@
     {
         TopicBrowserService.TopicDataUpdated -= OnTopicDataUpdated;
         TopicBrowserService.TopicAdded -= OnTopicAdded;
-        HighlightTimer?.Dispose();
         RefreshTimer?.Dispose();
     }
 } 

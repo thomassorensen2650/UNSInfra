@@ -32,39 +32,21 @@ public class TopicBrowserService : ITopicBrowserService
     public async Task<IEnumerable<TopicInfo>> GetLatestTopicStructureAsync()
     {
         var configurations = await _topicRepository.GetAllTopicConfigurationsAsync();
-        var topicInfos = new List<TopicInfo>();
-
-        foreach (var config in configurations)
+        
+        // Fast conversion without individual storage calls for better performance
+        var topicInfos = configurations.Select(config => new TopicInfo
         {
-            var topicInfo = new TopicInfo
-            {
-                Topic = config.Topic,
-                Path = config.Path,
-                IsVerified = config.IsVerified,
-                IsActive = config.IsActive,
-                SourceType = config.SourceType,
-                CreatedAt = config.CreatedAt,
-                ModifiedAt = config.ModifiedAt,
-                Description = config.Description,
-                Metadata = config.Metadata
-            };
-
-            // Try to get the latest data timestamp
-            try
-            {
-                var latestData = await _realtimeStorage.GetLatestAsync(config.Topic);
-                if (latestData != null)
-                {
-                    topicInfo.LastDataTimestamp = latestData.Timestamp;
-                }
-            }
-            catch
-            {
-                // Ignore errors when getting latest data
-            }
-
-            topicInfos.Add(topicInfo);
-        }
+            Topic = config.Topic,
+            Path = config.Path,
+            IsVerified = config.IsVerified,
+            IsActive = config.IsActive,
+            SourceType = config.SourceType,
+            CreatedAt = config.CreatedAt,
+            ModifiedAt = config.ModifiedAt,
+            Description = config.Description,
+            Metadata = config.Metadata
+            // LastDataTimestamp will be updated by data update events for performance
+        }).ToList();
 
         return topicInfos;
     }

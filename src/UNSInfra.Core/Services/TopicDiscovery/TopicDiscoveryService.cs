@@ -133,17 +133,18 @@ public class TopicDiscoveryService : ITopicDiscoveryService
     /// <returns>A default hierarchical path based on topic structure</returns>
     private HierarchicalPath GenerateDefaultPath(string topic)
     {
-        // Simple default: treat the topic as the property and create placeholder hierarchy
+        // Create hierarchy from MQTT topic structure
         var parts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
         
+        // Map MQTT topic parts to ISA-95 hierarchy levels
         return new HierarchicalPath
         {
-            Enterprise = "Unknown",
-            Site = "Unknown", 
-            Area = "Unknown",
-            WorkCenter = parts.Length > 1 ? parts[^2] : "Unknown", // Second to last part
-            WorkUnit = "Unknown",
-            Property = parts[^1] // Last part as property
+            Enterprise = parts.Length > 0 ? parts[0] : "MQTT",
+            Site = parts.Length > 1 ? parts[1] : "Default", 
+            Area = parts.Length > 2 ? parts[2] : "Area1",
+            WorkCenter = parts.Length > 3 ? parts[3] : "Unknown",
+            WorkUnit = parts.Length > 4 ? parts[4] : "Unknown",
+            Property = parts.Length > 5 ? parts[5] : (parts.Length > 0 ? parts[^1] : "value")
         };
     }
 }
