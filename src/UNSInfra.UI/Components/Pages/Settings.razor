@@ -1,0 +1,111 @@
+@page "/settings"
+@using UNSInfra.Services.TopicBrowser
+@inject ITopicBrowserService TopicBrowserService
+
+<PageTitle>Settings</PageTitle>
+
+<h3>Settings</h3>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>Topic Statistics</h5>
+            </div>
+            <div class="card-body">
+                @if (TopicStats != null)
+                {
+                    <dl class="row">
+                        <dt class="col-sm-6">Total Topics:</dt>
+                        <dd class="col-sm-6">@TopicStats.TotalTopics</dd>
+                        
+                        <dt class="col-sm-6">Verified Topics:</dt>
+                        <dd class="col-sm-6">@TopicStats.VerifiedTopics</dd>
+                        
+                        <dt class="col-sm-6">Unverified Topics:</dt>
+                        <dd class="col-sm-6">@TopicStats.UnverifiedTopics</dd>
+                        
+                        <dt class="col-sm-6">Active Topics:</dt>
+                        <dd class="col-sm-6">@TopicStats.ActiveTopics</dd>
+                    </dl>
+                }
+                else
+                {
+                    <p class="text-muted">Loading statistics...</p>
+                }
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5>System Information</h5>
+            </div>
+            <div class="card-body">
+                <dl class="row">
+                    <dt class="col-sm-6">Last Refresh:</dt>
+                    <dd class="col-sm-6">@LastRefresh.ToString("yyyy-MM-dd HH:mm:ss")</dd>
+                    
+                    <dt class="col-sm-6">Service Status:</dt>
+                    <dd class="col-sm-6">
+                        <span class="badge bg-success">Running</span>
+                    </dd>
+                </dl>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="mt-4">
+    <div class="card">
+        <div class="card-header">
+            <h5>Configuration</h5>
+        </div>
+        <div class="card-body">
+            <p>Configuration details will be shown here.</p>
+            <!-- TODO: Display actual configuration and allow editing if needed -->
+        </div>
+    </div>
+</div>
+
+@code {
+    private TopicStats? TopicStats { get; set; }
+    private DateTime LastRefresh { get; set; } = DateTime.UtcNow;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatistics();
+    }
+
+    private async Task LoadStatistics()
+    {
+        try
+        {
+            var topics = await TopicBrowserService.GetLatestTopicStructureAsync();
+            var topicList = topics.ToList();
+            
+            TopicStats = new TopicStats
+            {
+                TotalTopics = topicList.Count,
+                VerifiedTopics = topicList.Count(t => t.IsVerified),
+                UnverifiedTopics = topicList.Count(t => !t.IsVerified),
+                ActiveTopics = topicList.Count(t => t.IsActive)
+            };
+            
+            LastRefresh = DateTime.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading statistics: {ex.Message}");
+        }
+    }
+
+    public class TopicStats
+    {
+        public int TotalTopics { get; set; }
+        public int VerifiedTopics { get; set; }
+        public int UnverifiedTopics { get; set; }
+        public int ActiveTopics { get; set; }
+    }
+} 

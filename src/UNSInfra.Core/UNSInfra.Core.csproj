@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DocumentationFile>bin\$(Configuration)\$(TargetFramework)\$(AssemblyName).xml</DocumentationFile>
+    <RootNamespace>UNSInfra</RootNamespace>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <AssemblyTitle>UNS Infrastructure Core</AssemblyTitle>
+    <AssemblyDescription>Core models, interfaces, and abstractions for the UNS Infrastructure system</AssemblyDescription>
+    <AssemblyCompany>UNS Infrastructure</AssemblyCompany>
+    <AssemblyProduct>UNS Infrastructure</AssemblyProduct>
+    <AssemblyCopyright>Copyright © 2025</AssemblyCopyright>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+  </PropertyGroup>
+
+</Project>

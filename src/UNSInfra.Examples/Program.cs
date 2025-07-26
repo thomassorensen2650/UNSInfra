@@ -1,0 +1,92 @@
+    using System.Text.Json;
+    using UNSInfra.Models.Hierarchy;
+    using UNSInfra.Models.Schema;
+    using UNSInfra.Repositories;
+    using UNSInfra.Services.DataIngestion.Mock;
+    using UNSInfra.Services.Processing;
+    using UNSInfra.Services.TopicDiscovery;
+    using UNSInfra.Storage.InMemory;
+    using UNSInfra.Validation;
+
+    public class Program
+{
+    public static async Task Main(string[] args)
+    {
+        // Setup dependencies
+        var realtimeStorage = new InMemoryRealtimeStorage();
+        var historicalStorage = new InMemoryHistoricalStorage();
+        var validator = new JsonSchemaValidator();
+        var schemaRepository = new InMemorySchemaRepository();
+        var topicDiscovery = new TopicDiscoveryService(new InMemoryTopicConfigurationRepository());
+        
+        
+        // Create data processing service
+        var processor = new DataProcessingService(
+            realtimeStorage, historicalStorage, validator, schemaRepository);
+
+        // Setup data services
+        var mqttService = new MockMqttDataService(topicDiscovery);
+        var kafkaService = new MockKafkaDataService(topicDiscovery);
+        
+        processor.AddDataService(mqttService);
+        processor.AddDataService(kafkaService);
+
+        // Define ISA-S95 hierarchy
+        var robotPath = HierarchicalPath.FromPath("enterprise/factoryA/assemblyLine1/robot123/temperature");
+        
+        // Subscribe to topics
+        await mqttService.SubscribeToTopicAsync("sensors/temperature", robotPath);
+        await kafkaService.SubscribeToTopicAsync("production/data", robotPath);
+
+        // Define schema for temperature data
+        var tempSchema = new DataSchema
+        {
+            SchemaId = "temperature-v1",
+            Topic = "sensors/temperature",
+            PropertyTypes = new Dictionary<string, Type>
+            {
+                { "value", typeof(double) },
+                { "unit", typeof(string) },
+                { "timestamp", typeof(DateTime) }
+            },
+            ValidationRules = new List<ValidationRule>
+            {
+                new() { PropertyName = "value", RuleType = "Range", RuleValue = new double[] { -50, 150 } }
+            }
+        };
+        
+        await schemaRepository.SaveSchemaAsync(tempSchema);
+
+        // Start processing
+        await processor.StartAsync();
+
+        // Simulate data reception
+        var tempData = JsonSerializer.SerializeToElement(new 
+        { 
+            value = 23.5, 
+            unit = "Celsius", 
+            timestamp = DateTime.UtcNow 
+        });
+        
+        mqttService.SimulateDataReceived("sensors/temperature", tempData);
+        kafkaService.SimulateDataReceived("production/data", tempData);
+
+        // Wait a bit for processing
+        await Task.Delay(1000);
+
+        // Query data
+        var latestTemp = await realtimeStorage.GetLatestAsync("sensors/temperature");
+        if (latestTemp != null)
+        {
+            Console.WriteLine($"Latest temperature: {latestTemp.Value} at {latestTemp.Path.GetFullPath()}");
+        }
+
+        // Get historical data
+        var history = await historicalStorage.GetHistoryByPathAsync(
+            robotPath, DateTime.UtcNow.AddHours(-1), DateTime.UtcNow);
+        
+        Console.WriteLine($"Historical data points: {history.Count()}");
+
+        await processor.StopAsync();
+    }
+}

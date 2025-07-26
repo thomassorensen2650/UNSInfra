@@ -1,0 +1,27 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <AssemblyTitle>UNS Infrastructure Examples</AssemblyTitle>
+    <AssemblyDescription>Example application demonstrating UNS Infrastructure usage</AssemblyDescription>
+    <AssemblyCompany>UNS Infrastructure</AssemblyCompany>
+    <AssemblyProduct>UNS Infrastructure</AssemblyProduct>
+    <AssemblyCopyright>Copyright © 2025</AssemblyCopyright>
+    <AssemblyVersion>1.0.0.0</AssemblyVersion>
+    <FileVersion>1.0.0.0</FileVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\UNSInfra.Core\UNSInfra.Core.csproj" />
+    <ProjectReference Include="..\UNSInfra.Storage.InMemory\UNSInfra.Storage.InMemory.csproj" />
+    <ProjectReference Include="..\UNSInfra.Services.Mock\UNSInfra.Services.Mock.csproj" />
+    <ProjectReference Include="..\UNSInfra.Services.Processing\UNSInfra.Services.Processing.csproj" />
+  </ItemGroup>
+
+</Project>
