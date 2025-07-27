@@ -34,6 +34,9 @@ public static class ServiceCollectionExtensions
 
         // Register the MQTT data service
         services.AddSingleton<IMqttDataService, MqttDataService>();
+        
+        // Also register as IDataIngestionService for generic handling
+        services.AddSingleton<IDataIngestionService>(provider => provider.GetRequiredService<IMqttDataService>());
 
         return services;
     }
@@ -56,6 +59,9 @@ public static class ServiceCollectionExtensions
 
         // Register the MQTT data service
         services.AddSingleton<IMqttDataService, MqttDataService>();
+        
+        // Also register as IDataIngestionService for generic handling
+        services.AddSingleton<IDataIngestionService>(provider => provider.GetRequiredService<IMqttDataService>());
 
         return services;
     }

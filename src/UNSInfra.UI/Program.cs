@@ -7,6 +7,7 @@ using UNSInfra.Repositories;
 using UNSInfra.Storage.Abstractions;
 using UNSInfra.Storage.InMemory;
 using UNSInfra.Services.V1;
+using UNSInfra.Services.SocketIO;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -25,8 +26,11 @@ builder.Services.AddSingleton<ITopicBrowserService, TopicBrowserService>();
 // Add MQTT data service from UNSInfra.Services.V1
 builder.Services.AddMqttDataService(builder.Configuration);
 
-// Add hosted service to manage MQTT connection and data processing
-builder.Services.AddHostedService<MqttBackgroundService>();
+// Add SocketIO data service 
+builder.Services.AddSocketIODataService(builder.Configuration);
+
+// Add hosted service to manage all data ingestion connections and data processing
+builder.Services.AddHostedService<DataIngestionBackgroundService>();
 
 var app = builder.Build();
 

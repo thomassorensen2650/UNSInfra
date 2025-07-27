@@ -1,0 +1,12 @@
+{
+  "VirtualFactory": {
+    "ServerUrl": "https://virtualfactory.online:3000",
+    "ConnectionTimeoutSeconds": 10,
+    "EnableReconnection": true,
+    "ReconnectionAttempts": 5,
+    "ReconnectionDelaySeconds": 2,
+    "EventNames": [],
+    "BaseTopicPath": "virtualfactory",
+    "EnableDetailedLogging": false
+  }
+}

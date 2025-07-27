@@ -38,15 +38,16 @@ public class TopicDiscoveryService : ITopicDiscoveryService
 
         // Try to generate a path using mapping rules
         var generatedPath = await GeneratePathFromTopicAsync(topic);
-        if (generatedPath != null)
+        if (generatedPath == null)
         {
-            // Create and save a new configuration
-            var newConfig = await CreateUnverifiedTopicAsync(topic, sourceType, generatedPath);
-            await _configurationRepository.SaveTopicConfigurationAsync(newConfig);
-            return newConfig;
+            // Fall back to default path generation
+            generatedPath = GenerateDefaultPath(topic);
         }
 
-        return null;
+        // Create and save a new configuration
+        var newConfig = await CreateUnverifiedTopicAsync(topic, sourceType, generatedPath);
+        await _configurationRepository.SaveTopicConfigurationAsync(newConfig);
+        return newConfig;
     }
 
     /// <summary>
@@ -133,10 +134,25 @@ public class TopicDiscoveryService : ITopicDiscoveryService
     /// <returns>A default hierarchical path based on topic structure</returns>
     private HierarchicalPath GenerateDefaultPath(string topic)
     {
-        // Create hierarchy from MQTT topic structure
+        // Create hierarchy from topic structure
         var parts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
         
-        // Map MQTT topic parts to ISA-95 hierarchy levels
+        // Handle SocketIO topics which have format: socketio/update/Enterprise/Site/Area/WorkCenter/WorkUnit/Property
+        // Also handle legacy virtualfactory topics for backward compatibility
+        if (parts.Length > 2 && (parts[0] == "socketio" || parts[0] == "virtualfactory") && parts[1] == "update" && parts[2] == "Enterprise")
+        {
+            return new HierarchicalPath
+            {
+                Enterprise = parts.Length > 3 ? parts[3] : "Default",
+                Site = parts.Length > 4 ? parts[4] : "Default", 
+                Area = parts.Length > 5 ? parts[5] : "Area1",
+                WorkCenter = parts.Length > 6 ? parts[6] : "Unknown",
+                WorkUnit = parts.Length > 7 ? parts[7] : "Unknown",
+                Property = parts.Length > 8 ? parts[8] : (parts.Length > 3 ? parts[^1] : "value")
+            };
+        }
+        
+        // Default MQTT topic mapping to ISA-95 hierarchy levels
         return new HierarchicalPath
         {
             Enterprise = parts.Length > 0 ? parts[0] : "MQTT",

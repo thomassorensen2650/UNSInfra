@@ -12,8 +12,6 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Services.Processin
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Examples", "src\UNSInfra.Examples\UNSInfra.Examples.csproj", "{00000000-0000-0000-0000-000000000000}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "ExampleApp", "ExampleApp\ExampleApp.csproj", "{1DF88454-8D28-4E54-8E65-B44C71964FD8}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{C181BE4C-1099-4CAD-89D4-145210624693}"
 	ProjectSection(SolutionItems) = preProject
 		compose.yaml = compose.yaml
@@ -22,6 +20,8 @@ EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.UI", "src\UNSInfra.UI\UNSInfra.UI.csproj", "{1C1058D0-5B53-49AA-92AB-C1D0C3F05E61}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Services.V1", "src\UNSInfra.Services.V1\UNSInfra.Services.V1.csproj", "{1D8E062F-E583-4BF5-9D8E-7D44B7F47222}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Services.SocketIO", "src\UNSInfra.Services.SocketIO\UNSInfra.Services.SocketIO.csproj", "{2E9F063A-F684-5CF6-AE9F-8E55C8F58333}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -35,10 +35,6 @@ Global
 		{A1B2C3D4-E5F6-7890-ABCD-123456789012}.Release|Any CPU.Build.0 = Release|Any CPU
 		{00000000-0000-0000-0000-000000000000}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{00000000-0000-0000-0000-000000000000}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1DF88454-8D28-4E54-8E65-B44C71964FD8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{1DF88454-8D28-4E54-8E65-B44C71964FD8}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{1DF88454-8D28-4E54-8E65-B44C71964FD8}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{1DF88454-8D28-4E54-8E65-B44C71964FD8}.Release|Any CPU.Build.0 = Release|Any CPU
 		{1C1058D0-5B53-49AA-92AB-C1D0C3F05E61}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
 		{1C1058D0-5B53-49AA-92AB-C1D0C3F05E61}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1C1058D0-5B53-49AA-92AB-C1D0C3F05E61}.Release|Any CPU.ActiveCfg = Release|Any CPU
@@ -47,6 +43,10 @@ Global
 		{1D8E062F-E583-4BF5-9D8E-7D44B7F47222}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{1D8E062F-E583-4BF5-9D8E-7D44B7F47222}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{1D8E062F-E583-4BF5-9D8E-7D44B7F47222}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2E9F063A-F684-5CF6-AE9F-8E55C8F58333}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2E9F063A-F684-5CF6-AE9F-8E55C8F58333}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2E9F063A-F684-5CF6-AE9F-8E55C8F58333}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2E9F063A-F684-5CF6-AE9F-8E55C8F58333}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
 	EndGlobalSection
