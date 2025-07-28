@@ -1,0 +1,46 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using UNSInfra.Core.Configuration;
+using UNSInfra.Core.Repositories;
+using UNSInfra.Core.Services;
+
+namespace UNSInfra.Core.Extensions;
+
+/// <summary>
+/// Extension methods for registering UNS Infrastructure core services with dependency injection.
+/// </summary>
+public static class ServiceCollectionExtensions
+{
+    /// <summary>
+    /// Adds core UNS Infrastructure services to the service collection.
+    /// </summary>
+    /// <param name="services">The service collection</param>
+    /// <returns>The service collection for chaining</returns>
+    public static IServiceCollection AddUNSInfrastructureCore(this IServiceCollection services)
+    {
+        // Register the data ingestion service manager
+        services.AddSingleton<IDataIngestionServiceManager, DataIngestionServiceManager>();
+        
+        // Register the in-memory configuration repository
+        services.AddSingleton<IDataIngestionConfigurationRepository, InMemoryDataIngestionConfigurationRepository>();
+        
+        // Register the background service for managing service descriptors
+        services.AddHostedService<DataIngestionServiceRegistrationService>();
+        
+        return services;
+    }
+
+    /// <summary>
+    /// Registers a data ingestion service descriptor type.
+    /// </summary>
+    /// <typeparam name="T">The service descriptor type</typeparam>
+    /// <param name="services">The service collection</param>
+    /// <returns>The service collection for chaining</returns>
+    public static IServiceCollection AddDataIngestionServiceDescriptor<T>(this IServiceCollection services)
+        where T : class, IDataIngestionServiceDescriptor
+    {
+        services.AddTransient<T>();
+        services.AddTransient<IDataIngestionServiceDescriptor>(provider => provider.GetRequiredService<T>());
+        return services;
+    }
+}

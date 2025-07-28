@@ -299,22 +299,28 @@ public class MqttDataService : IMqttDataService, IDisposable
     {
         _logger.LogInformation("Connected to MQTT broker: {ResultCode}", args.ConnectResult.ResultCode);
 
-        // Subscribe to all configured topics
+        var subscribeOptionsBuilder = mqttFactory.CreateSubscribeOptionsBuilder();
+        
+        // Always subscribe to wildcard to receive all topics for auto-discovery
+        subscribeOptionsBuilder.WithTopicFilter(f => f.WithTopic("#")
+            .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce));
+        _logger.LogInformation("Added wildcard subscription (#) for auto-discovery");
+
+        // Subscribe to all explicitly configured topics
         if (_subscriptions.Any())
         {
-            var subscribeOptionsBuilder = mqttFactory.CreateSubscribeOptionsBuilder();
-            
             foreach (var subscription in _subscriptions.Keys)
             {
                 subscribeOptionsBuilder.WithTopicFilter(f => f.WithTopic(subscription)
                     .WithQualityOfServiceLevel(MqttQualityOfServiceLevel.AtLeastOnce));
             }
-
-            var subscribeOptions = subscribeOptionsBuilder.Build();
-            await _mqttClient!.SubscribeAsync(subscribeOptions.TopicFilters);
-            
-            _logger.LogInformation("Subscribed to {Count} topics", _subscriptions.Count);
+            _logger.LogInformation("Added {Count} explicit topic subscriptions", _subscriptions.Count);
         }
+
+        var subscribeOptions = subscribeOptionsBuilder.Build();
+        await _mqttClient!.SubscribeAsync(subscribeOptions.TopicFilters);
+        
+        _logger.LogInformation("Successfully subscribed to MQTT topics with wildcard auto-discovery");
     }
 
     /// <summary>
@@ -383,20 +389,24 @@ public class MqttDataService : IMqttDataService, IDisposable
     /// </summary>
     private async Task HandleRegularMqttMessage(string topic, byte[] payload)
     {
+        Console.WriteLine($"[MQTT] Processing regular MQTT message for topic: '{topic}'");
         HierarchicalPath? path = null;
 
         // Check if we have explicit subscription
         if (_subscriptions.TryGetValue(topic, out var explicitPath))
         {
             path = explicitPath;
+            Console.WriteLine($"[MQTT] Using explicit subscription path for topic: '{topic}'");
         }
         else
         {
+            Console.WriteLine($"[MQTT] No explicit subscription, using topic discovery for: '{topic}'");
             // Try to resolve using topic discovery
             var configuration = await _topicDiscoveryService.ResolveTopicAsync(topic, "MQTT");
             if (configuration != null)
             {
                 path = configuration.Path;
+                Console.WriteLine($"[MQTT] Topic discovery resolved path: {path.GetFullPath()} for topic: '{topic}'");
                 
                 if (!configuration.IsVerified)
                 {
@@ -405,6 +415,7 @@ public class MqttDataService : IMqttDataService, IDisposable
             }
             else
             {
+                Console.WriteLine($"[MQTT] Topic discovery failed, creating unverified configuration for: '{topic}'");
                 // Create unverified configuration for completely unknown topic
                 configuration = await _topicDiscoveryService.CreateUnverifiedTopicAsync(topic, "MQTT");
                 path = configuration.Path;
@@ -414,6 +425,7 @@ public class MqttDataService : IMqttDataService, IDisposable
 
         if (path != null)
         {
+            Console.WriteLine($"[MQTT] Path resolved successfully, creating DataPoint for topic: '{topic}'");
             // Try to parse payload as JSON, fall back to string, then bytes
             object value;
             try
@@ -444,7 +456,12 @@ public class MqttDataService : IMqttDataService, IDisposable
                 Timestamp = DateTime.UtcNow
             };
 
+            Console.WriteLine($"[MQTT] Firing DataReceived event for topic: '{topic}' with path: {path.GetFullPath()}");
             DataReceived?.Invoke(this, dataPoint);
+        }
+        else
+        {
+            Console.WriteLine($"[MQTT] ERROR: Path is null for topic: '{topic}' - DataReceived event will not be fired!");
         }
     }
 

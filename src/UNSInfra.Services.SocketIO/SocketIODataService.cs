@@ -357,6 +357,20 @@ public class SocketIODataService : IDataIngestionService
                 _ => value.ToString()
             };
 
+            // Unescape Unicode escape sequences in string values (like \u0022 for quotes)
+            if (dataValue is string stringValue && stringValue.Contains("\\u"))
+            {
+                try
+                {
+                    dataValue = System.Text.RegularExpressions.Regex.Unescape(stringValue);
+                }
+                catch (Exception unescapeEx)
+                {
+                    _logger.LogWarning(unescapeEx, "Failed to unescape Unicode characters in value: {Value}", stringValue);
+                    // Keep original value if unescaping fails
+                }
+            }
+
             // Create the data point
             var dataPoint = new DataPoint
             {

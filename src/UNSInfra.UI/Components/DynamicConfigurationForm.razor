@@ -1,0 +1,509 @@
+@using UNSInfra.Core.Configuration
+@using System.Reflection
+@using UNSInfra.Services.SocketIO.Configuration
+@inject IJSRuntime JSRuntime
+
+<div class="container-fluid">
+    @if (ServiceDescriptor == null)
+    {
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle"></i>
+            Please select a service type first.
+        </div>
+        
+        <div class="mb-3">
+            <label class="form-label">Service Type</label>
+            <select class="form-select" @onchange="OnServiceTypeSelected">
+                <option value="">Select a service type...</option>
+                @foreach (var descriptor in AvailableDescriptors ?? new List<IDataIngestionServiceDescriptor>())
+                {
+                    <option value="@descriptor.ServiceType">@descriptor.DisplayName</option>
+                }
+            </select>
+        </div>
+    }
+    else
+    {
+        <form @onsubmit="HandleSubmit" @onsubmit:preventDefault="true">
+            <!-- Basic Configuration Fields -->
+            <div class="row mb-4">
+                <div class="col-12">
+                    <h6 class="border-bottom pb-2 mb-3">
+                        <i class="@(ServiceDescriptor.IconClass ?? "bi bi-gear")"></i>
+                        @ServiceDescriptor.DisplayName Configuration
+                    </h6>
+                </div>
+            </div>
+
+            <!-- Standard Fields -->
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label">Name <span class="text-danger">*</span></label>
+                    <input type="text" class="form-control @(validationErrors.ContainsKey("Name") ? "is-invalid" : "")" 
+                           @bind="Configuration.Name" @bind:event="oninput" @onblur="ValidateField" required />
+                    @if (validationErrors.ContainsKey("Name"))
+                    {
+                        <div class="invalid-feedback">@validationErrors["Name"]</div>
+                    }
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Enabled</label>
+                    <div class="form-check form-switch mt-2">
+                        <input class="form-check-input" type="checkbox" @bind="Configuration.Enabled" />
+                        <label class="form-check-label">
+                            @(Configuration.Enabled ? "Enabled" : "Disabled")
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+            <div class="row mb-4">
+                <div class="col-12">
+                    <label class="form-label">Description</label>
+                    <textarea class="form-control" rows="2" @bind="Configuration.Description" 
+                              placeholder="Optional description for this configuration"></textarea>
+                </div>
+            </div>
+
+            <!-- Dynamic Fields grouped by category -->
+            @if (configurationFields != null)
+            {
+                var groupedFields = configurationFields
+                    .Where(f => !IsStandardField(f.PropertyName))
+                    .GroupBy(f => f.Group ?? "General")
+                    .OrderBy(g => g.Key == "General" ? 0 : 1)
+                    .ThenBy(g => g.Key);
+
+                @foreach (var group in groupedFields)
+                {
+                    <div class="row mb-4">
+                        <div class="col-12">
+                            <h6 class="border-bottom pb-2 mb-3">@group.Key</h6>
+                        </div>
+                        
+                        @foreach (var field in group.OrderBy(f => f.Order))
+                        {
+                            <div class="col-md-6 mb-3">
+                                <label class="form-label">
+                                    @field.DisplayName
+                                    @if (field.Required)
+                                    {
+                                        <span class="text-danger">*</span>
+                                    }
+                                </label>
+                                
+                                @if (!string.IsNullOrEmpty(field.Description))
+                                {
+                                    <small class="form-text text-muted d-block mb-1">@field.Description</small>
+                                }
+
+                                @switch (field.FieldType)
+                                {
+                                    case FieldType.Text:
+                                    case FieldType.Email:
+                                    case FieldType.Url:
+                                        <input type="@GetInputType(field.FieldType)" 
+                                               class="form-control @(validationErrors.ContainsKey(field.PropertyName) ? "is-invalid" : "")" 
+                                               value="@GetFieldValue(field.PropertyName)" 
+                                               @onchange="@(e => SetFieldValue(field.PropertyName, e.Value?.ToString()))"
+                                               @onblur="ValidateField"
+                                               required="@field.Required" 
+                                               placeholder="@(field.DefaultValue?.ToString() ?? "")" />
+                                        break;
+
+                                    case FieldType.Password:
+                                        <input type="password" 
+                                               class="form-control @(validationErrors.ContainsKey(field.PropertyName) ? "is-invalid" : "")" 
+                                               value="@GetFieldValue(field.PropertyName)" 
+                                               @onchange="@(e => SetFieldValue(field.PropertyName, e.Value?.ToString()))"
+                                               @onblur="ValidateField"
+                                               required="@field.Required" />
+                                        break;
+
+                                    case FieldType.Number:
+                                        <input type="number" 
+                                               class="form-control @(validationErrors.ContainsKey(field.PropertyName) ? "is-invalid" : "")" 
+                                               value="@GetFieldValue(field.PropertyName)" 
+                                               @onchange="@(e => SetFieldValue(field.PropertyName, e.Value?.ToString()))"
+                                               @onblur="ValidateField"
+                                               required="@field.Required"
+                                               min="@(field.ValidationAttributes.TryGetValue("min", out var min) ? min.ToString() : "")"
+                                               max="@(field.ValidationAttributes.TryGetValue("max", out var max) ? max.ToString() : "")" />
+                                        break;
+
+                                    case FieldType.Boolean:
+                                        <div class="form-check form-switch">
+                                            <input class="form-check-input" type="checkbox" 
+                                                   checked="@(bool.TryParse(GetFieldValue(field.PropertyName)?.ToString(), out var boolVal) && boolVal)"
+                                                   @onchange="@(e => SetFieldValue(field.PropertyName, e.Value?.ToString()))" />
+                                            <label class="form-check-label">
+                                                @(bool.TryParse(GetFieldValue(field.PropertyName)?.ToString(), out var boolDisplay) && boolDisplay ? "Yes" : "No")
+                                            </label>
+                                        </div>
+                                        break;
+
+                                    case FieldType.Select:
+                                        <select class="form-select @(validationErrors.ContainsKey(field.PropertyName) ? "is-invalid" : "")" 
+                                                @onchange="@(e => SetFieldValue(field.PropertyName, e.Value?.ToString()))"
+                                                required="@field.Required">
+                                            <option value="">Select...</option>
+                                            @if (field.Options != null)
+                                            {
+                                                @foreach (var option in field.Options)
+                                                {
+                                                    <option value="@option.Value" 
+                                                            selected="@(GetFieldValue(field.PropertyName)?.ToString() == option.Value)"
+                                                            disabled="@option.Disabled">
+                                                        @option.Text
+                                                    </option>
+                                                }
+                                            }
+                                        </select>
+                                        break;
+
+                                    case FieldType.TextArea:
+                                        <textarea class="form-control @(validationErrors.ContainsKey(field.PropertyName) ? "is-invalid" : "")" 
+                                                  rows="3"
+                                                  @onchange="@(e => SetFieldValue(field.PropertyName, e.Value?.ToString()))"
+                                                  @onblur="ValidateField"
+                                                  required="@field.Required">@GetFieldValue(field.PropertyName)</textarea>
+                                        break;
+
+                                    case FieldType.Range:
+                                        <input type="range" 
+                                               class="form-range @(validationErrors.ContainsKey(field.PropertyName) ? "is-invalid" : "")" 
+                                               value="@GetFieldValue(field.PropertyName)" 
+                                               @onchange="@(e => SetFieldValue(field.PropertyName, e.Value?.ToString()))"
+                                               min="@(field.ValidationAttributes.TryGetValue("min", out var rangeMin) ? rangeMin.ToString() : "0")"
+                                               max="@(field.ValidationAttributes.TryGetValue("max", out var rangeMax) ? rangeMax.ToString() : "100")" />
+                                        <small class="text-muted">Value: @GetFieldValue(field.PropertyName)</small>
+                                        break;
+                                }
+
+                                @if (validationErrors.ContainsKey(field.PropertyName))
+                                {
+                                    <div class="invalid-feedback d-block">@validationErrors[field.PropertyName]</div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+            }
+
+            <!-- Form Actions -->
+            <div class="row">
+                <div class="col-12">
+                    <hr />
+                    <div class="d-flex justify-content-end gap-2">
+                        <button type="button" class="btn btn-secondary" @onclick="OnCancel">
+                            <i class="bi bi-x-circle"></i> Cancel
+                        </button>
+                        <button type="button" class="btn btn-outline-primary" @onclick="ValidateConfiguration">
+                            <i class="bi bi-check-circle"></i> Validate
+                        </button>
+                        <button type="submit" class="btn btn-primary" disabled="@(!IsFormValid())">
+                            <i class="bi bi-save"></i> Save Configuration
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </form>
+    }
+</div>
+
+@code {
+    [Parameter] public IDataIngestionConfiguration? Configuration { get; set; }
+    [Parameter] public IDataIngestionServiceDescriptor? ServiceDescriptor { get; set; }
+    [Parameter] public List<IDataIngestionServiceDescriptor>? AvailableDescriptors { get; set; }
+    [Parameter] public EventCallback<IDataIngestionConfiguration> OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+    [Parameter] public EventCallback<IDataIngestionServiceDescriptor> OnServiceTypeChanged { get; set; }
+
+    private List<ConfigurationField>? configurationFields;
+    private Dictionary<string, string> validationErrors = new();
+
+    protected override void OnParametersSet()
+    {
+        if (ServiceDescriptor != null)
+        {
+            configurationFields = ServiceDescriptor.GetConfigurationFields();
+        }
+        
+        // Clear validation errors when configuration changes
+        validationErrors.Clear();
+    }
+
+    private async Task OnServiceTypeSelected(ChangeEventArgs e)
+    {
+        var serviceType = e.Value?.ToString();
+        if (!string.IsNullOrEmpty(serviceType) && AvailableDescriptors != null)
+        {
+            var descriptor = AvailableDescriptors.FirstOrDefault(d => d.ServiceType == serviceType);
+            if (descriptor != null)
+            {
+                await OnServiceTypeChanged.InvokeAsync(descriptor);
+            }
+        }
+    }
+
+    private string GetInputType(FieldType fieldType)
+    {
+        return fieldType switch
+        {
+            FieldType.Email => "email",
+            FieldType.Url => "url",
+            FieldType.Password => "password",
+            FieldType.Number => "number",
+            _ => "text"
+        };
+    }
+
+    private bool IsStandardField(string propertyName)
+    {
+        return propertyName is "Id" or "Name" or "Description" or "Enabled" or "ServiceType" or "CreatedAt" or "ModifiedAt" or "CreatedBy" or "Metadata";
+    }
+
+    private object? GetFieldValue(string propertyName)
+    {
+        if (Configuration == null) return null;
+        
+        // Handle special SocketIO fields that store data in dictionaries
+        var specialValue = GetSpecialSocketIOFieldValue(propertyName);
+        if (specialValue != null) return specialValue;
+        
+        var property = Configuration.GetType().GetProperty(propertyName);
+        return property?.GetValue(Configuration);
+    }
+
+    private void SetFieldValue(string propertyName, string? value)
+    {
+        if (Configuration == null) return;
+        
+        // Handle special SocketIO fields that store data in dictionaries
+        if (HandleSpecialSocketIOFields(propertyName, value))
+            return;
+        
+        var property = Configuration.GetType().GetProperty(propertyName);
+        if (property != null && property.CanWrite)
+        {
+            try
+            {
+                object? convertedValue = null;
+                
+                if (value != null)
+                {
+                    var propertyType = Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType;
+                    
+                    if (propertyType == typeof(bool))
+                    {
+                        convertedValue = bool.TryParse(value, out var boolResult) ? boolResult : false;
+                    }
+                    else if (propertyType == typeof(int))
+                    {
+                        convertedValue = int.TryParse(value, out var intResult) ? intResult : 0;
+                    }
+                    else if (propertyType == typeof(double))
+                    {
+                        convertedValue = double.TryParse(value, out var doubleResult) ? doubleResult : 0.0;
+                    }
+                    else if (propertyType == typeof(string))
+                    {
+                        convertedValue = value;
+                    }
+                    else if (propertyType.IsArray && propertyType.GetElementType() == typeof(string))
+                    {
+                        convertedValue = value.Split(',', StringSplitOptions.RemoveEmptyEntries)
+                                             .Select(s => s.Trim())
+                                             .ToArray();
+                    }
+                    else
+                    {
+                        convertedValue = Convert.ChangeType(value, propertyType);
+                    }
+                }
+                
+                property.SetValue(Configuration, convertedValue);
+                
+                // Clear validation error for this field
+                validationErrors.Remove(propertyName);
+                
+                // Update modified timestamp
+                Configuration.ModifiedAt = DateTime.UtcNow;
+            }
+            catch (Exception ex)
+            {
+                validationErrors[propertyName] = $"Invalid value: {ex.Message}";
+            }
+        }
+    }
+
+    private void ValidateField()
+    {
+        ValidateConfiguration();
+    }
+
+    private void ValidateConfiguration()
+    {
+        validationErrors.Clear();
+        
+        if (Configuration != null)
+        {
+            var errors = Configuration.Validate();
+            foreach (var error in errors)
+            {
+                // Try to extract field name from error message (simple approach)
+                var parts = error.Split(' ');
+                var fieldName = parts.Length > 0 ? parts[0] : "General";
+                validationErrors[fieldName] = error;
+            }
+        }
+        
+        StateHasChanged();
+    }
+
+    private bool IsFormValid()
+    {
+        return Configuration != null && !validationErrors.Any() && !string.IsNullOrWhiteSpace(Configuration.Name);
+    }
+
+    private async Task HandleSubmit()
+    {
+        ValidateConfiguration();
+        
+        if (IsFormValid() && Configuration != null)
+        {
+            await OnSave.InvokeAsync(Configuration);
+        }
+        else
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Please fix the validation errors before saving.");
+        }
+    }
+
+    private object? GetSpecialSocketIOFieldValue(string propertyName)
+    {
+        if (Configuration?.ServiceType != "SocketIO") return null;
+
+        if (Configuration is not UNSInfra.Services.SocketIO.Configuration.SocketIODataIngestionConfiguration socketIOConfig)
+            return null;
+        
+        return propertyName switch
+        {
+            "AuthToken" => GetFromDictionary(socketIOConfig.AuthenticationData, "token"),
+            "AuthUsername" => GetFromDictionary(socketIOConfig.AuthenticationData, "username"),
+            "AuthPassword" => GetFromDictionary(socketIOConfig.AuthenticationData, "password"),
+            "CustomHeaders" => FormatDictionaryAsJson(socketIOConfig.ExtraHeaders),
+            _ => null
+        };
+    }
+
+    private bool HandleSpecialSocketIOFields(string propertyName, string? value)
+    {
+        if (Configuration?.ServiceType != "SocketIO") return false;
+
+        if (Configuration is not UNSInfra.Services.SocketIO.Configuration.SocketIODataIngestionConfiguration socketIOConfig)
+            return false;
+        
+        try
+        {
+            switch (propertyName)
+            {
+                case "AuthToken":
+                    SetToDictionary(socketIOConfig.AuthenticationData, "token", value);
+                    break;
+                case "AuthUsername":
+                    SetToDictionary(socketIOConfig.AuthenticationData, "username", value);
+                    break;
+                case "AuthPassword":
+                    SetToDictionary(socketIOConfig.AuthenticationData, "password", value);
+                    break;
+                case "CustomHeaders":
+                    ParseJsonToDictionary(value, socketIOConfig.ExtraHeaders);
+                    break;
+                default:
+                    return false;
+            }
+
+            // Clear validation error for this field
+            validationErrors.Remove(propertyName);
+            
+            // Update modified timestamp
+            Configuration.ModifiedAt = DateTime.UtcNow;
+            return true;
+        }
+        catch (Exception ex)
+        {
+            validationErrors[propertyName] = $"Invalid value: {ex.Message}";
+            return true;
+        }
+    }
+
+    private object? GetFromDictionary(Dictionary<string, object>? dict, string key)
+    {
+        return dict?.TryGetValue(key, out var value) == true ? value : null;
+    }
+
+    private void SetToDictionary(Dictionary<string, object> dict, string key, string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            dict.Remove(key);
+        }
+        else
+        {
+            dict[key] = value;
+        }
+    }
+
+    private void SetToDictionary(Dictionary<string, string> dict, string key, string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            dict.Remove(key);
+        }
+        else
+        {
+            dict[key] = value;
+        }
+    }
+
+    private string? FormatDictionaryAsJson(Dictionary<string, string>? dict)
+    {
+        if (dict == null || !dict.Any()) return null;
+        
+        try
+        {
+            return System.Text.Json.JsonSerializer.Serialize(dict, new System.Text.Json.JsonSerializerOptions 
+            { 
+                WriteIndented = true 
+            });
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void ParseJsonToDictionary(string? json, Dictionary<string, string> dict)
+    {
+        dict.Clear();
+        
+        if (string.IsNullOrWhiteSpace(json)) return;
+        
+        try
+        {
+            var parsed = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            if (parsed != null)
+            {
+                foreach (var kvp in parsed)
+                {
+                    dict[kvp.Key] = kvp.Value;
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new ArgumentException($"Invalid JSON format: {ex.Message}");
+        }
+    }
+}

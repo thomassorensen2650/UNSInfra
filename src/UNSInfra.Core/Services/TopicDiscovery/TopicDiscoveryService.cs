@@ -29,10 +29,13 @@ public class TopicDiscoveryService : ITopicDiscoveryService
     /// <returns>A topic configuration with the resolved path, or null if no mapping could be determined</returns>
     public async Task<TopicConfiguration?> ResolveTopicAsync(string topic, string sourceType)
     {
+        Console.WriteLine($"[TopicDiscovery] Resolving topic: '{topic}' from source: '{sourceType}'");
+        
         // First, check if we have an existing configuration
         var existingConfig = await _configurationRepository.GetTopicConfigurationAsync(topic);
         if (existingConfig != null && existingConfig.IsActive)
         {
+            Console.WriteLine($"[TopicDiscovery] Found existing configuration for topic: '{topic}'");
             return existingConfig;
         }
 
@@ -41,12 +44,20 @@ public class TopicDiscoveryService : ITopicDiscoveryService
         if (generatedPath == null)
         {
             // Fall back to default path generation
+            Console.WriteLine($"[TopicDiscovery] No mapping rules matched, using default path generation for: '{topic}'");
             generatedPath = GenerateDefaultPath(topic);
         }
+        else
+        {
+            Console.WriteLine($"[TopicDiscovery] Generated path from mapping rules for topic: '{topic}'");
+        }
+
+        Console.WriteLine($"[TopicDiscovery] Generated path: {generatedPath.GetFullPath()}");
 
         // Create and save a new configuration
         var newConfig = await CreateUnverifiedTopicAsync(topic, sourceType, generatedPath);
         await _configurationRepository.SaveTopicConfigurationAsync(newConfig);
+        Console.WriteLine($"[TopicDiscovery] Created and saved unverified configuration for topic: '{topic}'");
         return newConfig;
     }
 

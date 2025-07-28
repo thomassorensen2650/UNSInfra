@@ -24,8 +24,14 @@ public class DataIngestionBackgroundService : BackgroundService
     private readonly Timer _processTimer;
     private readonly SemaphoreSlim _processingLock = new(1, 1);
     private readonly ConcurrentDictionary<string, bool> _knownTopics = new();
-    private const int BatchSize = 100;
-    private const int ProcessingIntervalMs = 250;
+    private readonly ConcurrentDictionary<string, bool> _verifiedTopics = new();
+    private DateTime _lastVerificationCacheUpdate = DateTime.MinValue;
+    private DateTime _lastCleanupTime = DateTime.MinValue;
+    private const int BatchSize = 500; // Increased for better throughput with 100k topics
+    private const int ProcessingIntervalMs = 500; // Slightly longer to allow larger batches
+    private const int VerificationCacheRefreshMinutes = 5;
+    private const int CleanupIntervalHours = 6;
+    private const int RealtimeDataRetentionHours = 24; // Keep 24 hours of realtime data
 
     public DataIngestionBackgroundService(
         IEnumerable<IDataIngestionService> dataIngestionServices,
@@ -130,9 +136,9 @@ public class DataIngestionBackgroundService : BackgroundService
             // Queue the data point for batch processing instead of immediate processing
             _dataQueue.Enqueue(dataPoint);
             
-            if (_dataQueue.Count % 1000 == 0)
+            if (_dataQueue.Count % 5000 == 0) // Log less frequently for high volume
             {
-                _logger.LogDebug("Data queue size: {QueueSize}", _dataQueue.Count);
+                _logger.LogInformation("High volume: Data queue size: {QueueSize}", _dataQueue.Count);
             }
         }
         catch (Exception ex)
@@ -173,23 +179,68 @@ public class DataIngestionBackgroundService : BackgroundService
                 }
             }
 
-            // Process the batch
+            // Refresh verification cache periodically
+            await RefreshVerificationCacheIfNeeded();
+            
+            // Run cleanup periodically to prevent storage bloat
+            await RunCleanupIfNeeded();
+
+            // Process the batch - separate verified and unverified for efficient batch operations
+            var verifiedBatch = new List<DataPoint>();
+            var unverifiedBatch = new List<DataPoint>();
+            
             foreach (var dataPoint in batch)
             {
-                try
-                {
-                    // Store in realtime storage
-                    await _realtimeStorage.StoreAsync(dataPoint);
-                    
-                    // Store in historical storage  
-                    await _historicalStorage.StoreAsync(dataPoint);
+                if (_verifiedTopics.ContainsKey(dataPoint.Topic))
+                    verifiedBatch.Add(dataPoint);
+                else
+                    unverifiedBatch.Add(dataPoint);
+            }
 
-                    processedCount++;
-                }
-                catch (Exception ex)
+            try
+            {
+                // Batch store all data points in realtime storage
+                if (_realtimeStorage is IBatchStorage batchRealtimeStorage)
                 {
-                    _logger.LogError(ex, "Error storing data for topic: {Topic}", dataPoint.Topic);
+                    await batchRealtimeStorage.StoreBatchAsync(batch);
                 }
+                else
+                {
+                    // Fallback to individual storage calls
+                    foreach (var dataPoint in batch)
+                    {
+                        await _realtimeStorage.StoreAsync(dataPoint);
+                    }
+                }
+
+                // Batch store only verified topics in historical storage
+                if (verifiedBatch.Count > 0)
+                {
+                    if (_historicalStorage is IBatchStorage batchHistoricalStorage)
+                    {
+                        await batchHistoricalStorage.StoreBatchAsync(verifiedBatch);
+                    }
+                    else
+                    {
+                        // Fallback to individual storage calls
+                        foreach (var dataPoint in verifiedBatch)
+                        {
+                            await _historicalStorage.StoreAsync(dataPoint);
+                        }
+                    }
+                    _logger.LogTrace("Historical data stored for {Count} verified topics", verifiedBatch.Count);
+                }
+
+                if (unverifiedBatch.Count > 0)
+                {
+                    _logger.LogTrace("Skipped historical storage for {Count} unverified topics", unverifiedBatch.Count);
+                }
+
+                processedCount = batch.Count;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error storing batch of {Count} data points", batch.Count);
             }
 
             // Notify about new topics first
@@ -274,12 +325,79 @@ public class DataIngestionBackgroundService : BackgroundService
             foreach (var topic in existingTopics)
             {
                 _knownTopics.TryAdd(topic.Topic, true);
+                
+                // Initialize verified topics cache
+                if (topic.IsVerified)
+                {
+                    _verifiedTopics.TryAdd(topic.Topic, true);
+                }
             }
-            _logger.LogInformation("Loaded {Count} existing topics for tracking", _knownTopics.Count);
+            _lastVerificationCacheUpdate = DateTime.UtcNow;
+            _logger.LogInformation("Loaded {Count} existing topics ({VerifiedCount} verified) for tracking", 
+                _knownTopics.Count, _verifiedTopics.Count);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error loading existing topics");
+        }
+    }
+
+    private async Task RefreshVerificationCacheIfNeeded()
+    {
+        if (DateTime.UtcNow - _lastVerificationCacheUpdate > TimeSpan.FromMinutes(VerificationCacheRefreshMinutes))
+        {
+            try
+            {
+                var allTopics = await _topicConfigurationRepository.GetAllTopicConfigurationsAsync();
+                var newVerifiedTopics = new ConcurrentDictionary<string, bool>();
+                
+                foreach (var topic in allTopics.Where(t => t.IsVerified))
+                {
+                    newVerifiedTopics.TryAdd(topic.Topic, true);
+                }
+                
+                _verifiedTopics.Clear();
+                foreach (var kvp in newVerifiedTopics)
+                {
+                    _verifiedTopics.TryAdd(kvp.Key, kvp.Value);
+                }
+                
+                _lastVerificationCacheUpdate = DateTime.UtcNow;
+                _logger.LogDebug("Refreshed verification cache: {VerifiedCount} verified topics", _verifiedTopics.Count);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error refreshing verification cache");
+            }
+        }
+    }
+
+    private async Task RunCleanupIfNeeded()
+    {
+        if (DateTime.UtcNow - _lastCleanupTime > TimeSpan.FromHours(CleanupIntervalHours))
+        {
+            try
+            {
+                var cutoffTime = DateTime.UtcNow.AddHours(-RealtimeDataRetentionHours);
+                
+                // Clean up old realtime data (keep only last 24 hours for unverified topics)
+                if (_realtimeStorage is ICleanableStorage cleanableRealtime)
+                {
+                    await cleanableRealtime.CleanupOldDataAsync(cutoffTime);
+                    _logger.LogInformation("Cleaned up realtime data older than {CutoffTime}", cutoffTime);
+                }
+                
+                // Archive old historical data (this should be configurable per deployment)
+                var archiveCutoffTime = DateTime.UtcNow.AddDays(-30); // Keep 30 days by default
+                await _historicalStorage.ArchiveAsync(archiveCutoffTime);
+                
+                _lastCleanupTime = DateTime.UtcNow;
+                _logger.LogInformation("Completed storage cleanup cycle");
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error during storage cleanup");
+            }
         }
     }
 

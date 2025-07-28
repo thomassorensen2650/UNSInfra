@@ -256,8 +256,9 @@
         _saveAction = "verify";
         StateHasChanged();
         
-        // Force UI to render the loading state immediately
-        await Task.Yield();
+        // Force multiple render cycles to ensure immediate visual feedback
+        await Task.Delay(1); // Minimal delay to ensure UI updates
+        await InvokeAsync(StateHasChanged); // Second state change
 
         try
         {
@@ -287,8 +288,9 @@
         _saveAction = "save";
         StateHasChanged();
         
-        // Force UI to render the loading state immediately
-        await Task.Yield();
+        // Force multiple render cycles to ensure immediate visual feedback
+        await Task.Delay(1); // Minimal delay to ensure UI updates
+        await InvokeAsync(StateHasChanged); // Second state change
 
         try
         {

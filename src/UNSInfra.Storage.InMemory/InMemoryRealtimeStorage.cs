@@ -16,7 +16,7 @@ public class InMemoryRealtimeStorage : IRealtimeStorage
         return Task.CompletedTask;
     }
 
-    public Task<DataPoint> GetLatestAsync(string topic)
+    public Task<DataPoint?> GetLatestAsync(string topic)
     {
         _storage.TryGetValue(topic, out var dataPoint);
         return Task.FromResult(dataPoint);

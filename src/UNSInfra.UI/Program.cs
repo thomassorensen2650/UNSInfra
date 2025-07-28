@@ -1,19 +1,19 @@
 using UNSInfra.UI.Components;
-using UNSInfra.UI.Services;
 using UNSInfra.Services.TopicBrowser;
 using UNSInfra.Services.TopicDiscovery;
-using UNSInfra.Services.DataIngestion.Mock;
 using UNSInfra.Repositories;
 using UNSInfra.Storage.Abstractions;
 using UNSInfra.Storage.InMemory;
-using UNSInfra.Services.V1;
-using UNSInfra.Services.SocketIO;
+using UNSInfra.Services.V1.Descriptors;
+using UNSInfra.Services.SocketIO.Descriptors;
+using UNSInfra.Core.Extensions;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
 
 // Register UNS Infrastructure services
 builder.Services.AddSingleton<ISchemaRepository, InMemorySchemaRepository>();
@@ -23,14 +23,17 @@ builder.Services.AddSingleton<IHistoricalStorage, InMemoryHistoricalStorage>();
 builder.Services.AddSingleton<ITopicDiscoveryService, TopicDiscoveryService>();
 builder.Services.AddSingleton<ITopicBrowserService, TopicBrowserService>();
 
-// Add MQTT data service from UNSInfra.Services.V1
-builder.Services.AddMqttDataService(builder.Configuration);
+// Add new dynamic configuration system
+builder.Services.AddUNSInfrastructureCore();
 
-// Add SocketIO data service 
-builder.Services.AddSocketIODataService(builder.Configuration);
+// Register service descriptors for MQTT and SocketIO
+builder.Services.AddDataIngestionServiceDescriptor<UNSInfra.Services.V1.Descriptors.MqttServiceDescriptor>();
+builder.Services.AddDataIngestionServiceDescriptor<UNSInfra.Services.SocketIO.Descriptors.SocketIOServiceDescriptor>();
 
-// Add hosted service to manage all data ingestion connections and data processing
-builder.Services.AddHostedService<DataIngestionBackgroundService>();
+// Register SparkplugB decoder for MQTT service
+builder.Services.AddSingleton<UNSInfra.Services.V1.SparkplugB.SparkplugBDecoder>();
+
+// Legacy services removed - now using dynamic configuration system only
 
 var app = builder.Build();
 
@@ -48,5 +51,6 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
 
 app.Run();

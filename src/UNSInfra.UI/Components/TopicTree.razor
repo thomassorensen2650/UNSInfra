@@ -11,7 +11,7 @@
 <ul class="topic-tree">
     @foreach (var node in RootNodes)
     {
-        <TopicTreeNode Node="node" HighlightedPaths="HighlightedPaths" UnverifiedPaths="UnverifiedPaths" SelectedNodePath="SelectedNodePath" OnTopicSelected="HandleTopicSelected" OnToggleExpanded="ToggleExpansion" />
+        <TopicTreeNode Node="node" HighlightedPaths="HighlightedPaths" SelectedNodePath="@SelectedNodePath" OnTopicSelected="HandleTopicSelected" OnToggleExpanded="ToggleExpansion" />
     }
 </ul>
 
@@ -19,11 +19,12 @@
     [Parameter] public List<TopicInfo> Topics { get; set; } = new();
     [Parameter] public HashSet<string> HighlightedPaths { get; set; } = new();
     [Parameter] public EventCallback<TopicInfo> OnTopicSelected { get; set; }
+    [Parameter] public int MaxVisibleTopics { get; set; } = 1000; // Limit visible topics for performance
+    [Parameter] public int MaxUnverifiedTopicsPerPage { get; set; } = 100; // Paginate unverified topics
     
     private string? SelectedNodePath { get; set; }
 
     private List<TopicTreeNodeModel> RootNodes = new();
-    private HashSet<string> UnverifiedPaths = new();
     private Dictionary<string, TopicTreeNodeModel> NodeLookup = new();
     private Dictionary<string, List<TopicInfo>> TopicsByPath = new();
     private Dictionary<string, List<string>> ChildrenLookup = new(); // Parent path -> immediate child names (ordered)
@@ -35,10 +36,10 @@
     {
         // Check if we're just adding new topics or if there are other changes
         var currentHash = GetTopicsHashCode();
-        var currentCount = Topics?.Count ?? 0;
         
         if (currentHash != _lastTopicsHash)
         {
+            var currentCount = Topics?.Count ?? 0;
             bool isJustAddingTopics = currentCount > _lastTopicsCount && 
                                       _lastTopicsCount > 0 && // Not initial load
                                       currentCount - _lastTopicsCount <= 5; // Only a few new topics
@@ -55,7 +56,6 @@
                 var selectedPath = SelectedNodePath;
                 
                 BuildTreeStructure(Topics ?? new List<TopicInfo>());
-                UnverifiedPaths = BuildUnverifiedPaths(Topics);
                 
                 RestoreExpansionState(expansionState);
                 SelectedNodePath = selectedPath;
@@ -84,8 +84,11 @@
     {
         // Get the new topics (assuming they're at the end of the list)
         var newTopics = Topics.Skip(_lastTopicsCount).ToList();
+        var newVerifiedTopics = newTopics.Where(t => t.IsVerified).ToList();
+        var newUnverifiedTopics = newTopics.Where(t => !t.IsVerified).ToList();
         
-        foreach (var topic in newTopics)
+        // Add new verified topics using hierarchical structure
+        foreach (var topic in newVerifiedTopics)
         {
             var pathParts = GetPathParts(topic.Path);
             string currentPath = "";
@@ -112,21 +115,90 @@
             }
         }
         
-        // Update existing nodes that might now have new children
-        UpdateNodesWithNewChildren();
-        
-        // Update unverified paths for new topics
-        foreach (var topic in newTopics.Where(t => !t.IsVerified))
+        // Add new unverified topics using folder structure grouped by source type
+        if (newUnverifiedTopics.Count > 0)
         {
-            var pathParts = GetPathParts(topic.Path);
-            string currentPath = "";
-            for (int i = 0; i < pathParts.Length; i++)
+            const string unverifiedSectionName = "🔍 Unverified Topics";
+            
+            // Ensure unverified section exists
+            if (!ChildrenLookup.ContainsKey(""))
+                ChildrenLookup[""] = new List<string>();
+            if (!ChildrenLookup[""].Contains(unverifiedSectionName))
+                ChildrenLookup[""].Add(unverifiedSectionName);
+            
+            if (!ChildrenLookup.ContainsKey(unverifiedSectionName))
+                ChildrenLookup[unverifiedSectionName] = new List<string>();
+            if (!TopicsByPath.ContainsKey(unverifiedSectionName))
+                TopicsByPath[unverifiedSectionName] = new List<TopicInfo>();
+            
+            // Group unverified topics by source type, then build folder structure
+            var topicsBySourceType = newUnverifiedTopics.GroupBy(t => t.SourceType).ToList();
+            
+            foreach (var sourceGroup in topicsBySourceType)
             {
-                if (string.IsNullOrEmpty(pathParts[i])) break;
-                currentPath = string.IsNullOrEmpty(currentPath) ? pathParts[i] : $"{currentPath}/{pathParts[i]}";
-                UnverifiedPaths.Add(currentPath);
+                var sourceType = sourceGroup.Key;
+                var sourcePath = $"{unverifiedSectionName}/{sourceType}";
+                
+                // Ensure source type folder exists
+                if (!ChildrenLookup[unverifiedSectionName].Contains(sourceType))
+                {
+                    ChildrenLookup[unverifiedSectionName].Add(sourceType);
+                }
+                if (!ChildrenLookup.ContainsKey(sourcePath))
+                    ChildrenLookup[sourcePath] = new List<string>();
+                if (!TopicsByPath.ContainsKey(sourcePath))
+                    TopicsByPath[sourcePath] = new List<TopicInfo>();
+                
+                // Build folder structure for each topic within this source type
+                foreach (var topic in sourceGroup)
+                {
+                    var topicParts = topic.Topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                    
+                    // If topic has no separators (flat topic name), treat it as a single item
+                    if (topicParts.Length == 1)
+                    {
+                        var topicKey = $"{sourcePath}/{topic.Topic}";
+                        if (!ChildrenLookup[sourcePath].Contains(topic.Topic))
+                        {
+                            ChildrenLookup[sourcePath].Add(topic.Topic);
+                            TopicsByPath[topicKey] = new List<TopicInfo> { topic };
+                        }
+                    }
+                    else
+                    {
+                        // Build nested folder structure based on topic path segments
+                        string currentPath = sourcePath;
+                        
+                        for (int i = 0; i < topicParts.Length; i++)
+                        {
+                            var part = topicParts[i];
+                            var parentPath = currentPath;
+                            currentPath = $"{currentPath}/{part}";
+                            
+                            // Initialize path structures if they don't exist
+                            if (!TopicsByPath.ContainsKey(currentPath))
+                                TopicsByPath[currentPath] = new List<TopicInfo>();
+                            
+                            if (!ChildrenLookup.ContainsKey(parentPath))
+                                ChildrenLookup[parentPath] = new List<string>();
+                            
+                            // Add this part as a child of the parent path
+                            if (!ChildrenLookup[parentPath].Contains(part))
+                                ChildrenLookup[parentPath].Add(part);
+                            
+                            // If this is the final segment, store the actual topic data
+                            if (i == topicParts.Length - 1)
+                            {
+                                TopicsByPath[currentPath].Add(topic);
+                            }
+                        }
+                    }
+                }
             }
         }
+        
+        // Update existing nodes that might now have new children
+        UpdateNodesWithNewChildren();
     }
     
     private void UpdateNodesWithNewChildren()
@@ -162,11 +234,12 @@
         ChildrenLookup.Clear();
         var root = new List<TopicTreeNodeModel>();
 
-        // Sort topics by creation time to ensure new topics appear at the bottom
-        var sortedTopics = topics.OrderBy(t => t.CreatedAt).ToList();
+        // Separate verified and unverified topics for different display strategies
+        var verifiedTopics = topics.Where(t => t.IsVerified).OrderBy(t => t.CreatedAt).ToList();
+        var unverifiedTopics = topics.Where(t => !t.IsVerified).OrderBy(t => t.CreatedAt).ToList();
 
-        // First, organize topics by their path structure and build children lookup
-        foreach (var topic in sortedTopics)
+        // Process verified topics using hierarchical structure
+        foreach (var topic in verifiedTopics)
         {
             var pathParts = GetPathParts(topic.Path);
             string currentPath = "";
@@ -189,6 +262,89 @@
                 
                 if (i == pathParts.Length - 1) // Leaf node
                     TopicsByPath[currentPath].Add(topic);
+            }
+        }
+
+        // Process unverified topics using folder structure grouped by source type
+        if (unverifiedTopics.Count > 0)
+        {
+            const string unverifiedSectionName = "🔍 Unverified Topics";
+            
+            // Add unverified section to root
+            if (!ChildrenLookup.ContainsKey(""))
+                ChildrenLookup[""] = new List<string>();
+            if (!ChildrenLookup[""].Contains(unverifiedSectionName))
+                ChildrenLookup[""].Add(unverifiedSectionName);
+            
+            // Initialize unverified section
+            if (!ChildrenLookup.ContainsKey(unverifiedSectionName))
+                ChildrenLookup[unverifiedSectionName] = new List<string>();
+            if (!TopicsByPath.ContainsKey(unverifiedSectionName))
+                TopicsByPath[unverifiedSectionName] = new List<TopicInfo>();
+            
+            // Group unverified topics by source type, then build folder structure
+            var topicsBySourceType = unverifiedTopics.GroupBy(t => t.SourceType).ToList();
+            
+            foreach (var sourceGroup in topicsBySourceType)
+            {
+                var sourceType = sourceGroup.Key;
+                var sourcePath = $"{unverifiedSectionName}/{sourceType}";
+                
+                // Ensure source type folder exists
+                if (!ChildrenLookup[unverifiedSectionName].Contains(sourceType))
+                {
+                    ChildrenLookup[unverifiedSectionName].Add(sourceType);
+                }
+                if (!ChildrenLookup.ContainsKey(sourcePath))
+                    ChildrenLookup[sourcePath] = new List<string>();
+                if (!TopicsByPath.ContainsKey(sourcePath))
+                    TopicsByPath[sourcePath] = new List<TopicInfo>();
+                
+                // Build folder structure for each topic within this source type
+                foreach (var topic in sourceGroup)
+                {
+                    var topicParts = topic.Topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                    
+                    // If topic has no separators (flat topic name), treat it as a single item
+                    if (topicParts.Length == 1)
+                    {
+                        var topicKey = $"{sourcePath}/{topic.Topic}";
+                        if (!ChildrenLookup[sourcePath].Contains(topic.Topic))
+                        {
+                            ChildrenLookup[sourcePath].Add(topic.Topic);
+                            TopicsByPath[topicKey] = new List<TopicInfo> { topic };
+                        }
+                    }
+                    else
+                    {
+                        // Build nested folder structure based on topic path segments
+                        string currentPath = sourcePath;
+                        
+                        for (int i = 0; i < topicParts.Length; i++)
+                        {
+                            var part = topicParts[i];
+                            var parentPath = currentPath;
+                            currentPath = $"{currentPath}/{part}";
+                            
+                            // Initialize path structures if they don't exist
+                            if (!TopicsByPath.ContainsKey(currentPath))
+                                TopicsByPath[currentPath] = new List<TopicInfo>();
+                            
+                            if (!ChildrenLookup.ContainsKey(parentPath))
+                                ChildrenLookup[parentPath] = new List<string>();
+                            
+                            // Add this part as a child of the parent path
+                            if (!ChildrenLookup[parentPath].Contains(part))
+                                ChildrenLookup[parentPath].Add(part);
+                            
+                            // If this is the final segment, store the actual topic data
+                            if (i == topicParts.Length - 1)
+                            {
+                                TopicsByPath[currentPath].Add(topic);
+                            }
+                        }
+                    }
+                }
             }
         }
 
@@ -235,33 +391,6 @@
         };
     }
 
-    private HashSet<string> BuildUnverifiedPaths(List<TopicInfo> topics)
-    {
-        var unverifiedPaths = new HashSet<string>();
-        
-        foreach (var topic in topics.Where(t => !t.IsVerified))
-        {
-            var pathParts = new[]
-            {
-                topic.Path.Enterprise,
-                topic.Path.Site,
-                topic.Path.Area,
-                topic.Path.WorkCenter,
-                topic.Path.WorkUnit,
-                topic.Path.Property
-            };
-            
-            string currentPath = "";
-            for (int i = 0; i < pathParts.Length; i++)
-            {
-                if (string.IsNullOrEmpty(pathParts[i])) break;
-                currentPath = string.IsNullOrEmpty(currentPath) ? pathParts[i] : $"{currentPath}/{pathParts[i]}";
-                unverifiedPaths.Add(currentPath);
-            }
-        }
-        
-        return unverifiedPaths;
-    }
 
     public async Task ToggleExpansion(TopicTreeNodeModel node)
     {
@@ -348,6 +477,7 @@
     
     private async Task BlinkNodeHierarchy(string fullPath)
     {
+        return;
         // Get all parent paths including the target path
         var paths = GetAllPathLevels(fullPath);
         
@@ -395,11 +525,6 @@
         return paths;
     }
 
-    public void UpdateUnverifiedPaths()
-    {
-        UnverifiedPaths = BuildUnverifiedPaths(Topics ?? new List<TopicInfo>());
-        StateHasChanged();
-    }
 
     private string GetParentPath(string path)
     {
@@ -409,14 +534,25 @@
 
     private async Task HandleTopicSelected(TopicInfo topic)
     {
-        // Build the path the same way as Node.FullPath to ensure consistency
-        var pathParts = GetPathParts(topic.Path);
-        var parts = pathParts.Where(p => !string.IsNullOrEmpty(p)).ToArray();
-        SelectedNodePath = string.Join("/", parts);
+        // Handle selection differently for verified vs unverified topics
+        if (topic.IsVerified)
+        {
+            // For verified topics, use hierarchical path structure
+            var pathParts = GetPathParts(topic.Path);
+            var parts = pathParts.Where(p => !string.IsNullOrEmpty(p)).ToArray();
+            SelectedNodePath = string.Join("/", parts);
+        }
+        else
+        {
+            // For unverified topics, use the topic path under the source type folder
+            const string unverifiedSectionName = "🔍 Unverified Topics";
+            SelectedNodePath = $"{unverifiedSectionName}/{topic.SourceType}/{topic.Topic}";
+        }
         
-        Console.WriteLine($"Selected topic: {topic.Topic}, Path: {SelectedNodePath}");
-        
+        // Force immediate re-render of all tree nodes to update selection highlighting
         StateHasChanged();
+        await InvokeAsync(StateHasChanged); // Second render cycle to ensure highlighting
+        
         await OnTopicSelected.InvokeAsync(topic);
     }
     

@@ -2,6 +2,7 @@
 @using UNSInfra.Services.TopicBrowser
 @using UNSInfra.Models.Hierarchy
 @inject ITopicBrowserService TopicBrowserService
+@implements IDisposable
 
 <PageTitle>Live View</PageTitle>
 
@@ -84,8 +85,15 @@
         TopicBrowserService.TopicDataUpdated += OnTopicDataUpdated;
         TopicBrowserService.TopicAdded += OnTopicAdded;
         
-        // Disable periodic refresh timer - only refresh on manual edits or new topics
-        // RefreshTimer = new System.Threading.Timer(async _ => await ScheduleRefresh(), null, RefreshThrottleMs, RefreshThrottleMs);
+        // Enable periodic refresh timer for real-time data updates
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                await Task.Delay(RefreshThrottleMs);
+                await ScheduleRefresh();
+            }
+        });
     }
 
     private async Task RefreshTopics()
@@ -128,11 +136,24 @@
 
     private void OnTopicDataUpdated(object? sender, TopicDataUpdatedEventArgs e)
     {
-        // Find the topic configuration to get the correct hierarchical path
+        // Find the topic configuration to get the correct path for blinking
         var topicInfo = Topics.FirstOrDefault(t => t.Topic == e.Topic);
         if (topicInfo != null)
         {
-            var fullPath = topicInfo.Path.GetFullPath();
+            string fullPath;
+            
+            // Use different path structure based on verification status
+            if (topicInfo.IsVerified)
+            {
+                // For verified topics, use hierarchical path structure
+                fullPath = topicInfo.Path.GetFullPath();
+            }
+            else
+            {
+                // For unverified topics, use the raw topic path under unverified section
+                const string unverifiedSectionName = "🔍 Unverified Topics";
+                fullPath = $"{unverifiedSectionName}/{topicInfo.Topic}";
+            }
             
             // Start blinking animation in the tree - this is sufficient for showing updates
             if (TopicTreeComponent != null)
@@ -154,7 +175,20 @@
         Topics.Add(e.TopicInfo);
         
         // Trigger blinking for the new topic
-        var fullPath = e.TopicInfo.Path.GetFullPath();
+        string fullPath;
+        
+        // Use different path structure based on verification status
+        if (e.TopicInfo.IsVerified)
+        {
+            // For verified topics, use hierarchical path structure
+            fullPath = e.TopicInfo.Path.GetFullPath();
+        }
+        else
+        {
+            // For unverified topics, use the raw topic path under unverified section
+            const string unverifiedSectionName = "🔍 Unverified Topics";
+            fullPath = $"{unverifiedSectionName}/{e.TopicInfo.Topic}";
+        }
         
         if (TopicTreeComponent != null)
         {
@@ -198,8 +232,9 @@
         SelectedPayload = null; // This triggers the loading spinner
         StateHasChanged(); // Force immediate UI update
         
-        // Force the UI to render the loading state immediately
-        await Task.Yield();
+        // Force multiple render cycles to ensure immediate visual feedback
+        await Task.Delay(1); // Minimal delay to ensure UI updates
+        await InvokeAsync(StateHasChanged); // Second state change
         
         // Fetch data asynchronously without blocking UI
         _ = Task.Run(async () =>
@@ -207,6 +242,7 @@
             try
             {
                 var data = await TopicBrowserService.GetDataForTopicAsync(topic.Topic);
+                
                 await InvokeAsync(() =>
                 {
                     if (SelectedTopic?.Topic == topic.Topic) // Only update if still selected
@@ -216,9 +252,8 @@
                     }
                 });
             }
-            catch (Exception ex)
+            catch (Exception)
             {
-                Console.WriteLine($"Error fetching data for topic {topic.Topic}: {ex.Message}");
                 // On error, still clear the loading state
                 await InvokeAsync(() =>
                 {
@@ -248,11 +283,7 @@
             
             StateHasChanged(); // Update UI immediately to show verification in tree
             
-            // Force the tree to update its unverified paths immediately
-            if (TopicTreeComponent != null)
-            {
-                TopicTreeComponent.UpdateUnverifiedPaths();
-            }
+            // The tree will automatically update when Topics parameter changes
             
             await Task.Yield();
         }

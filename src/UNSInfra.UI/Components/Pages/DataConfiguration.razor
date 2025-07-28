@@ -1,0 +1,411 @@
+@page "/data-configuration"
+@using UNSInfra.Core.Configuration
+@using UNSInfra.Core.Services
+@using UNSInfra.Core.Repositories
+@inject IDataIngestionServiceManager ServiceManager
+@inject IDataIngestionConfigurationRepository ConfigurationRepository
+@inject IJSRuntime JSRuntime
+@rendermode InteractiveServer
+
+<PageTitle>Data Configuration</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">
+                <i class="bi bi-hdd-network"></i> Data Configuration
+            </h1>
+            <p class="text-muted mb-4">
+                Manage your data ingestion services and monitor connection status.
+            </p>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Configuration List -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Active Configurations</h5>
+                    <div class="btn-group">
+                        <button class="btn btn-primary btn-sm" @onclick="ShowAddConfiguration">
+                            <i class="bi bi-plus-circle"></i> Add Configuration
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="RefreshConfigurations">
+                            <i class="bi bi-arrow-repeat"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    @if (configurations == null)
+                    {
+                        <div class="text-center p-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Loading configurations...</p>
+                        </div>
+                    }
+                    else if (!configurations.Any())
+                    {
+                        <div class="text-center p-4">
+                            <i class="bi bi-inbox text-muted" style="font-size: 3rem;"></i>
+                            <h6 class="text-muted mt-3">No configurations yet</h6>
+                            <p class="text-muted">Add your first data ingestion configuration to get started.</p>
+                            <button class="btn btn-primary" @onclick="ShowAddConfiguration">
+                                <i class="bi bi-plus-circle"></i> Add Configuration
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Type</th>
+                                        <th>Status</th>
+                                        <th>Enabled</th>
+                                        <th>Last Modified</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var config in configurations)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <strong>@config.Name</strong>
+                                                @if (!string.IsNullOrEmpty(config.Description))
+                                                {
+                                                    <br />
+                                                    <small class="text-muted">@config.Description</small>
+                                                }
+                                            </td>
+                                            <td>
+                                                <span class="badge bg-info">@config.ServiceType</span>
+                                            </td>
+                                            <td>
+                                                @{
+                                                    var status = GetServiceStatus(config.Id);
+                                                }
+                                                <span class="badge @GetStatusBadgeClass(status?.Status ?? UNSInfra.Core.Configuration.ConnectionStatus.Disabled)">
+                                                    @GetStatusText(status?.Status ?? UNSInfra.Core.Configuration.ConnectionStatus.Disabled)
+                                                </span>
+                                                @if (!string.IsNullOrEmpty(status?.Message))
+                                                {
+                                                    <br />
+                                                    <small class="text-muted">@status.Message</small>
+                                                }
+                                            </td>
+                                            <td>
+                                                <div class="form-check form-switch">
+                                                    <input class="form-check-input" type="checkbox" 
+                                                           checked="@config.Enabled" 
+                                                           @onchange="@(async (e) => await ToggleConfiguration(config, (bool)e.Value!))" />
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <small class="text-muted">
+                                                    @config.ModifiedAt.ToString("yyyy-MM-dd HH:mm")
+                                                </small>
+                                            </td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm">
+                                                    <button class="btn btn-outline-primary" 
+                                                            @onclick="@(() => EditConfiguration(config))">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-success" 
+                                                            @onclick="@(() => TestConnection(config))"
+                                                            disabled="@(!config.Enabled)">
+                                                        <i class="bi bi-play-circle"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-danger" 
+                                                            @onclick="@(() => DeleteConfiguration(config))">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Service Status Panel -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-activity"></i> Service Status
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if (serviceStatuses == null || !serviceStatuses.Any())
+                    {
+                        <p class="text-muted text-center">No active services</p>
+                    }
+                    else
+                    {
+                        @foreach (var status in serviceStatuses.Values)
+                        {
+                            var config = configurations?.FirstOrDefault(c => c.Id == status.ConfigurationId);
+                            <div class="d-flex justify-content-between align-items-center mb-3 p-2 border rounded">
+                                <div>
+                                    <strong>@(config?.Name ?? "Unknown")</strong>
+                                    <br />
+                                    <span class="badge @GetStatusBadgeClass(status.Status)">
+                                        @GetStatusText(status.Status)
+                                    </span>
+                                </div>
+                                <div class="text-end">
+                                    <small class="text-muted d-block">
+                                        @status.DataPointsReceived points
+                                    </small>
+                                    <small class="text-muted d-block">
+                                        @status.MessageRate.ToString("F1") msg/s
+                                    </small>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+
+            <!-- Available Service Types -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-collection"></i> Available Services
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if (availableServiceTypes == null)
+                    {
+                        <div class="text-center">
+                            <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                        </div>
+                    }
+                    else
+                    {
+                        @foreach (var serviceType in availableServiceTypes)
+                        {
+                            <div class="d-flex justify-content-between align-items-center mb-2 p-2 border rounded">
+                                <div>
+                                    <strong>@serviceType.DisplayName</strong>
+                                    <br />
+                                    <small class="text-muted">@serviceType.Description</small>
+                                </div>
+                                <button class="btn btn-sm btn-outline-primary" 
+                                        @onclick="@(() => CreateConfiguration(serviceType))">
+                                    <i class="bi bi-plus"></i>
+                                </button>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Configuration Form Modal -->
+@if (showConfigurationForm)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        @(editingConfiguration?.Id != null ? "Edit" : "Add") Configuration
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="HideConfigurationForm"></button>
+                </div>
+                <div class="modal-body">
+                    @if (editingConfiguration != null)
+                    {
+                        <DynamicConfigurationForm Configuration="editingConfiguration" 
+                                                ServiceDescriptor="selectedServiceDescriptor"
+                                                OnSave="SaveConfiguration"
+                                                OnCancel="HideConfigurationForm" />
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<IDataIngestionConfiguration>? configurations;
+    private Dictionary<string, ServiceStatus>? serviceStatuses;
+    private List<IDataIngestionServiceDescriptor>? availableServiceTypes;
+    private IDataIngestionConfiguration? editingConfiguration;
+    private IDataIngestionServiceDescriptor? selectedServiceDescriptor;
+    private bool showConfigurationForm = false;
+    private Timer? statusRefreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadData();
+        
+        // Set up timer to refresh status every 2 seconds
+        statusRefreshTimer = new Timer(async _ => await InvokeAsync(RefreshStatus), null, TimeSpan.Zero, TimeSpan.FromSeconds(2));
+    }
+
+    private async Task LoadData()
+    {
+        configurations = await ConfigurationRepository.GetAllConfigurationsAsync();
+        serviceStatuses = ServiceManager.GetServicesStatus();
+        availableServiceTypes = ServiceManager.GetAvailableServiceTypes();
+        StateHasChanged();
+    }
+
+    private async Task RefreshConfigurations()
+    {
+        configurations = await ConfigurationRepository.GetAllConfigurationsAsync();
+        StateHasChanged();
+    }
+
+    private async Task RefreshStatus()
+    {
+        serviceStatuses = ServiceManager.GetServicesStatus();
+        StateHasChanged();
+    }
+
+    private ServiceStatus? GetServiceStatus(string configurationId)
+    {
+        return serviceStatuses?.TryGetValue(configurationId, out var status) == true ? status : null;
+    }
+
+    private string GetStatusBadgeClass(UNSInfra.Core.Configuration.ConnectionStatus status)
+    {
+        return status switch
+        {
+            UNSInfra.Core.Configuration.ConnectionStatus.Connected => "bg-success",
+            UNSInfra.Core.Configuration.ConnectionStatus.Connecting => "bg-warning",
+            UNSInfra.Core.Configuration.ConnectionStatus.Disconnected => "bg-secondary",
+            UNSInfra.Core.Configuration.ConnectionStatus.Error => "bg-danger",
+            UNSInfra.Core.Configuration.ConnectionStatus.Stopping => "bg-warning",
+            UNSInfra.Core.Configuration.ConnectionStatus.Disabled => "bg-secondary",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string GetStatusText(UNSInfra.Core.Configuration.ConnectionStatus status)
+    {
+        return status switch
+        {
+            UNSInfra.Core.Configuration.ConnectionStatus.Connected => "Connected",
+            UNSInfra.Core.Configuration.ConnectionStatus.Connecting => "Connecting",
+            UNSInfra.Core.Configuration.ConnectionStatus.Disconnected => "Disconnected",
+            UNSInfra.Core.Configuration.ConnectionStatus.Error => "Error",
+            UNSInfra.Core.Configuration.ConnectionStatus.Stopping => "Stopping",
+            UNSInfra.Core.Configuration.ConnectionStatus.Disabled => "Disabled",
+            _ => "Unknown"
+        };
+    }
+
+    private void ShowAddConfiguration()
+    {
+        editingConfiguration = null;
+        selectedServiceDescriptor = null;
+        showConfigurationForm = true;
+    }
+
+    private void CreateConfiguration(IDataIngestionServiceDescriptor serviceDescriptor)
+    {
+        editingConfiguration = serviceDescriptor.CreateDefaultConfiguration();
+        selectedServiceDescriptor = serviceDescriptor;
+        showConfigurationForm = true;
+    }
+
+    private void EditConfiguration(IDataIngestionConfiguration configuration)
+    {
+        editingConfiguration = configuration.Clone();
+        selectedServiceDescriptor = availableServiceTypes?.FirstOrDefault(s => s.ServiceType == configuration.ServiceType);
+        showConfigurationForm = true;
+    }
+
+    private void HideConfigurationForm()
+    {
+        showConfigurationForm = false;
+        editingConfiguration = null;
+        selectedServiceDescriptor = null;
+    }
+
+    private async Task SaveConfiguration(IDataIngestionConfiguration configuration)
+    {
+        try
+        {
+            await ConfigurationRepository.SaveConfigurationAsync(configuration);
+            await LoadData();
+            HideConfigurationForm();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving configuration: {ex.Message}");
+        }
+    }
+
+    private async Task ToggleConfiguration(IDataIngestionConfiguration configuration, bool enabled)
+    {
+        configuration.Enabled = enabled;
+        configuration.ModifiedAt = DateTime.UtcNow;
+        
+        try
+        {
+            await ConfigurationRepository.SaveConfigurationAsync(configuration);
+            await LoadData();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error updating configuration: {ex.Message}");
+        }
+    }
+
+    private async Task TestConnection(IDataIngestionConfiguration configuration)
+    {
+        try
+        {
+            if (configuration.Enabled)
+            {
+                await ServiceManager.RestartServiceAsync(configuration.Id);
+                await JSRuntime.InvokeVoidAsync("alert", "Connection test initiated. Check the status panel for results.");
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error testing connection: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteConfiguration(IDataIngestionConfiguration configuration)
+    {
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Are you sure you want to delete '{configuration.Name}'?");
+        
+        if (confirmed)
+        {
+            try
+            {
+                await ConfigurationRepository.DeleteConfigurationAsync(configuration.Id);
+                await LoadData();
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error deleting configuration: {ex.Message}");
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        statusRefreshTimer?.Dispose();
+    }
+}
