@@ -1,0 +1,523 @@
+@page "/namespaces"
+@using UNSInfra.Models.Namespace
+@using UNSInfra.Models.Hierarchy
+@using UNSInfra.Repositories
+@inject INamespaceConfigurationRepository NamespaceRepository
+@inject IHierarchyConfigurationRepository HierarchyRepository
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+@rendermode InteractiveServer
+
+<PageTitle>Namespace Management</PageTitle>
+
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-12">
+            <h1 class="mb-4">
+                <i class="bi bi-folder-fill"></i> Namespace Management
+            </h1>
+            <p class="text-muted mb-4">
+                Configure and manage namespaces for organizing your UNS topics.
+            </p>
+        </div>
+    </div>
+
+    <div class="row">
+        <!-- Namespace List -->
+        <div class="col-md-8">
+            <div class="card">
+                <div class="card-header d-flex justify-content-between align-items-center">
+                    <h5 class="mb-0">Configured Namespaces</h5>
+                    <div class="btn-group">
+                        <button class="btn btn-primary btn-sm" @onclick="ShowAddNamespace">
+                            <i class="bi bi-plus-circle"></i> Add Namespace
+                        </button>
+                        <button class="btn btn-outline-secondary btn-sm" @onclick="RefreshNamespaces">
+                            <i class="bi bi-arrow-repeat"></i> Refresh
+                        </button>
+                    </div>
+                </div>
+                <div class="card-body">
+                    @if (namespaces == null)
+                    {
+                        <div class="text-center p-4">
+                            <div class="spinner-border text-primary" role="status">
+                                <span class="visually-hidden">Loading...</span>
+                            </div>
+                            <p class="mt-2 text-muted">Loading namespaces...</p>
+                        </div>
+                    }
+                    else if (!namespaces.Any())
+                    {
+                        <div class="text-center p-4">
+                            <i class="bi bi-folder2-open text-muted" style="font-size: 3rem;"></i>
+                            <h6 class="text-muted mt-3">No namespaces configured</h6>
+                            <p class="text-muted">Create your first namespace to organize your UNS topics.</p>
+                            <button class="btn btn-primary" @onclick="ShowAddNamespace">
+                                <i class="bi bi-plus-circle"></i> Add Namespace
+                            </button>
+                        </div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-hover">
+                                <thead>
+                                    <tr>
+                                        <th>Name</th>
+                                        <th>Type</th>
+                                        <th>Topic Pattern</th>
+                                        <th>Full Path</th>
+                                        <th>Auto-Verify</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var ns in namespaces)
+                                    {
+                                        <tr class="@(ns.IsActive ? "" : "table-secondary")">
+                                            <td>
+                                                <div class="d-flex align-items-center">
+                                                    <i class="bi @ns.Type.GetIconClass() @ns.Type.GetColorClass() me-2"></i>
+                                                    <div>
+                                                        <strong>@ns.Name</strong>
+                                                        @if (!string.IsNullOrEmpty(ns.Description))
+                                                        {
+                                                            <br />
+                                                            <small class="text-muted">@ns.Description</small>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </td>
+                                            <td>
+                                                <span class="badge @GetTypeBadgeClass(ns.Type)">
+                                                    @ns.Type.GetDisplayName()
+                                                </span>
+                                            </td>
+                                            <td>
+                                                <code>@ns.TopicPathPattern</code>
+                                            </td>
+                                            <td>
+                                                <small class="text-muted">@ns.GetFullNamespacePath()</small>
+                                            </td>
+                                            <td>
+                                                @if (ns.AutoVerifyTopics)
+                                                {
+                                                    <span class="badge bg-success">
+                                                        <i class="bi bi-check-circle"></i> Yes
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-secondary">No</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <div class="btn-group btn-group-sm">
+                                                    <button class="btn btn-outline-primary" 
+                                                            @onclick="@(() => EditNamespace(ns))">
+                                                        <i class="bi bi-pencil"></i>
+                                                    </button>
+                                                    <button class="btn @(ns.IsActive ? "btn-outline-warning" : "btn-outline-success")" 
+                                                            @onclick="@(() => ToggleNamespace(ns))">
+                                                        <i class="bi @(ns.IsActive ? "bi-pause-circle" : "bi-play-circle")"></i>
+                                                    </button>
+                                                    <button class="btn btn-outline-danger" 
+                                                            @onclick="@(() => DeleteNamespace(ns))">
+                                                        <i class="bi bi-trash"></i>
+                                                    </button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        <!-- Namespace Types Info -->
+        <div class="col-md-4">
+            <div class="card">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-info-circle"></i> Namespace Types
+                    </h5>
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-graph-up text-primary me-2"></i>
+                            <strong>Functional</strong>
+                        </div>
+                        <small class="text-muted">
+                            Operational data like KPIs, production metrics, and process control parameters.
+                        </small>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-info-circle text-info me-2"></i>
+                            <strong>Informative</strong>
+                        </div>
+                        <small class="text-muted">
+                            Reference data, documentation, and contextual information for operations.
+                        </small>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-gear text-success me-2"></i>
+                            <strong>Definitional</strong>
+                        </div>
+                        <small class="text-muted">
+                            Schema definitions, data models, and structural information.
+                        </small>
+                    </div>
+                    <div class="mb-3">
+                        <div class="d-flex align-items-center mb-2">
+                            <i class="bi bi-lightning text-warning me-2"></i>
+                            <strong>Ad-Hoc</strong>
+                        </div>
+                        <small class="text-muted">
+                            Temporary or experimental data that doesn't fit standard classifications.
+                        </small>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Quick Stats -->
+            <div class="card mt-3">
+                <div class="card-header">
+                    <h5 class="mb-0">
+                        <i class="bi bi-bar-chart"></i> Summary
+                    </h5>
+                </div>
+                <div class="card-body">
+                    @if (namespaces != null)
+                    {
+                        <div class="row text-center">
+                            <div class="col-6">
+                                <h4 class="text-primary">@namespaces.Count(n => n.IsActive)</h4>
+                                <small class="text-muted">Active</small>
+                            </div>
+                            <div class="col-6">
+                                <h4 class="text-success">@namespaces.Count(n => n.AutoVerifyTopics)</h4>
+                                <small class="text-muted">Auto-Verify</small>
+                            </div>
+                        </div>
+                        <hr />
+                        <div class="row text-center">
+                            @foreach (var type in Enum.GetValues<NamespaceType>())
+                            {
+                                var count = namespaces.Count(n => n.Type == type);
+                                <div class="col-3">
+                                    <div class="@type.GetColorClass()">
+                                        <i class="bi @type.GetIconClass()"></i>
+                                    </div>
+                                    <small class="text-muted d-block">@count</small>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Namespace Form Modal -->
+@if (showNamespaceForm)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        @(editingNamespace?.Id != null && !string.IsNullOrEmpty(editingNamespace.Id) ? "Edit" : "Add") Namespace
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="HideNamespaceForm"></button>
+                </div>
+                <div class="modal-body">
+                    @if (editingNamespace != null)
+                    {
+                        <EditForm Model="editingNamespace" OnValidSubmit="SaveNamespace">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary class="text-danger" />
+
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Name *</label>
+                                        <InputText @bind-Value="editingNamespace.Name" class="form-control" placeholder="e.g., KPIs, Production, Quality" />
+                                        <ValidationMessage For="@(() => editingNamespace.Name)" />
+                                    </div>
+                                </div>
+                                <div class="col-md-6">
+                                    <div class="mb-3">
+                                        <label class="form-label">Type *</label>
+                                        <InputSelect @bind-Value="editingNamespace.Type" class="form-select">
+                                            @foreach (var type in Enum.GetValues<NamespaceType>())
+                                            {
+                                                <option value="@type">@type.GetDisplayName()</option>
+                                            }
+                                        </InputSelect>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Description</label>
+                                <InputTextArea @bind-Value="editingNamespace.Description" class="form-control" rows="2" 
+                                               placeholder="Brief description for MCP and documentation purposes" />
+                            </div>
+
+                            <div class="mb-3">
+                                <label class="form-label">Topic Path Pattern *</label>
+                                <InputText @bind-Value="editingNamespace.TopicPathPattern" class="form-control" 
+                                           placeholder="e.g., Enterprise1/KPI or Production/Line1" />
+                                <div class="form-text">
+                                    Topics starting with this pattern will be assigned to this namespace.
+                                </div>
+                                <ValidationMessage For="@(() => editingNamespace.TopicPathPattern)" />
+                            </div>
+
+                            <div class="row">
+                                @foreach (var level in hierarchyLevels)
+                                {
+                                    <div class="col-md-4 mb-3">
+                                        <label class="form-label">@level</label>
+                                        <input type="text" 
+                                               value="@GetHierarchyValue(level)" 
+                                               @onchange="@((ChangeEventArgs e) => SetHierarchyValue(level, e.Value?.ToString() ?? ""))"
+                                               class="form-control" 
+                                               placeholder="@($"{level} value")" />
+                                    </div>
+                                }
+                            </div>
+
+                            <div class="mb-3">
+                                <div class="form-check">
+                                    <InputCheckbox @bind-Value="editingNamespace.AutoVerifyTopics" class="form-check-input" />
+                                    <label class="form-check-label">
+                                        Auto-verify topics in this namespace
+                                    </label>
+                                    <div class="form-text">
+                                        When enabled, new topics matching this namespace pattern will be automatically verified.
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex justify-content-end">
+                                <button type="button" class="btn btn-secondary me-2" @onclick="HideNamespaceForm">
+                                    Cancel
+                                </button>
+                                <button type="submit" class="btn btn-primary">
+                                    <i class="bi bi-check-circle"></i> Save Namespace
+                                </button>
+                            </div>
+                        </EditForm>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<NamespaceConfiguration>? namespaces;
+    private NamespaceConfiguration? editingNamespace;
+    private bool showNamespaceForm = false;
+    private List<string> hierarchyLevels = new() { "Enterprise", "Site", "Area", "WorkCenter", "WorkUnit" };
+    private bool _disposed = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadNamespaces();
+        await LoadHierarchyLevels();
+    }
+
+    private async Task LoadNamespaces()
+    {
+        if (_disposed) return;
+        
+        var result = await NamespaceRepository.GetAllNamespaceConfigurationsAsync(activeOnly: false);
+        if (_disposed) return;
+        
+        namespaces = result.ToList();
+        if (!_disposed)
+        {
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadHierarchyLevels()
+    {
+        try
+        {
+            var hierarchyConfigs = await HierarchyRepository.GetAllConfigurationsAsync();
+            var activeConfig = hierarchyConfigs.FirstOrDefault(h => h.IsActive);
+            if (activeConfig != null)
+            {
+                hierarchyLevels = activeConfig.Nodes
+                    .OrderBy(n => n.Order)
+                    .Select(n => n.Name)
+                    .ToList();
+            }
+        }
+        catch (Exception)
+        {
+            // Fall back to default levels if hierarchy config is not available
+            hierarchyLevels = new() { "Enterprise", "Site", "Area", "WorkCenter", "WorkUnit" };
+        }
+    }
+
+    private async Task RefreshNamespaces()
+    {
+        await LoadNamespaces();
+    }
+
+    private void ShowAddNamespace()
+    {
+        editingNamespace = new NamespaceConfiguration
+        {
+            Id = Guid.NewGuid().ToString(),
+            CreatedAt = DateTime.UtcNow,
+            ModifiedAt = DateTime.UtcNow,
+            HierarchicalPath = new HierarchicalPath { Values = new Dictionary<string, string>() },
+            Metadata = new Dictionary<string, object>()
+        };
+        showNamespaceForm = true;
+    }
+
+    private void EditNamespace(NamespaceConfiguration ns)
+    {
+        editingNamespace = new NamespaceConfiguration
+        {
+            Id = ns.Id,
+            Name = ns.Name,
+            Type = ns.Type,
+            Description = ns.Description,
+            HierarchicalPath = new HierarchicalPath { Values = new Dictionary<string, string>(ns.HierarchicalPath?.Values ?? new Dictionary<string, string>()) },
+            TopicPathPattern = ns.TopicPathPattern,
+            AutoVerifyTopics = ns.AutoVerifyTopics,
+            IsActive = ns.IsActive,
+            CreatedAt = ns.CreatedAt,
+            ModifiedAt = DateTime.UtcNow,
+            CreatedBy = ns.CreatedBy,
+            Metadata = new Dictionary<string, object>(ns.Metadata ?? new Dictionary<string, object>())
+        };
+        showNamespaceForm = true;
+    }
+
+    private void HideNamespaceForm()
+    {
+        showNamespaceForm = false;
+        editingNamespace = null;
+    }
+
+    private async Task SaveNamespace()
+    {
+        if (editingNamespace == null || _disposed) return;
+
+        try
+        {
+            editingNamespace.ModifiedAt = DateTime.UtcNow;
+            await NamespaceRepository.SaveNamespaceConfigurationAsync(editingNamespace);
+            if (!_disposed)
+            {
+                await LoadNamespaces();
+                HideNamespaceForm();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error saving namespace: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task ToggleNamespace(NamespaceConfiguration ns)
+    {
+        if (_disposed) return;
+        
+        try
+        {
+            ns.IsActive = !ns.IsActive;
+            ns.ModifiedAt = DateTime.UtcNow;
+            await NamespaceRepository.SaveNamespaceConfigurationAsync(ns);
+            if (!_disposed)
+            {
+                await LoadNamespaces();
+            }
+        }
+        catch (Exception ex)
+        {
+            if (!_disposed)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error updating namespace: {ex.Message}");
+            }
+        }
+    }
+
+    private async Task DeleteNamespace(NamespaceConfiguration ns)
+    {
+        if (_disposed) return;
+        
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+            $"Are you sure you want to delete namespace '{ns.Name}'?");
+        
+        if (confirmed && !_disposed)
+        {
+            try
+            {
+                await NamespaceRepository.DeleteNamespaceConfigurationAsync(ns.Id);
+                if (!_disposed)
+                {
+                    await LoadNamespaces();
+                }
+            }
+            catch (Exception ex)
+            {
+                if (!_disposed)
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", $"Error deleting namespace: {ex.Message}");
+                }
+            }
+        }
+    }
+
+    private string GetTypeBadgeClass(NamespaceType type)
+    {
+        return type switch
+        {
+            NamespaceType.Functional => "bg-primary",
+            NamespaceType.Informative => "bg-info",
+            NamespaceType.Definitional => "bg-warning",
+            NamespaceType.AdHoc => "bg-secondary",
+            _ => "bg-secondary"
+        };
+    }
+
+    private string GetHierarchyValue(string level)
+    {
+        if (editingNamespace?.HierarchicalPath?.Values == null)
+            return "";
+        return editingNamespace.HierarchicalPath.GetValue(level) ?? "";
+    }
+
+    private void SetHierarchyValue(string level, string value)
+    {
+        if (editingNamespace?.HierarchicalPath?.Values != null)
+        {
+            editingNamespace.HierarchicalPath.SetValue(level, value);
+        }
+    }
+
+    public void Dispose()
+    {
+        _disposed = true;
+    }
+}
