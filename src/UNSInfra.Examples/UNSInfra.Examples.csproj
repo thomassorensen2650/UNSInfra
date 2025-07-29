@@ -25,7 +25,6 @@
     <ProjectReference Include="..\UNSInfra.Core\UNSInfra.Core.csproj" />
     <ProjectReference Include="..\UNSInfra.Storage.InMemory\UNSInfra.Storage.InMemory.csproj" />
     <ProjectReference Include="..\UNSInfra.Services.Mock\UNSInfra.Services.Mock.csproj" />
-    <ProjectReference Include="..\UNSInfra.Services.Processing\UNSInfra.Services.Processing.csproj" />
     <ProjectReference Include="..\UNSInfra.Services.VirtualFactory\UNSInfra.Services.VirtualFactory.csproj" />
   </ItemGroup>
 

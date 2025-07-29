@@ -3,7 +3,6 @@
     using UNSInfra.Models.Schema;
     using UNSInfra.Repositories;
     using UNSInfra.Services.DataIngestion.Mock;
-    using UNSInfra.Services.Processing;
     using UNSInfra.Services.TopicDiscovery;
     using UNSInfra.Storage.InMemory;
     using UNSInfra.Validation;
@@ -20,16 +19,9 @@
         var topicDiscovery = new TopicDiscoveryService(new InMemoryTopicConfigurationRepository());
         
         
-        // Create data processing service
-        var processor = new DataProcessingService(
-            realtimeStorage, historicalStorage, validator, schemaRepository);
-
         // Setup data services
         var mqttService = new MockMqttDataService(topicDiscovery);
         var kafkaService = new MockKafkaDataService(topicDiscovery);
-        
-        processor.AddDataService(mqttService);
-        processor.AddDataService(kafkaService);
 
         // Define ISA-S95 hierarchy
         var robotPath = HierarchicalPath.FromPath("enterprise/factoryA/assemblyLine1/robot123/temperature");
@@ -57,8 +49,9 @@
         
         await schemaRepository.SaveSchemaAsync(tempSchema);
 
-        // Start processing
-        await processor.StartAsync();
+        // Start services
+        await mqttService.StartAsync();
+        await kafkaService.StartAsync();
 
         // Simulate data reception
         var tempData = JsonSerializer.SerializeToElement(new 
@@ -87,6 +80,7 @@
         
         Console.WriteLine($"Historical data points: {history.Count()}");
 
-        await processor.StopAsync();
+        await mqttService.StopAsync();
+        await kafkaService.StopAsync();
     }
 }

@@ -8,7 +8,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\UNSInfra.Core\UNSInfra.Core.csproj" />
-    <ProjectReference Include="..\UNSInfra.Services.Processing\UNSInfra.Services.Processing.csproj" />
     <ProjectReference Include="..\UNSInfra.Services.V1\UNSInfra.Services.V1.csproj" />
     <ProjectReference Include="..\UNSInfra.Services.SocketIO\UNSInfra.Services.SocketIO.csproj" />
     <ProjectReference Include="..\UNSInfra.Storage.InMemory\UNSInfra.Storage.InMemory.csproj" />
