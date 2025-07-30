@@ -1,5 +1,7 @@
 @using UNSInfra.Services.TopicBrowser
 @using UNSInfra.Models.Hierarchy
+@using UNSInfra.Services
+@inject IHierarchyService HierarchyService
 
 <style>
 .topic-tree {
@@ -32,7 +34,7 @@
     private readonly Dictionary<string, DateTime> _expansionCooldowns = new(); // Prevent rapid successive clicks
     private int _lastTopicsCount = 0; // Track if we're just adding new topics
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
         // Check if we're just adding new topics or if there are other changes
         var currentHash = GetTopicsHashCode();
@@ -47,7 +49,7 @@
             if (isJustAddingTopics)
             {
                 // Incremental update - just add new topics without full rebuild
-                AddNewTopicsIncrementally();
+                await AddNewTopicsIncrementally();
             }
             else
             {
@@ -55,7 +57,7 @@
                 var expansionState = SaveExpansionState();
                 var selectedPath = SelectedNodePath;
                 
-                BuildTreeStructure(Topics ?? new List<TopicInfo>());
+                await BuildTreeStructure(Topics ?? new List<TopicInfo>());
                 
                 RestoreExpansionState(expansionState);
                 SelectedNodePath = selectedPath;
@@ -76,11 +78,13 @@
         {
             hash = hash * 31 + topic.Topic.GetHashCode();
             hash = hash * 31 + topic.Path.GetFullPath().GetHashCode();
+            hash = hash * 31 + topic.IsVerified.GetHashCode();
+            hash = hash * 31 + topic.SourceType.GetHashCode();
         }
         return hash;
     }
     
-    private void AddNewTopicsIncrementally()
+    private async Task AddNewTopicsIncrementally()
     {
         // Get the new topics (assuming they're at the end of the list)
         var newTopics = Topics.Skip(_lastTopicsCount).ToList();
@@ -90,9 +94,10 @@
         // Add new verified topics using hierarchical structure
         foreach (var topic in newVerifiedTopics)
         {
-            var pathParts = GetPathParts(topic.Path);
+            var pathParts = await GetPathPartsAsync(topic.Path);
             string currentPath = "";
             
+            // Build the hierarchical path structure and store topic data at the final level
             for (int i = 0; i < pathParts.Length; i++)
             {
                 if (string.IsNullOrEmpty(pathParts[i])) break;
@@ -100,19 +105,19 @@
                 var parentPath = currentPath;
                 currentPath = string.IsNullOrEmpty(currentPath) ? pathParts[i] : $"{currentPath}/{pathParts[i]}";
                 
-                // Add to TopicsByPath
                 if (!TopicsByPath.ContainsKey(currentPath))
                     TopicsByPath[currentPath] = new List<TopicInfo>();
                 
-                // Add to ChildrenLookup (maintain order by adding new items at the end)
+                // Build children lookup for fast expansion (maintain order)
                 if (!ChildrenLookup.ContainsKey(parentPath))
                     ChildrenLookup[parentPath] = new List<string>();
                 if (!ChildrenLookup[parentPath].Contains(pathParts[i]))
                     ChildrenLookup[parentPath].Add(pathParts[i]);
-                
-                if (i == pathParts.Length - 1) // Leaf node
-                    TopicsByPath[currentPath].Add(topic);
             }
+            
+            // Store the topic data directly at the hierarchical path level
+            // The property name (like "value") is already part of the topic name
+            TopicsByPath[currentPath].Add(topic);
         }
         
         // Add new unverified topics using folder structure grouped by source type
@@ -227,7 +232,7 @@
         }
     }
 
-    private void BuildTreeStructure(List<TopicInfo> topics)
+    private async Task BuildTreeStructure(List<TopicInfo> topics)
     {
         NodeLookup.Clear();
         TopicsByPath.Clear();
@@ -241,9 +246,10 @@
         // Process verified topics using hierarchical structure
         foreach (var topic in verifiedTopics)
         {
-            var pathParts = GetPathParts(topic.Path);
+            var pathParts = await GetPathPartsAsync(topic.Path);
             string currentPath = "";
             
+            // Build the hierarchical path structure and store topic data at the final level
             for (int i = 0; i < pathParts.Length; i++)
             {
                 if (string.IsNullOrEmpty(pathParts[i])) break;
@@ -259,10 +265,11 @@
                     ChildrenLookup[parentPath] = new List<string>();
                 if (!ChildrenLookup[parentPath].Contains(pathParts[i]))
                     ChildrenLookup[parentPath].Add(pathParts[i]);
-                
-                if (i == pathParts.Length - 1) // Leaf node
-                    TopicsByPath[currentPath].Add(topic);
             }
+            
+            // Store the topic data directly at the hierarchical path level
+            // The property name (like "value") is already part of the topic name
+            TopicsByPath[currentPath].Add(topic);
         }
 
         // Process unverified topics using folder structure grouped by source type
@@ -378,17 +385,26 @@
     }
 
 
-    private string[] GetPathParts(HierarchicalPath path)
+    private async Task<string[]> GetPathPartsAsync(HierarchicalPath path)
     {
-        return new[]
+        var hierarchyLevels = await HierarchyService.GetHierarchyLevelsAsync();
+        var parts = new List<string>();
+        
+        foreach (var level in hierarchyLevels)
         {
-            path.Enterprise,
-            path.Site,
-            path.Area,
-            path.WorkCenter,
-            path.WorkUnit,
-            path.Property
-        };
+            var value = path.GetValue(level);
+            parts.Add(value);
+        }
+        
+        return parts.ToArray();
+    }
+    
+    private string ExtractPropertyName(string topicName)
+    {
+        // Extract the property name from the topic
+        // For topics like "virtualfactory/update/Enterprise/Dallas/BU/value", extract "value"
+        var parts = topicName.Split('/');
+        return parts.Length > 0 ? parts[parts.Length - 1] : "";
     }
 
 
@@ -534,26 +550,34 @@
 
     private async Task HandleTopicSelected(TopicInfo topic)
     {
-        // Handle selection differently for verified vs unverified topics
-        if (topic.IsVerified)
+        try
         {
-            // For verified topics, use hierarchical path structure
-            var pathParts = GetPathParts(topic.Path);
-            var parts = pathParts.Where(p => !string.IsNullOrEmpty(p)).ToArray();
-            SelectedNodePath = string.Join("/", parts);
+            // Handle selection differently for verified vs unverified topics
+            if (topic.IsVerified)
+            {
+                // For verified topics, use hierarchical path structure
+                var pathParts = await GetPathPartsAsync(topic.Path);
+                var parts = pathParts.Where(p => !string.IsNullOrEmpty(p)).ToArray();
+                SelectedNodePath = string.Join("/", parts);
+            }
+            else
+            {
+                // For unverified topics, use the topic path under the source type folder
+                const string unverifiedSectionName = "🔍 Unverified Topics";
+                SelectedNodePath = $"{unverifiedSectionName}/{topic.SourceType}/{topic.Topic}";
+            }
+            
+            // Force immediate re-render of all tree nodes to update selection highlighting
+            StateHasChanged();
+            await InvokeAsync(StateHasChanged); // Second render cycle to ensure highlighting
+            
+            await OnTopicSelected.InvokeAsync(topic);
         }
-        else
+        catch (Exception ex)
         {
-            // For unverified topics, use the topic path under the source type folder
-            const string unverifiedSectionName = "🔍 Unverified Topics";
-            SelectedNodePath = $"{unverifiedSectionName}/{topic.SourceType}/{topic.Topic}";
+            // Log error but don't crash the UI
+            Console.WriteLine($"Error in HandleTopicSelected: {ex.Message}");
         }
-        
-        // Force immediate re-render of all tree nodes to update selection highlighting
-        StateHasChanged();
-        await InvokeAsync(StateHasChanged); // Second render cycle to ensure highlighting
-        
-        await OnTopicSelected.InvokeAsync(topic);
     }
     
     private HashSet<string> SaveExpansionState()

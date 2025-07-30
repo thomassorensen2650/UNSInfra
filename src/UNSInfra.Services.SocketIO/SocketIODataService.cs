@@ -1,8 +1,10 @@
 using System.Text.Json;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using SocketIOClient;
 using UNSInfra.Models.Data;
+using UNSInfra.Models.Hierarchy;
 using UNSInfra.Services.DataIngestion.Mock;
 using UNSInfra.Services.TopicDiscovery;
 using UNSInfra.Services.SocketIO.Configuration;
@@ -16,10 +18,12 @@ namespace UNSInfra.Services.SocketIO;
 public class SocketIODataService : IDataIngestionService
 {
     private readonly ILogger<SocketIODataService> _logger;
-    private readonly ITopicDiscoveryService _topicDiscoveryService;
+    private readonly ITopicDiscoveryService? _topicDiscoveryService;
+    private readonly IServiceProvider? _serviceProvider;
     private readonly SocketIOConfiguration _config;
     private SocketIOClient.SocketIO? _socketClient;
     private bool _isRunning;
+    private bool _disposed;
 
     /// <summary>
     /// Event raised when new data is received from the Socket.IO connection.
@@ -39,6 +43,22 @@ public class SocketIODataService : IDataIngestionService
     {
         _logger = logger;
         _topicDiscoveryService = topicDiscoveryService;
+        _config = config.Value;
+    }
+
+    /// <summary>
+    /// Initializes a new instance of the SocketIODataService with service provider (for scoped dependencies).
+    /// </summary>
+    /// <param name="logger">Logger for this service</param>
+    /// <param name="serviceProvider">Service provider for resolving scoped dependencies</param>
+    /// <param name="config">Configuration options for the service</param>
+    public SocketIODataService(
+        ILogger<SocketIODataService> logger,
+        IServiceProvider serviceProvider,
+        IOptions<SocketIOConfiguration> config)
+    {
+        _logger = logger;
+        _serviceProvider = serviceProvider;
         _config = config.Value;
     }
 
@@ -110,6 +130,9 @@ public class SocketIODataService : IDataIngestionService
         {
             _logger.LogInformation("Stopping SocketIO data service");
             
+            // Set running to false first to prevent new operations
+            _isRunning = false;
+            
             if (_socketClient?.Connected == true)
             {
                 await _socketClient.DisconnectAsync();
@@ -118,7 +141,6 @@ public class SocketIODataService : IDataIngestionService
             _socketClient?.Dispose();
             _socketClient = null;
             
-            _isRunning = false;
             _logger.LogInformation("SocketIO data service stopped");
         }
         catch (Exception ex)
@@ -336,10 +358,41 @@ public class SocketIODataService : IDataIngestionService
     /// </summary>
     private async Task CreateDataPoint(string topic, JsonElement value)
     {
+        // Check if service is disposed or stopped before processing
+        if (_disposed || !_isRunning)
+        {
+            _logger.LogDebug("Skipping data point creation for topic {Topic} - service is disposed or stopped", topic);
+            return;
+        }
+
         try
         {
             // Get or create topic configuration
-            var topicConfig = await _topicDiscoveryService.ResolveTopicAsync(topic, "SocketIO");
+            TopicConfiguration? topicConfig;
+            if (_topicDiscoveryService != null)
+            {
+                topicConfig = await _topicDiscoveryService.ResolveTopicAsync(topic, "SocketIO");
+            }
+            else if (_serviceProvider != null)
+            {
+                // Add additional checks for disposed service provider
+                try
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var scopedTopicDiscoveryService = scope.ServiceProvider.GetRequiredService<ITopicDiscoveryService>();
+                    topicConfig = await scopedTopicDiscoveryService.ResolveTopicAsync(topic, "SocketIO");
+                }
+                catch (ObjectDisposedException)
+                {
+                    _logger.LogWarning("Service provider disposed while processing topic {Topic} - skipping", topic);
+                    return;
+                }
+            }
+            else
+            {
+                _logger.LogError("No topic discovery service available");
+                return;
+            }
             if (topicConfig == null)
             {
                 _logger.LogWarning("Could not resolve topic configuration for: {Topic}", topic);
@@ -358,7 +411,7 @@ public class SocketIODataService : IDataIngestionService
             };
 
             // Unescape Unicode escape sequences in string values (like \u0022 for quotes)
-            if (dataValue is string stringValue && stringValue.Contains("\\u"))
+           /* if (dataValue is string stringValue && stringValue.Contains("\\u"))
             {
                 try
                 {
@@ -369,7 +422,7 @@ public class SocketIODataService : IDataIngestionService
                     _logger.LogWarning(unescapeEx, "Failed to unescape Unicode characters in value: {Value}", stringValue);
                     // Keep original value if unescaping fails
                 }
-            }
+            }*/
 
             // Create the data point
             var dataPoint = new DataPoint
@@ -407,6 +460,18 @@ public class SocketIODataService : IDataIngestionService
     /// </summary>
     public void Dispose()
     {
-        StopAsync().Wait(5000); // Wait up to 5 seconds for graceful shutdown
+        if (_disposed)
+            return;
+            
+        _disposed = true;
+        
+        try
+        {
+            StopAsync().Wait(5000); // Wait up to 5 seconds for graceful shutdown
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error during SocketIO service disposal");
+        }
     }
 }

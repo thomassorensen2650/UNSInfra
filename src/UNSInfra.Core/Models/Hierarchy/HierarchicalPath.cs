@@ -1,63 +1,111 @@
 namespace UNSInfra.Models.Hierarchy;
 
 /// <summary>
-/// Represents an ISA-S95 hierarchical path structure for manufacturing systems.
-/// Follows the Enterprise/Site/Area/WorkCenter/WorkUnit/Property hierarchy.
+/// Represents a dynamic hierarchical path structure for manufacturing systems.
+/// Can follow any configured hierarchy structure.
 /// </summary>
 public class HierarchicalPath
 {
     /// <summary>
-    /// Gets or sets the enterprise level identifier (top level of the hierarchy).
+    /// Gets or sets the path values for the hierarchy.
+    /// Key is the hierarchy level name, value is the path component.
     /// </summary>
-    public string Enterprise { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the site level identifier (physical location within enterprise).
-    /// </summary>
-    public string Site { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the area level identifier (production area within site).
-    /// </summary>
-    public string Area { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the work center identifier (group of equipment performing similar functions).
-    /// </summary>
-    public string WorkCenter { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the work unit identifier (individual piece of equipment or process).
-    /// </summary>
-    public string WorkUnit { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Gets or sets the property identifier (specific data point or measurement).
-    /// </summary>
-    public string Property { get; set; } = string.Empty;
+    public Dictionary<string, string> Values { get; set; } = new();
 
     /// <summary>
     /// Constructs the full hierarchical path as a forward-slash separated string.
     /// </summary>
-    /// <returns>The complete path in format: Enterprise/Site/Area/WorkCenter/WorkUnit/Property</returns>
-    public string GetFullPath() => $"{Enterprise}/{Site}/{Area}/{WorkCenter}/{WorkUnit}/{Property}";
-    
+    /// <returns>The complete path in hierarchical order</returns>
+    public string GetFullPath()
+    {
+        return string.Join("/", Values.Values.Where(v => !string.IsNullOrEmpty(v)));
+    }
+
     /// <summary>
-    /// Creates a HierarchicalPath instance from a forward-slash separated path string.
+    /// Creates a HierarchicalPath instance from a path string.
+    /// Uses default ISA-S95 hierarchy levels for parsing.
     /// </summary>
-    /// <param name="path">The path string to parse (e.g., "enterprise/factoryA/line1/robot1/temperature")</param>
-    /// <returns>A new HierarchicalPath instance with populated hierarchy levels</returns>
+    /// <param name="path">The path string to parse</param>
+    /// <returns>A new HierarchicalPath instance</returns>
     public static HierarchicalPath FromPath(string path)
     {
-        var parts = path.Split('/');
-        return new HierarchicalPath
+        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var hierarchicalPath = new HierarchicalPath();
+        
+        // Default ISA-S95 hierarchy levels
+        var levelNames = new[] { "Enterprise", "Site", "Area", "WorkCenter", "WorkUnit", "Property" };
+        
+        for (int i = 0; i < Math.Min(parts.Length, levelNames.Length); i++)
         {
-            Enterprise = parts.Length > 0 ? parts[0] : "",
-            Site = parts.Length > 1 ? parts[1] : "",
-            Area = parts.Length > 2 ? parts[2] : "",
-            WorkCenter = parts.Length > 3 ? parts[3] : "",
-            WorkUnit = parts.Length > 4 ? parts[4] : "",
-            Property = parts.Length > 5 ? parts[5] : ""
-        };
+            hierarchicalPath.Values[levelNames[i]] = parts[i];
+        }
+
+        return hierarchicalPath;
+    }
+
+    /// <summary>
+    /// Gets the value for a specific hierarchy level.
+    /// </summary>
+    /// <param name="levelName">The hierarchy level name</param>
+    /// <returns>The value for the level, or empty string if not found</returns>
+    public string GetValue(string levelName)
+    {
+        return Values.TryGetValue(levelName, out var value) ? value : string.Empty;
+    }
+
+    /// <summary>
+    /// Sets the value for a specific hierarchy level.
+    /// </summary>
+    /// <param name="levelName">The hierarchy level name</param>
+    /// <param name="value">The value to set</param>
+    public void SetValue(string levelName, string value)
+    {
+        Values[levelName] = value;
+    }
+
+    /// <summary>
+    /// Gets all non-empty hierarchy levels and their values.
+    /// </summary>
+    /// <returns>Dictionary of level names to values</returns>
+    public Dictionary<string, string> GetAllValues()
+    {
+        return Values.Where(kvp => !string.IsNullOrEmpty(kvp.Value)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+    }
+
+    // Legacy property accessors for existing code that hasn't been updated yet
+    public string Enterprise
+    {
+        get => GetValue("Enterprise");
+        set => SetValue("Enterprise", value);
+    }
+
+    public string Site
+    {
+        get => GetValue("Site");
+        set => SetValue("Site", value);
+    }
+
+    public string Area
+    {
+        get => GetValue("Area");
+        set => SetValue("Area", value);
+    }
+
+    public string WorkCenter
+    {
+        get => GetValue("WorkCenter");
+        set => SetValue("WorkCenter", value);
+    }
+
+    public string WorkUnit
+    {
+        get => GetValue("WorkUnit");
+        set => SetValue("WorkUnit", value);
+    }
+
+    public string Property
+    {
+        get => GetValue("Property");
+        set => SetValue("Property", value);
     }
 }

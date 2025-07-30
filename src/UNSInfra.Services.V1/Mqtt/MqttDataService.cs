@@ -1,3 +1,4 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using MQTTnet;
@@ -23,8 +24,9 @@ public class MqttDataService : IMqttDataService, IDisposable
 {
     private readonly ILogger<MqttDataService> _logger;
     private readonly MqttConfiguration _config;
-    private readonly ITopicDiscoveryService _topicDiscoveryService;
-    private readonly SparkplugBDecoder _sparkplugBDecoder;
+    private readonly ITopicDiscoveryService? _topicDiscoveryService;
+    private readonly SparkplugBDecoder? _sparkplugBDecoder;
+    private readonly IServiceProvider? _serviceProvider;
     private readonly Dictionary<string, HierarchicalPath> _subscriptions = new();
     private readonly CancellationTokenSource _cancellationTokenSource = new();
 
@@ -51,10 +53,27 @@ public class MqttDataService : IMqttDataService, IDisposable
         ILogger<MqttDataService> logger)
     {
         _config = config.Value ?? throw new ArgumentNullException(nameof(config));
-        _topicDiscoveryService = topicDiscoveryService ?? throw new ArgumentNullException(nameof(topicDiscoveryService));
-        _sparkplugBDecoder = sparkplugBDecoder ?? throw new ArgumentNullException(nameof(sparkplugBDecoder));
+        _topicDiscoveryService = topicDiscoveryService;
+        _sparkplugBDecoder = sparkplugBDecoder;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
+
+    /// <summary>
+    /// Initializes a new instance of the MqttDataService with service provider (for scoped dependencies).
+    /// </summary>
+    /// <param name="config">MQTT configuration options</param>
+    /// <param name="serviceProvider">Service provider for resolving scoped dependencies</param>
+    /// <param name="logger">Logger instance</param>
+    public MqttDataService(
+        IOptions<MqttConfiguration> config,
+        IServiceProvider serviceProvider,
+        ILogger<MqttDataService> logger)
+    {
+        _config = config.Value ?? throw new ArgumentNullException(nameof(config));
+        _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
+        _logger = logger ?? throw new ArgumentNullException(nameof(logger));
+    }
+
 
     /// <summary>
     /// Starts the MQTT service and establishes connection to the broker.
@@ -367,12 +386,34 @@ public class MqttDataService : IMqttDataService, IDisposable
             // Try to decode as Sparkplug B first
             if (IsSparkplugBTopic(topic))
             {
-                var sparkplugDataPoints = _sparkplugBDecoder.DecodeMessage(topic, payload);
-                foreach (var dataPoint in sparkplugDataPoints)
+                SparkplugBDecoder? decoder = null;
+                if (_sparkplugBDecoder != null)
                 {
-                    DataReceived?.Invoke(this, dataPoint);
+                    decoder = _sparkplugBDecoder;
                 }
-                return;
+                else if (_serviceProvider != null && !_disposed)
+                {
+                    try
+                    {
+                        using var scope = _serviceProvider.CreateScope();
+                        decoder = scope.ServiceProvider.GetService<SparkplugBDecoder>();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        _logger.LogDebug("Service provider disposed while processing Sparkplug message for topic {Topic}", topic);
+                        return;
+                    }
+                }
+                
+                if (decoder != null)
+                {
+                    var sparkplugDataPoints = decoder.DecodeMessage(topic, payload);
+                    foreach (var dataPoint in sparkplugDataPoints)
+                    {
+                        DataReceived?.Invoke(this, dataPoint);
+                    }
+                    return;
+                }
             }
 
             // Fall back to regular MQTT message handling
@@ -402,7 +443,25 @@ public class MqttDataService : IMqttDataService, IDisposable
         {
             Console.WriteLine($"[MQTT] No explicit subscription, using topic discovery for: '{topic}'");
             // Try to resolve using topic discovery
-            var configuration = await _topicDiscoveryService.ResolveTopicAsync(topic, "MQTT");
+            TopicConfiguration? configuration = null;
+            if (_topicDiscoveryService != null)
+            {
+                configuration = await _topicDiscoveryService.ResolveTopicAsync(topic, "MQTT");
+            }
+            else if (_serviceProvider != null && !_disposed)
+            {
+                try
+                {
+                    using var scope = _serviceProvider.CreateScope();
+                    var scopedTopicDiscoveryService = scope.ServiceProvider.GetRequiredService<ITopicDiscoveryService>();
+                    configuration = await scopedTopicDiscoveryService.ResolveTopicAsync(topic, "MQTT");
+                }
+                catch (ObjectDisposedException)
+                {
+                    _logger.LogDebug("Service provider disposed while processing MQTT message for topic {Topic}", topic);
+                    return;
+                }
+            }
             if (configuration != null)
             {
                 path = configuration.Path;
@@ -417,9 +476,34 @@ public class MqttDataService : IMqttDataService, IDisposable
             {
                 Console.WriteLine($"[MQTT] Topic discovery failed, creating unverified configuration for: '{topic}'");
                 // Create unverified configuration for completely unknown topic
-                configuration = await _topicDiscoveryService.CreateUnverifiedTopicAsync(topic, "MQTT");
-                path = configuration.Path;
-                _logger.LogInformation("Created unverified configuration for new topic '{Topic}'", topic);
+                if (_topicDiscoveryService != null)
+                {
+                    configuration = await _topicDiscoveryService.CreateUnverifiedTopicAsync(topic, "MQTT");
+                }
+                else if (_serviceProvider != null && !_disposed)
+                {
+                    try
+                    {
+                        using var scope = _serviceProvider.CreateScope();
+                        var scopedTopicDiscoveryService = scope.ServiceProvider.GetRequiredService<ITopicDiscoveryService>();
+                        configuration = await scopedTopicDiscoveryService.CreateUnverifiedTopicAsync(topic, "MQTT");
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        _logger.LogDebug("Service provider disposed while creating unverified topic for {Topic}", topic);
+                        return;
+                    }
+                }
+                if (configuration != null)
+                {
+                    path = configuration.Path;
+                    _logger.LogInformation("Created unverified configuration for new topic '{Topic}'", topic);
+                }
+                else
+                {
+                    _logger.LogError("Could not create topic configuration for '{Topic}'", topic);
+                    return;
+                }
             }
         }
 

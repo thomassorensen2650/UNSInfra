@@ -1,0 +1,333 @@
+@using UNSInfra.Models.Hierarchy
+@using UNSInfra.Repositories
+@inject IHierarchyConfigurationRepository HierarchyRepository
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">Hierarchy Configuration</h5>
+        <div>
+            <button class="btn btn-primary btn-sm me-2" @onclick="CreateNewConfiguration">
+                <i class="fas fa-plus"></i> New Configuration
+            </button>
+            <button class="btn btn-success btn-sm" @onclick="SaveConfiguration" disabled="@(!HasChanges)">
+                <i class="fas fa-save"></i> Save
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        @if (configurations != null && configurations.Any())
+        {
+            <div class="mb-3">
+                <label class="form-label">Active Configuration</label>
+                <select class="form-select" @bind="currentConfigurationId" @bind:after="OnConfigurationChangedAsync">
+                    @foreach (var config in configurations)
+                    {
+                        <option value="@config.Id" selected="@config.IsActive">
+                            @config.Name @(config.IsSystemDefined ? "(System)" : "")
+                        </option>
+                    }
+                </select>
+            </div>
+
+            @if (currentConfiguration != null)
+            {
+                <div class="mb-3">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <label class="form-label">Configuration Name</label>
+                            <input type="text" class="form-control" @bind="currentConfiguration.Name" 
+                                   disabled="@currentConfiguration.IsSystemDefined" @oninput="OnConfigurationChanged" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Description</label>
+                            <input type="text" class="form-control" @bind="currentConfiguration.Description" 
+                                   disabled="@currentConfiguration.IsSystemDefined" @oninput="OnConfigurationChanged" />
+                        </div>
+                    </div>
+                </div>
+
+                <div class="hierarchy-nodes">
+                    <div class="d-flex justify-content-between align-items-center mb-2">
+                        <h6>Hierarchy Levels</h6>
+                        @if (!currentConfiguration.IsSystemDefined)
+                        {
+                            <button class="btn btn-outline-primary btn-sm" @onclick="AddNewNode">
+                                <i class="fas fa-plus"></i> Add Level
+                            </button>
+                        }
+                    </div>
+
+                    @if (currentConfiguration.Nodes.Any())
+                    {
+                        <div class="table-responsive">
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Order</th>
+                                        <th>Name</th>
+                                        <th>Required</th>
+                                        <th>Description</th>
+                                        <th>Parent</th>
+                                        <th>Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var node in currentConfiguration.Nodes.OrderBy(n => n.Order))
+                                    {
+                                        <tr>
+                                            <td>
+                                                @if (!currentConfiguration.IsSystemDefined)
+                                                {
+                                                    <input type="number" class="form-control form-control-sm" style="width: 70px;" 
+                                                           @bind="node.Order" @oninput="OnConfigurationChanged" />
+                                                }
+                                                else
+                                                {
+                                                    @node.Order
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!currentConfiguration.IsSystemDefined)
+                                                {
+                                                    <input type="text" class="form-control form-control-sm" 
+                                                           @bind="node.Name" @oninput="OnConfigurationChanged" />
+                                                }
+                                                else
+                                                {
+                                                    @node.Name
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!currentConfiguration.IsSystemDefined)
+                                                {
+                                                    <input type="checkbox" class="form-check-input" 
+                                                           @bind="node.IsRequired" @bind:after="OnConfigurationChanged" />
+                                                }
+                                                else
+                                                {
+                                                    <input type="checkbox" class="form-check-input" checked="@node.IsRequired" disabled />
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!currentConfiguration.IsSystemDefined)
+                                                {
+                                                    <input type="text" class="form-control form-control-sm" 
+                                                           @bind="node.Description" @oninput="OnConfigurationChanged" />
+                                                }
+                                                else
+                                                {
+                                                    <span title="@node.Description">@(node.Description.Length > 30 ? node.Description.Substring(0, 30) + "..." : node.Description)</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!currentConfiguration.IsSystemDefined)
+                                                {
+                                                    <select class="form-select form-select-sm" @bind="node.ParentNodeId" @bind:after="OnConfigurationChanged">
+                                                        <option value="">None (Root)</option>
+                                                        @foreach (var parentOption in currentConfiguration.Nodes.Where(n => n.Id != node.Id))
+                                                        {
+                                                            <option value="@parentOption.Id">@parentOption.Name</option>
+                                                        }
+                                                    </select>
+                                                }
+                                                else
+                                                {
+                                                    @(currentConfiguration.GetNodeById(node.ParentNodeId ?? "")?.Name ?? "None")
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!currentConfiguration.IsSystemDefined)
+                                                {
+                                                    <button class="btn btn-outline-danger btn-sm" @onclick="() => RemoveNode(node)">
+                                                        <i class="fas fa-trash"></i>
+                                                    </button>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted">No hierarchy levels defined.</p>
+                    }
+                </div>
+
+                @if (validationErrors.Any())
+                {
+                    <div class="alert alert-danger mt-3">
+                        <h6>Validation Errors:</h6>
+                        <ul class="mb-0">
+                            @foreach (var error in validationErrors)
+                            {
+                                <li>@error</li>
+                            }
+                        </ul>
+                    </div>
+                }
+            }
+        }
+        else
+        {
+            <p class="text-muted">Loading configurations...</p>
+        }
+    </div>
+</div>
+
+@code {
+    private List<HierarchyConfiguration>? configurations;
+    private HierarchyConfiguration? currentConfiguration;
+    private List<string> validationErrors = new();
+    private bool HasChanges = false;
+    private int nextNodeOrder = 0;
+    private string currentConfigurationId = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadConfigurations();
+    }
+
+    private async Task LoadConfigurations()
+    {
+        try
+        {
+            configurations = (await HierarchyRepository.GetAllConfigurationsAsync()).ToList();
+            currentConfiguration = configurations.FirstOrDefault(c => c.IsActive) ?? configurations.FirstOrDefault();
+            currentConfigurationId = currentConfiguration?.Id ?? string.Empty;
+            
+            if (currentConfiguration != null)
+            {
+                nextNodeOrder = currentConfiguration.Nodes.Any() ? currentConfiguration.Nodes.Max(n => n.Order) + 1 : 0;
+            }
+            
+            ValidateConfiguration();
+            HasChanges = false;
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading configurations: {ex.Message}");
+        }
+    }
+
+    private async Task OnConfigurationChangedAsync()
+    {
+        if (currentConfigurationId != currentConfiguration?.Id)
+        {
+            currentConfiguration = configurations?.FirstOrDefault(c => c.Id == currentConfigurationId);
+            if (currentConfiguration != null)
+            {
+                nextNodeOrder = currentConfiguration.Nodes.Any() ? currentConfiguration.Nodes.Max(n => n.Order) + 1 : 0;
+            }
+        }
+        
+        HasChanges = true;
+        ValidateConfiguration();
+        StateHasChanged();
+    }
+
+    private void OnConfigurationChanged()
+    {
+        HasChanges = true;
+        ValidateConfiguration();
+        StateHasChanged();
+    }
+
+    private void CreateNewConfiguration()
+    {
+        var newConfig = new HierarchyConfiguration
+        {
+            Id = Guid.NewGuid().ToString(),
+            Name = "New Configuration",
+            Description = "Custom hierarchy configuration",
+            IsActive = false,
+            IsSystemDefined = false,
+            Nodes = new List<HierarchyNode>()
+        };
+
+        configurations?.Add(newConfig);
+        currentConfiguration = newConfig;
+        nextNodeOrder = 0;
+        HasChanges = true;
+        ValidateConfiguration();
+        StateHasChanged();
+    }
+
+    private void AddNewNode()
+    {
+        if (currentConfiguration != null && !currentConfiguration.IsSystemDefined)
+        {
+            var newNode = new HierarchyNode
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = $"Level{nextNodeOrder}",
+                Order = nextNodeOrder++,
+                IsRequired = false,
+                Description = "New hierarchy level",
+                AllowedChildNodeIds = new List<string>(),
+                ParentNodeId = null
+            };
+
+            currentConfiguration.Nodes.Add(newNode);
+            HasChanges = true;
+            ValidateConfiguration();
+            StateHasChanged();
+        }
+    }
+
+    private void RemoveNode(HierarchyNode node)
+    {
+        if (currentConfiguration != null && !currentConfiguration.IsSystemDefined)
+        {
+            currentConfiguration.Nodes.Remove(node);
+            
+            // Remove references to this node from other nodes
+            foreach (var otherNode in currentConfiguration.Nodes)
+            {
+                if (otherNode.ParentNodeId == node.Id)
+                {
+                    otherNode.ParentNodeId = null;
+                }
+                otherNode.AllowedChildNodeIds.Remove(node.Id);
+            }
+            
+            HasChanges = true;
+            ValidateConfiguration();
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveConfiguration()
+    {
+        if (currentConfiguration != null && HasChanges)
+        {
+            try
+            {
+                ValidateConfiguration();
+                if (!validationErrors.Any())
+                {
+                    await HierarchyRepository.SaveConfigurationAsync(currentConfiguration);
+                    HasChanges = false;
+                    await LoadConfigurations(); // Refresh to ensure consistency
+                }
+            }
+            catch (Exception ex)
+            {
+                validationErrors.Add($"Error saving configuration: {ex.Message}");
+                StateHasChanged();
+            }
+        }
+    }
+
+    private void ValidateConfiguration()
+    {
+        validationErrors.Clear();
+        
+        if (currentConfiguration != null)
+        {
+            validationErrors.AddRange(currentConfiguration.Validate());
+        }
+    }
+}

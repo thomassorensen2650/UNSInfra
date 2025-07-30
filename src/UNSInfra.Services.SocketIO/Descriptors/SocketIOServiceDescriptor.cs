@@ -227,10 +227,9 @@ public class SocketIOServiceDescriptor : IDataIngestionServiceDescriptor
         // Create required dependencies
         var configOptions = Microsoft.Extensions.Options.Options.Create(legacyConfig);
         var logger = serviceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<SocketIODataService>>();
-        var topicDiscoveryService = serviceProvider.GetRequiredService<UNSInfra.Services.TopicDiscovery.ITopicDiscoveryService>();
         
-        // Create SocketIO service with correct constructor signature
-        var service = new SocketIODataService(logger, topicDiscoveryService, configOptions);
+        // Create SocketIO service with service provider for scoped dependencies
+        var service = new SocketIODataService(logger, serviceProvider, configOptions);
         
         return service;
     }

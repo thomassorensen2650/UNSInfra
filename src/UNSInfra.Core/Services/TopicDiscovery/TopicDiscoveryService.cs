@@ -1,6 +1,8 @@
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.Logging;
 using UNSInfra.Models.Hierarchy;
 using UNSInfra.Repositories;
+using UNSInfra.Services;
 
 namespace UNSInfra.Services.TopicDiscovery;
 
@@ -11,14 +13,20 @@ namespace UNSInfra.Services.TopicDiscovery;
 public class TopicDiscoveryService : ITopicDiscoveryService
 {
     private readonly ITopicConfigurationRepository _configurationRepository;
+    private readonly IHierarchyService _hierarchyService;
+    private readonly ILogger<TopicDiscoveryService> _logger;
 
     /// <summary>
     /// Initializes a new instance of the TopicDiscoveryService.
     /// </summary>
     /// <param name="configurationRepository">Repository for managing topic configurations</param>
-    public TopicDiscoveryService(ITopicConfigurationRepository configurationRepository)
+    /// <param name="hierarchyService">Service for managing hierarchy configurations</param>
+    /// <param name="logger">Logger instance</param>
+    public TopicDiscoveryService(ITopicConfigurationRepository configurationRepository, IHierarchyService hierarchyService, ILogger<TopicDiscoveryService> logger)
     {
         _configurationRepository = configurationRepository;
+        _hierarchyService = hierarchyService;
+        _logger = logger;
     }
 
     /// <summary>
@@ -29,13 +37,13 @@ public class TopicDiscoveryService : ITopicDiscoveryService
     /// <returns>A topic configuration with the resolved path, or null if no mapping could be determined</returns>
     public async Task<TopicConfiguration?> ResolveTopicAsync(string topic, string sourceType)
     {
-        Console.WriteLine($"[TopicDiscovery] Resolving topic: '{topic}' from source: '{sourceType}'");
+        _logger.LogDebug("Resolving topic: '{Topic}' from source: '{SourceType}'", topic, sourceType);
         
         // First, check if we have an existing configuration
         var existingConfig = await _configurationRepository.GetTopicConfigurationAsync(topic);
         if (existingConfig != null && existingConfig.IsActive)
         {
-            Console.WriteLine($"[TopicDiscovery] Found existing configuration for topic: '{topic}'");
+            _logger.LogDebug("Found existing configuration for topic: '{Topic}'", topic);
             return existingConfig;
         }
 
@@ -44,20 +52,20 @@ public class TopicDiscoveryService : ITopicDiscoveryService
         if (generatedPath == null)
         {
             // Fall back to default path generation
-            Console.WriteLine($"[TopicDiscovery] No mapping rules matched, using default path generation for: '{topic}'");
-            generatedPath = GenerateDefaultPath(topic);
+            _logger.LogDebug("No mapping rules matched, using default path generation for: '{Topic}'", topic);
+            generatedPath = await GenerateDefaultPathAsync(topic);
         }
         else
         {
-            Console.WriteLine($"[TopicDiscovery] Generated path from mapping rules for topic: '{topic}'");
+            _logger.LogDebug("Generated path from mapping rules for topic: '{Topic}'", topic);
         }
 
-        Console.WriteLine($"[TopicDiscovery] Generated path: {generatedPath.GetFullPath()}");
+        _logger.LogDebug("Generated path: {Path}", generatedPath.GetFullPath());
 
         // Create and save a new configuration
         var newConfig = await CreateUnverifiedTopicAsync(topic, sourceType, generatedPath);
         await _configurationRepository.SaveTopicConfigurationAsync(newConfig);
-        Console.WriteLine($"[TopicDiscovery] Created and saved unverified configuration for topic: '{topic}'");
+        _logger.LogDebug("Created and saved unverified configuration for topic: '{Topic}'", topic);
         return newConfig;
     }
 
@@ -73,7 +81,7 @@ public class TopicDiscoveryService : ITopicDiscoveryService
         var configuration = new TopicConfiguration
         {
             Topic = topic,
-            Path = suggestedPath ?? GenerateDefaultPath(topic),
+            Path = suggestedPath ?? await GenerateDefaultPathAsync(topic),
             IsVerified = false,
             SourceType = sourceType,
             CreatedBy = "AutoDiscovery",
@@ -124,13 +132,13 @@ public class TopicDiscoveryService : ITopicDiscoveryService
                         }
                     }
                     
-                    return HierarchicalPath.FromPath(pathString);
+                    return await _hierarchyService.CreatePathFromStringAsync(pathString);
                 }
             }
             catch (Exception ex)
             {
                 // Log regex or template errors but continue with other rules
-                Console.WriteLine($"Error processing mapping rule {rule.Id}: {ex.Message}");
+                _logger.LogWarning(ex, "Error processing mapping rule {RuleId}: {Message}", rule.Id, ex.Message);
             }
         }
         
@@ -139,39 +147,50 @@ public class TopicDiscoveryService : ITopicDiscoveryService
 
     /// <summary>
     /// Generates a default hierarchical path when no rules match.
-    /// Uses the topic structure to create a basic path mapping.
+    /// Uses the topic structure to create a basic path mapping with dynamic hierarchy support.
     /// </summary>
     /// <param name="topic">The topic to generate a default path for</param>
     /// <returns>A default hierarchical path based on topic structure</returns>
-    private HierarchicalPath GenerateDefaultPath(string topic)
+    private async Task<HierarchicalPath> GenerateDefaultPathAsync(string topic)
     {
-        // Create hierarchy from topic structure
         var parts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var hierarchyLevels = await _hierarchyService.GetHierarchyLevelsAsync();
         
-        // Handle SocketIO topics which have format: socketio/update/Enterprise/Site/Area/WorkCenter/WorkUnit/Property
-        // Also handle legacy virtualfactory topics for backward compatibility
-        if (parts.Length > 2 && (parts[0] == "socketio" || parts[0] == "virtualfactory") && parts[1] == "update" && parts[2] == "Enterprise")
+        // Handle SocketIO topics which have explicit hierarchy format
+        if (parts.Length > 2 && (parts[0] == "socketio" || parts[0] == "virtualfactory") && parts[1] == "update")
         {
-            return new HierarchicalPath
-            {
-                Enterprise = parts.Length > 3 ? parts[3] : "Default",
-                Site = parts.Length > 4 ? parts[4] : "Default", 
-                Area = parts.Length > 5 ? parts[5] : "Area1",
-                WorkCenter = parts.Length > 6 ? parts[6] : "Unknown",
-                WorkUnit = parts.Length > 7 ? parts[7] : "Unknown",
-                Property = parts.Length > 8 ? parts[8] : (parts.Length > 3 ? parts[^1] : "value")
-            };
+            // Skip the first two parts (socketio/update) and map the rest to hierarchy levels
+            var hierarchyParts = parts.Skip(2).ToArray();
+            var pathString = string.Join("/", hierarchyParts.Take(hierarchyLevels.Count));
+            return await _hierarchyService.CreatePathFromStringAsync(pathString);
         }
         
-        // Default MQTT topic mapping to ISA-95 hierarchy levels
-        return new HierarchicalPath
+        // Default topic mapping - map topic parts to hierarchy levels in order
+        var mappedParts = new List<string>();
+        
+        for (int i = 0; i < hierarchyLevels.Count; i++)
         {
-            Enterprise = parts.Length > 0 ? parts[0] : "MQTT",
-            Site = parts.Length > 1 ? parts[1] : "Default", 
-            Area = parts.Length > 2 ? parts[2] : "Area1",
-            WorkCenter = parts.Length > 3 ? parts[3] : "Unknown",
-            WorkUnit = parts.Length > 4 ? parts[4] : "Unknown",
-            Property = parts.Length > 5 ? parts[5] : (parts.Length > 0 ? parts[^1] : "value")
-        };
+            if (i < parts.Length)
+            {
+                mappedParts.Add(parts[i]);
+            }
+            else
+            {
+                // Fill missing levels with defaults based on level type
+                var levelName = hierarchyLevels[i].ToLower();
+                var defaultValue = levelName switch
+                {
+                    "enterprise" => "MQTT",
+                    "site" => "Default",
+                    "area" => "Area1",
+                    "property" => parts.Length > 0 ? parts[^1] : "value",
+                    _ => "Unknown"
+                };
+                mappedParts.Add(defaultValue);
+            }
+        }
+        
+        var defaultPathString = string.Join("/", mappedParts);
+        return await _hierarchyService.CreatePathFromStringAsync(defaultPathString);
     }
 }

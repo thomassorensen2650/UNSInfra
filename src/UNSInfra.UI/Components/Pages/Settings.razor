@@ -1,5 +1,6 @@
 @page "/settings"
 @using UNSInfra.Services.TopicBrowser
+@using UNSInfra.UI.Components
 @inject ITopicBrowserService TopicBrowserService
 
 <PageTitle>Settings</PageTitle>
@@ -63,15 +64,7 @@
 </div>
 
 <div class="mt-4">
-    <div class="card">
-        <div class="card-header">
-            <h5>Configuration</h5>
-        </div>
-        <div class="card-body">
-            <p>Configuration details will be shown here.</p>
-            <!-- TODO: Display actual configuration and allow editing if needed -->
-        </div>
-    </div>
+    <HierarchyEditor />
 </div>
 
 @code {

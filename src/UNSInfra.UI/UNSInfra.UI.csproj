@@ -11,6 +11,7 @@
     <ProjectReference Include="..\UNSInfra.Services.V1\UNSInfra.Services.V1.csproj" />
     <ProjectReference Include="..\UNSInfra.Services.SocketIO\UNSInfra.Services.SocketIO.csproj" />
     <ProjectReference Include="..\UNSInfra.Storage.InMemory\UNSInfra.Storage.InMemory.csproj" />
+    <ProjectReference Include="..\UNSInfra.Storage.SQLite\UNSInfra.Storage.SQLite.csproj" />
   </ItemGroup>
 
 </Project>

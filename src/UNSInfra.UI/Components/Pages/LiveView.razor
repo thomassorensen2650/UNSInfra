@@ -41,7 +41,7 @@
         <div class="payload-container">
             @if (SelectedTopic != null && SelectedPayload != null)
             {
-                <pre class="payload-content">@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })</pre>
+                <pre class="payload-content">@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true})</pre>
             }
             else if (SelectedTopic != null && SelectedPayload == null)
             {
@@ -81,19 +81,28 @@
 
     protected override async Task OnInitializedAsync()
     {
-        await RefreshTopics();
-        TopicBrowserService.TopicDataUpdated += OnTopicDataUpdated;
-        TopicBrowserService.TopicAdded += OnTopicAdded;
-        
-        // Enable periodic refresh timer for real-time data updates
-        _ = Task.Run(async () =>
+        try
         {
-            while (true)
+            await RefreshTopics();
+            TopicBrowserService.TopicDataUpdated += OnTopicDataUpdated;
+            TopicBrowserService.TopicAdded += OnTopicAdded;
+            
+            // Enable periodic refresh timer for real-time data updates
+            _ = Task.Run(async () =>
             {
-                await Task.Delay(RefreshThrottleMs);
-                await ScheduleRefresh();
-            }
-        });
+                while (true)
+                {
+                    await Task.Delay(RefreshThrottleMs);
+                    await ScheduleRefresh();
+                }
+            });
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error initializing LiveView: {ex.Message}");
+            _isInitialLoad = false;
+            StateHasChanged();
+        }
     }
 
     private async Task RefreshTopics()
@@ -145,14 +154,23 @@
             // Use different path structure based on verification status
             if (topicInfo.IsVerified)
             {
-                // For verified topics, use hierarchical path structure
-                fullPath = topicInfo.Path.GetFullPath();
+                // For verified topics, build path from hierarchical path parts
+                var pathParts = new[]
+                {
+                    topicInfo.Path.Enterprise,
+                    topicInfo.Path.Site,
+                    topicInfo.Path.Area,
+                    topicInfo.Path.WorkCenter,
+                    topicInfo.Path.WorkUnit,
+                    topicInfo.Path.Property
+                }.Where(p => !string.IsNullOrEmpty(p)).ToArray();
+                fullPath = string.Join("/", pathParts);
             }
             else
             {
                 // For unverified topics, use the raw topic path under unverified section
                 const string unverifiedSectionName = "🔍 Unverified Topics";
-                fullPath = $"{unverifiedSectionName}/{topicInfo.Topic}";
+                fullPath = $"{unverifiedSectionName}/{topicInfo.SourceType}/{topicInfo.Topic}";
             }
             
             // Start blinking animation in the tree - this is sufficient for showing updates
@@ -180,14 +198,23 @@
         // Use different path structure based on verification status
         if (e.TopicInfo.IsVerified)
         {
-            // For verified topics, use hierarchical path structure
-            fullPath = e.TopicInfo.Path.GetFullPath();
+            // For verified topics, build path from hierarchical path parts
+            var pathParts = new[]
+            {
+                e.TopicInfo.Path.Enterprise,
+                e.TopicInfo.Path.Site,
+                e.TopicInfo.Path.Area,
+                e.TopicInfo.Path.WorkCenter,
+                e.TopicInfo.Path.WorkUnit,
+                e.TopicInfo.Path.Property
+            }.Where(p => !string.IsNullOrEmpty(p)).ToArray();
+            fullPath = string.Join("/", pathParts);
         }
         else
         {
             // For unverified topics, use the raw topic path under unverified section
             const string unverifiedSectionName = "🔍 Unverified Topics";
-            fullPath = $"{unverifiedSectionName}/{e.TopicInfo.Topic}";
+            fullPath = $"{unverifiedSectionName}/{e.TopicInfo.SourceType}/{e.TopicInfo.Topic}";
         }
         
         if (TopicTreeComponent != null)
@@ -281,14 +308,15 @@
                 topicInList.IsVerified = true;
             }
             
-            StateHasChanged(); // Update UI immediately to show verification in tree
+            // Force an immediate UI update to show verification change in tree
+            StateHasChanged();
             
-            // The tree will automatically update when Topics parameter changes
-            
-            await Task.Yield();
+            // Small delay to ensure the tree component processes the change
+            await Task.Delay(50);
         }
         
         // Also refresh the entire topics list to get the latest data from repository
+        // This ensures we have the most up-to-date data and the tree will rebuild
         await RefreshTopics();
     }
 

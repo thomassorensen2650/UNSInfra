@@ -62,4 +62,9 @@ namespace UNSInfra.Models.Hierarchy;
         /// Gets or sets the user or system that created this configuration.
         /// </summary>
         public string CreatedBy { get; set; } = "System";
+
+        /// <summary>
+        /// Gets or sets the namespace configuration ID this topic belongs to.
+        /// </summary>
+        public string? NamespaceConfigurationId { get; set; }
     }

@@ -298,22 +298,52 @@ public class DataIngestionServiceRegistrationService : BackgroundService
     {
         try
         {
-            var realtimeStorage = _serviceProvider.GetRequiredService<IRealtimeStorage>();
-            var historicalStorage = _serviceProvider.GetRequiredService<IHistoricalStorage>();
-            var topicBrowserService = _serviceProvider.GetRequiredService<ITopicBrowserService>();
-
-            // Store in both realtime and historical storage
-            await realtimeStorage.StoreAsync(e.DataPoint);
-            await historicalStorage.StoreAsync(e.DataPoint);
-
-            // Notify topic browser service about the data update
-            if (topicBrowserService is TopicBrowserService concreteBrowserService)
+            // Use Task.Run to avoid blocking the event handler and ensure proper async context
+            await Task.Run(async () =>
             {
-                concreteBrowserService.NotifyTopicDataUpdated(e.DataPoint.Topic, e.DataPoint);
-            }
+                try
+                {
+                    // Create a scope to resolve scoped storage services
+                    using var scope = _serviceProvider.CreateScope();
+                    var realtimeStorage = scope.ServiceProvider.GetRequiredService<IRealtimeStorage>();
+                    var historicalStorage = scope.ServiceProvider.GetRequiredService<IHistoricalStorage>();
+                    var topicBrowserService = scope.ServiceProvider.GetRequiredService<ITopicBrowserService>();
 
-            _logger.LogDebug("Stored data for topic {Topic} from service {ConfigurationId}", 
-                e.DataPoint.Topic, e.ConfigurationId);
+                    // Store in both realtime and historical storage with retry logic
+                    const int maxRetries = 3;
+                    for (int attempt = 1; attempt <= maxRetries; attempt++)
+                    {
+                        try
+                        {
+                            // Store in both realtime and historical storage
+                            await realtimeStorage.StoreAsync(e.DataPoint);
+                            await historicalStorage.StoreAsync(e.DataPoint);
+                            break; // Success, exit retry loop
+                        }
+                        catch (Exception storageEx) when (attempt < maxRetries && 
+                            (storageEx.Message.Contains("database is locked") || storageEx.Message.Contains("disposed")))
+                        {
+                            _logger.LogWarning("Storage attempt {Attempt} failed for topic {Topic}, retrying in {Delay}ms: {Error}", 
+                                attempt, e.DataPoint.Topic, attempt * 100, storageEx.Message);
+                            await Task.Delay(attempt * 100); // Exponential backoff
+                        }
+                    }
+
+                    // Notify topic browser service about the data update
+                    if (topicBrowserService is TopicBrowserService concreteBrowserService)
+                    {
+                        concreteBrowserService.NotifyTopicDataUpdated(e.DataPoint.Topic, e.DataPoint);
+                    }
+
+                    _logger.LogDebug("Stored data for topic {Topic} from service {ConfigurationId}", 
+                        e.DataPoint.Topic, e.ConfigurationId);
+                }
+                catch (Exception innerEx)
+                {
+                    _logger.LogError(innerEx, "Error in data storage task for topic {Topic}", e.DataPoint.Topic);
+                    throw; // Re-throw for outer catch
+                }
+            });
         }
         catch (Exception ex)
         {

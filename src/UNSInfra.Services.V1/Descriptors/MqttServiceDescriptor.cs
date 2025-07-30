@@ -344,11 +344,9 @@ public class MqttServiceDescriptor : IDataIngestionServiceDescriptor
         // Create required dependencies
         var configOptions = Microsoft.Extensions.Options.Options.Create(legacyConfig);
         var logger = serviceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<MqttDataService>>();
-        var topicDiscoveryService = serviceProvider.GetRequiredService<UNSInfra.Services.TopicDiscovery.ITopicDiscoveryService>();
-        var sparkplugBDecoder = serviceProvider.GetRequiredService<UNSInfra.Services.V1.SparkplugB.SparkplugBDecoder>();
         
-        // Create MQTT service with correct constructor signature
-        var service = new MqttDataService(configOptions, topicDiscoveryService, sparkplugBDecoder, logger);
+        // Create MQTT service with service provider for scoped dependencies
+        var service = new MqttDataService(configOptions, serviceProvider, logger);
         
         return service;
     }

@@ -1,4 +1,5 @@
     using System.Text.Json;
+    using Microsoft.Extensions.Logging;
     using UNSInfra.Models.Hierarchy;
     using UNSInfra.Models.Schema;
     using UNSInfra.Repositories;
@@ -6,25 +7,36 @@
     using UNSInfra.Services.TopicDiscovery;
     using UNSInfra.Storage.InMemory;
     using UNSInfra.Validation;
+    using UNSInfra.Services;
 
     public class Program
 {
     public static async Task Main(string[] args)
     {
+        // Setup logging
+        using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        var logger = loggerFactory.CreateLogger<TopicDiscoveryService>();
+        
         // Setup dependencies
         var realtimeStorage = new InMemoryRealtimeStorage();
         var historicalStorage = new InMemoryHistoricalStorage();
         var validator = new JsonSchemaValidator();
         var schemaRepository = new InMemorySchemaRepository();
-        var topicDiscovery = new TopicDiscoveryService(new InMemoryTopicConfigurationRepository());
+        
+        // Setup hierarchy services
+        var hierarchyRepo = new InMemoryHierarchyConfigurationRepository();
+        await hierarchyRepo.EnsureDefaultConfigurationAsync();
+        var hierarchyService = new HierarchyService(hierarchyRepo);
+        
+        var topicDiscovery = new TopicDiscoveryService(new InMemoryTopicConfigurationRepository(), hierarchyService, logger);
         
         
         // Setup data services
         var mqttService = new MockMqttDataService(topicDiscovery);
         var kafkaService = new MockKafkaDataService(topicDiscovery);
 
-        // Define ISA-S95 hierarchy
-        var robotPath = HierarchicalPath.FromPath("enterprise/factoryA/assemblyLine1/robot123/temperature");
+        // Define hierarchy path using dynamic hierarchy service
+        var robotPath = await hierarchyService.CreatePathFromStringAsync("enterprise/factoryA/assemblyLine1/robot123/temperature");
         
         // Subscribe to topics
         await mqttService.SubscribeToTopicAsync("sensors/temperature", robotPath);

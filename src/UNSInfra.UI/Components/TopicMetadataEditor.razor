@@ -1,6 +1,11 @@
 @using UNSInfra.Services.TopicBrowser
 @using UNSInfra.Models.Hierarchy
+@using UNSInfra.Models.Namespace
+@using UNSInfra.Services
+@using UNSInfra.Repositories
 @inject ITopicBrowserService TopicBrowserService
+@inject IHierarchyService HierarchyService
+@inject INamespaceConfigurationRepository NamespaceRepository
 
 @if (TopicConfiguration != null)
 {
@@ -10,7 +15,7 @@
             <div class="d-flex gap-2">
                 @if (!TopicConfiguration.IsVerified)
                 {
-                    <button class="btn btn-success btn-sm" @onclick="VerifyTopic" disabled="@_isSaving">
+                    <button class="btn btn-success btn-sm" @onclick="VerifyTopic" disabled="@(_isSaving || !CanVerifyTopic)" title="@GetVerifyTooltip()">
                         @if (_isSaving && _saveAction == "verify")
                         {
                             <div class="spinner-border spinner-border-sm me-1" role="status">
@@ -73,33 +78,50 @@
             </div>
 
             <div class="mb-3">
+                <label class="form-label small">Namespace</label>
+                <select class="form-select form-select-sm" @bind="_editConfiguration.NamespaceConfigurationId" @bind:after="OnFieldChanged">
+                    <option value="">Select namespace...</option>
+                    @if (availableNamespaces != null)
+                    {
+                        @foreach (var ns in availableNamespaces)
+                        {
+                            <option value="@ns.Id">
+                                @ns.GetFullNamespacePath() (@ns.Type.GetDisplayName())
+                            </option>
+                        }
+                    }
+                </select>
+                @if (!string.IsNullOrEmpty(_editConfiguration.NamespaceConfigurationId))
+                {
+                    var selectedNamespace = availableNamespaces?.FirstOrDefault(n => n.Id == _editConfiguration.NamespaceConfigurationId);
+                    if (selectedNamespace != null)
+                    {
+                        <div class="mt-1">
+                            <small class="text-muted d-flex align-items-center">
+                                <i class="bi @selectedNamespace.Type.GetIconClass() @selectedNamespace.Type.GetColorClass() me-1"></i>
+                                @selectedNamespace.Description
+                            </small>
+                        </div>
+                    }
+                }
+            </div>
+
+            <div class="mb-3">
                 <label class="form-label small">Hierarchical Path</label>
-                <div class="row g-2">
-                    <div class="col-md-2">
-                        <label class="form-label small text-muted">Enterprise</label>
-                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.Enterprise" @oninput="OnFieldChanged" />
+                @if (hierarchyLevels != null)
+                {
+                    <div class="row g-2">
+                        @foreach (var level in hierarchyLevels)
+                        {
+                            <div class="col-md-2">
+                                <label class="form-label small text-muted">@level</label>
+                                <input type="text" class="form-control form-control-sm" 
+                                       value="@_editConfiguration.Path.GetValue(level)" 
+                                       @onchange="@(e => UpdatePathValue(level, e.Value?.ToString() ?? ""))" />
+                            </div>
+                        }
                     </div>
-                    <div class="col-md-2">
-                        <label class="form-label small text-muted">Site</label>
-                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.Site" @oninput="OnFieldChanged" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small text-muted">Area</label>
-                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.Area" @oninput="OnFieldChanged" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small text-muted">Work Center</label>
-                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.WorkCenter" @oninput="OnFieldChanged" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small text-muted">Work Unit</label>
-                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.WorkUnit" @oninput="OnFieldChanged" />
-                    </div>
-                    <div class="col-md-2">
-                        <label class="form-label small text-muted">Property</label>
-                        <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.Path.Property" @oninput="OnFieldChanged" />
-                    </div>
-                </div>
+                }
                 <div class="mt-2">
                     <small class="text-muted">
                         <strong>Tree path:</strong> @_editConfiguration.Path.GetFullPath()
@@ -149,12 +171,26 @@
     private bool _hasChanges = false;
     private bool _isSaving = false;
     private string _saveAction = "";
+    private List<string>? hierarchyLevels;
+    private List<NamespaceConfiguration>? availableNamespaces;
+    private string? _lastLoadedTopic;
 
+    protected override async Task OnInitializedAsync()
+    {
+        hierarchyLevels = await HierarchyService.GetHierarchyLevelsAsync();
+        await LoadAvailableNamespaces();
+    }
+    
     protected override async Task OnParametersSetAsync()
     {
         if (SelectedTopic != null)
         {
-            await LoadTopicConfiguration();
+            // Only reload if the topic has actually changed
+            if (_lastLoadedTopic != SelectedTopic.Topic)
+            {
+                await LoadTopicConfiguration();
+                _lastLoadedTopic = SelectedTopic.Topic;
+            }
         }
         else
         {
@@ -162,6 +198,7 @@
             _editConfiguration = new();
             _metadataItems.Clear();
             _hasChanges = false;
+            _lastLoadedTopic = null;
         }
     }
 
@@ -196,7 +233,8 @@
                 Area = config.Path.Area,
                 WorkCenter = config.Path.WorkCenter,
                 WorkUnit = config.Path.WorkUnit,
-                Property = config.Path.Property
+                Property = config.Path.Property,
+                Values = new Dictionary<string, string>(config.Path.Values)
             },
             IsVerified = config.IsVerified,
             IsActive = config.IsActive,
@@ -205,8 +243,15 @@
             CreatedAt = config.CreatedAt,
             ModifiedAt = config.ModifiedAt,
             CreatedBy = config.CreatedBy,
-            Metadata = new Dictionary<string, object>(config.Metadata)
+            Metadata = new Dictionary<string, object>(config.Metadata),
+            NamespaceConfigurationId = config.NamespaceConfigurationId
         };
+    }
+    
+    private void UpdatePathValue(string levelName, string value)
+    {
+        _editConfiguration.Path.SetValue(levelName, value);
+        OnFieldChanged();
     }
 
     private void LoadMetadataItems()
@@ -320,6 +365,31 @@
             _saveAction = "";
             StateHasChanged();
         }
+    }
+
+    private async Task LoadAvailableNamespaces()
+    {
+        try
+        {
+            var namespaces = await NamespaceRepository.GetAllNamespaceConfigurationsAsync(activeOnly: true);
+            availableNamespaces = namespaces.ToList();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading namespaces: {ex.Message}");
+            availableNamespaces = new List<NamespaceConfiguration>();
+        }
+    }
+
+    private bool CanVerifyTopic => !string.IsNullOrEmpty(_editConfiguration.NamespaceConfigurationId);
+
+    private string GetVerifyTooltip()
+    {
+        if (string.IsNullOrEmpty(_editConfiguration.NamespaceConfigurationId))
+        {
+            return "Please select a namespace before verifying the topic";
+        }
+        return "Verify this topic configuration";
     }
 
     private class MetadataItem
