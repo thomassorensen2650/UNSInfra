@@ -117,10 +117,6 @@ public class SocketIODataIngestionConfiguration : IDataIngestionConfiguration
     {
         var json = JsonSerializer.Serialize(this);
         var clone = JsonSerializer.Deserialize<SocketIODataIngestionConfiguration>(json)!;
-        clone.Id = Guid.NewGuid().ToString();
-        clone.Name = $"{Name} (Copy)";
-        clone.CreatedAt = DateTime.UtcNow;
-        clone.ModifiedAt = DateTime.UtcNow;
         return clone;
     }
 

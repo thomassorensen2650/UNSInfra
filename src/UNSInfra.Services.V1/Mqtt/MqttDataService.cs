@@ -430,18 +430,16 @@ public class MqttDataService : IMqttDataService, IDisposable
     /// </summary>
     private async Task HandleRegularMqttMessage(string topic, byte[] payload)
     {
-        Console.WriteLine($"[MQTT] Processing regular MQTT message for topic: '{topic}'");
+        _logger.LogInformation("[MQTT] Processing regular MQTT message for topic: '{Topic}'", topic);
         HierarchicalPath? path = null;
 
         // Check if we have explicit subscription
         if (_subscriptions.TryGetValue(topic, out var explicitPath))
         {
             path = explicitPath;
-            Console.WriteLine($"[MQTT] Using explicit subscription path for topic: '{topic}'");
         }
         else
         {
-            Console.WriteLine($"[MQTT] No explicit subscription, using topic discovery for: '{topic}'");
             // Try to resolve using topic discovery
             TopicConfiguration? configuration = null;
             if (_topicDiscoveryService != null)
@@ -465,7 +463,6 @@ public class MqttDataService : IMqttDataService, IDisposable
             if (configuration != null)
             {
                 path = configuration.Path;
-                Console.WriteLine($"[MQTT] Topic discovery resolved path: {path.GetFullPath()} for topic: '{topic}'");
                 
                 if (!configuration.IsVerified)
                 {
@@ -474,7 +471,6 @@ public class MqttDataService : IMqttDataService, IDisposable
             }
             else
             {
-                Console.WriteLine($"[MQTT] Topic discovery failed, creating unverified configuration for: '{topic}'");
                 // Create unverified configuration for completely unknown topic
                 if (_topicDiscoveryService != null)
                 {
@@ -509,7 +505,6 @@ public class MqttDataService : IMqttDataService, IDisposable
 
         if (path != null)
         {
-            Console.WriteLine($"[MQTT] Path resolved successfully, creating DataPoint for topic: '{topic}'");
             // Try to parse payload as JSON, fall back to string, then bytes
             object value;
             try
@@ -540,12 +535,11 @@ public class MqttDataService : IMqttDataService, IDisposable
                 Timestamp = DateTime.UtcNow
             };
 
-            Console.WriteLine($"[MQTT] Firing DataReceived event for topic: '{topic}' with path: {path.GetFullPath()}");
+            _logger.LogInformation("[MQTT] Firing DataReceived event for topic: '{Topic}' with path: {Path}", topic, path.GetFullPath());
             DataReceived?.Invoke(this, dataPoint);
         }
         else
         {
-            Console.WriteLine($"[MQTT] ERROR: Path is null for topic: '{topic}' - DataReceived event will not be fired!");
         }
     }
 

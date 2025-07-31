@@ -195,6 +195,7 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
 
     private async Task OnTopicAdded(TopicAddedEvent eventData)
     {
+        Console.WriteLine($"[EventDrivenTopicBrowser] Topic added: {eventData.Topic} from {eventData.SourceType}");
         var topicInfo = new TopicInfo
         {
             Topic = eventData.Topic,

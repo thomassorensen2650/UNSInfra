@@ -131,10 +131,6 @@ public class MqttDataIngestionConfiguration : IDataIngestionConfiguration
     {
         var json = JsonSerializer.Serialize(this);
         var clone = JsonSerializer.Deserialize<MqttDataIngestionConfiguration>(json)!;
-        clone.Id = Guid.NewGuid().ToString();
-        clone.Name = $"{Name} (Copy)";
-        clone.CreatedAt = DateTime.UtcNow;
-        clone.ModifiedAt = DateTime.UtcNow;
         return clone;
     }
 

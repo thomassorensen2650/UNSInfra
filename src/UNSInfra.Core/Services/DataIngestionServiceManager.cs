@@ -19,8 +19,21 @@ public class DataIngestionServiceManager : IDataIngestionServiceManager, IDispos
     private readonly Dictionary<string, IDataIngestionServiceDescriptor> _serviceDescriptors = new();
     private readonly Dictionary<string, IDataIngestionService> _runningServices = new();
     private readonly Dictionary<string, ServiceStatus> _serviceStatuses = new();
+    private readonly Dictionary<string, ServiceMetrics> _serviceMetrics = new();
     private readonly object _lock = new object();
     private bool _disposed = false;
+
+    /// <summary>
+    /// Internal class to track service metrics for calculation.
+    /// </summary>
+    private class ServiceMetrics
+    {
+        public long DataPointsReceived { get; set; }
+        public long BytesReceived { get; set; }
+        public DateTime LastDataReceived { get; set; } = DateTime.UtcNow;
+        public Queue<DateTime> RecentMessageTimes { get; set; } = new();
+        public Queue<long> RecentByteCounts { get; set; } = new();
+    }
 
     /// <summary>
     /// Event fired when a service status changes.
@@ -178,6 +191,9 @@ public class DataIngestionServiceManager : IDataIngestionServiceManager, IDispos
             // Subscribe to data events
             service.DataReceived += (sender, dataPoint) =>
             {
+                // Track metrics for this service
+                UpdateServiceMetrics(configuration.Id, dataPoint);
+                
                 DataReceived?.Invoke(this, new ServiceDataReceivedEventArgs
                 {
                     ConfigurationId = configuration.Id,
@@ -189,10 +205,11 @@ public class DataIngestionServiceManager : IDataIngestionServiceManager, IDispos
             // Start the service
             await service.StartAsync();
 
-            // Store the running service
+            // Store the running service and initialize metrics
             lock (_lock)
             {
                 _runningServices[configuration.Id] = service;
+                _serviceMetrics[configuration.Id] = new ServiceMetrics();
             }
 
             UpdateServiceStatus(configuration.Id, ConnectionStatus.Connected, "Service started successfully");
@@ -242,10 +259,11 @@ public class DataIngestionServiceManager : IDataIngestionServiceManager, IDispos
                 disposable.Dispose();
             }
 
-            // Remove from running services
+            // Remove from running services and clean up metrics
             lock (_lock)
             {
                 _runningServices.Remove(configurationId);
+                _serviceMetrics.Remove(configurationId);
             }
 
             UpdateServiceStatus(configurationId, ConnectionStatus.Disconnected, "Service stopped");
@@ -415,6 +433,9 @@ public class DataIngestionServiceManager : IDataIngestionServiceManager, IDispos
         {
             _serviceStatuses.TryGetValue(configurationId, out previousStatus);
             
+            // Get current metrics if available
+            var metrics = _serviceMetrics.GetValueOrDefault(configurationId);
+            
             newStatus = new ServiceStatus
             {
                 ConfigurationId = configurationId,
@@ -422,10 +443,10 @@ public class DataIngestionServiceManager : IDataIngestionServiceManager, IDispos
                 Message = message,
                 LastUpdated = DateTime.UtcNow,
                 ConnectionAttempts = previousStatus?.ConnectionAttempts ?? 0,
-                DataPointsReceived = previousStatus?.DataPointsReceived ?? 0,
-                BytesReceived = previousStatus?.BytesReceived ?? 0,
-                MessageRate = previousStatus?.MessageRate ?? 0.0,
-                ThroughputBytesPerSecond = previousStatus?.ThroughputBytesPerSecond ?? 0.0
+                DataPointsReceived = metrics?.DataPointsReceived ?? 0,
+                BytesReceived = metrics?.BytesReceived ?? 0,
+                MessageRate = 0.0, // Will be calculated in UpdateServiceMetrics
+                ThroughputBytesPerSecond = 0.0 // Will be calculated in UpdateServiceMetrics
             };
             
             // Increment connection attempts when connecting
@@ -477,6 +498,79 @@ public class DataIngestionServiceManager : IDataIngestionServiceManager, IDispos
         catch (Exception ex)
         {
             _logger.LogError(ex, "Error handling configuration change for {ConfigurationId}", e.Configuration.Id);
+        }
+    }
+
+    /// <summary>
+    /// Updates metrics for a service when data is received.
+    /// </summary>
+    /// <param name="configurationId">The service configuration ID</param>
+    /// <param name="dataPoint">The received data point</param>
+    private void UpdateServiceMetrics(string configurationId, DataPoint dataPoint)
+    {
+        lock (_lock)
+        {
+            // Initialize metrics if not exists
+            if (!_serviceMetrics.ContainsKey(configurationId))
+            {
+                _serviceMetrics[configurationId] = new ServiceMetrics();
+            }
+
+            var metrics = _serviceMetrics[configurationId];
+            var now = DateTime.UtcNow;
+
+            // Update counters
+            metrics.DataPointsReceived++;
+            
+            // Estimate bytes (topic + value as JSON, rough estimate)
+            var estimatedBytes = (dataPoint.Topic?.Length ?? 0) + 
+                                (dataPoint.Value?.ToString()?.Length ?? 0) + 50; // JSON overhead
+            metrics.BytesReceived += estimatedBytes;
+            metrics.LastDataReceived = now;
+
+            // Track recent message times for rate calculation (last 60 seconds)
+            metrics.RecentMessageTimes.Enqueue(now);
+            metrics.RecentByteCounts.Enqueue(estimatedBytes);
+            
+            // Remove old entries (older than 60 seconds)
+            var cutoffTime = now.AddSeconds(-60);
+            while (metrics.RecentMessageTimes.Count > 0 && metrics.RecentMessageTimes.Peek() < cutoffTime)
+            {
+                metrics.RecentMessageTimes.Dequeue();
+                metrics.RecentByteCounts.Dequeue();
+            }
+
+            // Update the service status with calculated metrics
+            if (_serviceStatuses.TryGetValue(configurationId, out var status))
+            {
+                status.DataPointsReceived = metrics.DataPointsReceived;
+                status.BytesReceived = metrics.BytesReceived;
+                
+                // Calculate message rate (messages per second over last 60 seconds)
+                if (metrics.RecentMessageTimes.Count > 1)
+                {
+                    var timeSpan = now - metrics.RecentMessageTimes.Peek();
+                    status.MessageRate = timeSpan.TotalSeconds > 0 ? metrics.RecentMessageTimes.Count / timeSpan.TotalSeconds : 0;
+                }
+                else
+                {
+                    status.MessageRate = 0;
+                }
+                
+                // Calculate throughput (bytes per second over last 60 seconds)
+                if (metrics.RecentByteCounts.Count > 0)
+                {
+                    var timeSpan = now - metrics.RecentMessageTimes.Peek();
+                    var totalBytes = metrics.RecentByteCounts.Sum();
+                    status.ThroughputBytesPerSecond = timeSpan.TotalSeconds > 0 ? totalBytes / timeSpan.TotalSeconds : 0;
+                }
+                else
+                {
+                    status.ThroughputBytesPerSecond = 0;
+                }
+                
+                status.LastUpdated = now;
+            }
         }
     }
 
