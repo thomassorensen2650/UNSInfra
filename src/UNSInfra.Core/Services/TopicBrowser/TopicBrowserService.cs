@@ -44,7 +44,8 @@ public class TopicBrowserService : ITopicBrowserService
             CreatedAt = config.CreatedAt,
             ModifiedAt = config.ModifiedAt,
             Description = config.Description,
-            Metadata = config.Metadata
+            Metadata = config.Metadata,
+            NSPath = config.NSPath
             // LastDataTimestamp will be updated by data update events for performance
         }).ToList();
 
@@ -74,7 +75,8 @@ public class TopicBrowserService : ITopicBrowserService
                 CreatedAt = config.CreatedAt,
                 ModifiedAt = config.ModifiedAt,
                 Description = config.Description,
-                Metadata = config.Metadata
+                Metadata = config.Metadata,
+                NSPath = config.NSPath
             };
 
             topicInfos.Add(topicInfo);

@@ -8,25 +8,83 @@
     list-style-type: none;
     padding-left: 1em;
 }
+
+.tab-content {
+    max-height: 600px; /* Set a reasonable maximum height */
+}
+
+.nav-tabs .nav-link {
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+}
+
+.nav-tabs .nav-link.active {
+    background-color: #fff;
+    border-color: #dee2e6 #dee2e6 #fff;
+}
+
+.tab-pane {
+    max-height: 560px; /* Subtract tab height from max height */
+    overflow-y: auto;
+}
 </style>
 
-<ul class="topic-tree">
-    @foreach (var node in RootNodes)
-    {
-        <TopicTreeNode Node="node" HighlightedPaths="HighlightedPaths" SelectedNodePath="@SelectedNodePath" OnTopicSelected="HandleTopicSelected" OnToggleExpanded="ToggleExpansion" />
-    }
+<!-- Tab Navigation -->
+<ul class="nav nav-tabs" id="topicTabs" role="tablist">
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(activeTab == "ns" ? "active" : "")" id="ns-tab" type="button" role="tab" 
+                @onclick="@(() => SetActiveTab("ns"))">
+            🏗️ UNS
+        </button>
+    </li>
+    <li class="nav-item" role="presentation">
+        <button class="nav-link @(activeTab == "unverified" ? "active" : "")" id="unverified-tab" type="button" role="tab"
+                @onclick="@(() => SetActiveTab("unverified"))">
+            📊 Data Browser
+        </button>
+    </li>
 </ul>
+
+<!-- Tab Content -->
+<div class="tab-content">
+    <div class="tab-pane @(activeTab == "ns" ? "show active" : "")" id="ns-pane" role="tabpanel">
+        <NSTreeEditor OnAddDataToNamespace="HandleAddDataToNamespace" OnTopicSelected="HandleTopicSelected" />
+    </div>
+    
+    <div class="tab-pane @(activeTab == "unverified" ? "show active" : "")" id="unverified-pane" role="tabpanel">
+        @if (UnverifiedNodes.Any())
+        {
+            <ul class="topic-tree">
+                @foreach (var node in UnverifiedNodes)
+                {
+                    <TopicTreeNodeWithNS Node="node" HighlightedPaths="HighlightedPaths" SelectedNodePath="@SelectedNodePath" OnTopicSelected="HandleTopicSelected" OnToggleExpanded="ToggleExpansion" />
+                }
+            </ul>
+        }
+        else
+        {
+            <div class="text-center py-4">
+                <i class="bi bi-database text-muted" style="font-size: 2rem;"></i>
+                <p class="text-muted mt-2">No data found</p>
+                <small class="text-muted">Data will appear here when received from data sources</small>
+            </div>
+        }
+    </div>
+</div>
 
 @code {
     [Parameter] public List<TopicInfo> Topics { get; set; } = new();
     [Parameter] public HashSet<string> HighlightedPaths { get; set; } = new();
     [Parameter] public EventCallback<TopicInfo> OnTopicSelected { get; set; }
+    [Parameter] public EventCallback<(string namespacePath, List<TopicInfo> topics)> OnAddDataToNamespace { get; set; }
     [Parameter] public int MaxVisibleTopics { get; set; } = 1000; // Limit visible topics for performance
     [Parameter] public int MaxUnverifiedTopicsPerPage { get; set; } = 100; // Paginate unverified topics
     
     private string? SelectedNodePath { get; set; }
+    private string activeTab = "ns"; // Default to NS Structure tab
 
     private List<TopicTreeNodeModel> RootNodes = new();
+    private List<TopicTreeNodeModel> UnverifiedNodes = new();
     private Dictionary<string, TopicTreeNodeModel> NodeLookup = new();
     private Dictionary<string, List<TopicInfo>> TopicsByPath = new();
     private Dictionary<string, List<string>> ChildrenLookup = new(); // Parent path -> immediate child names (ordered)
@@ -232,16 +290,35 @@
         }
     }
 
+    private void SetActiveTab(string tabName)
+    {
+        activeTab = tabName;
+        StateHasChanged();
+    }
+
+    private async Task HandleAddDataToNamespace(string namespacePath)
+    {
+        // Get topics that are not yet assigned to namespaces for selection
+        var availableTopics = Topics.Where(t => string.IsNullOrEmpty(t.NSPath)).ToList();
+        await OnAddDataToNamespace.InvokeAsync((namespacePath, availableTopics));
+    }
+
     private async Task BuildTreeStructure(List<TopicInfo> topics)
     {
         NodeLookup.Clear();
         TopicsByPath.Clear();
         ChildrenLookup.Clear();
-        var root = new List<TopicTreeNodeModel>();
+        
+        // Clear all node collections
+        UnverifiedNodes.Clear();
 
-        // Separate verified and unverified topics for different display strategies
-        var verifiedTopics = topics.Where(t => t.IsVerified).OrderBy(t => t.CreatedAt).ToList();
-        var unverifiedTopics = topics.Where(t => !t.IsVerified).OrderBy(t => t.CreatedAt).ToList();
+        // Separate topics for different display strategies
+        // For Data Browser: show topics that are NOT assigned to namespaces (regardless of verified status)
+        var unverifiedTopics = topics.Where(t => string.IsNullOrEmpty(t.NSPath)).OrderBy(t => t.CreatedAt).ToList();
+        
+        // For hierarchical tree display: show topics that are verified but NOT assigned to namespaces
+        var verifiedTopics = topics.Where(t => t.IsVerified && string.IsNullOrEmpty(t.NSPath)).OrderBy(t => t.CreatedAt).ToList();
+        
 
         // Process verified topics using hierarchical structure
         foreach (var topic in verifiedTopics)
@@ -272,22 +349,38 @@
             TopicsByPath[currentPath].Add(topic);
         }
 
+        // Add NS (Namespace Structure) section - but don't populate it here
+        // The NS section will be handled by the NSTreeEditor component
+        const string nsSectionName = "📁 NS";
+        if (!ChildrenLookup.ContainsKey(""))
+            ChildrenLookup[""] = new List<string>();
+        if (!ChildrenLookup[""].Contains(nsSectionName))
+            ChildrenLookup[""].Insert(0, nsSectionName); // Insert at beginning
+
+        // Initialize NS section as placeholder - actual editing happens in NSTreeEditor
+        if (!ChildrenLookup.ContainsKey(nsSectionName))
+            ChildrenLookup[nsSectionName] = new List<string>();
+        if (!TopicsByPath.ContainsKey(nsSectionName))
+            TopicsByPath[nsSectionName] = new List<TopicInfo>();
+
+        // Always create unverified topics section, even if empty initially
+        const string unverifiedSectionName = "🔍 Unverified Topics";
+        
+        // Add unverified section to root
+        if (!ChildrenLookup.ContainsKey(""))
+            ChildrenLookup[""] = new List<string>();
+        if (!ChildrenLookup[""].Contains(unverifiedSectionName))
+            ChildrenLookup[""].Add(unverifiedSectionName);
+        
+        // Initialize unverified section
+        if (!ChildrenLookup.ContainsKey(unverifiedSectionName))
+            ChildrenLookup[unverifiedSectionName] = new List<string>();
+        if (!TopicsByPath.ContainsKey(unverifiedSectionName))
+            TopicsByPath[unverifiedSectionName] = new List<TopicInfo>();
+
         // Process unverified topics using folder structure grouped by source type
         if (unverifiedTopics.Count > 0)
         {
-            const string unverifiedSectionName = "🔍 Unverified Topics";
-            
-            // Add unverified section to root
-            if (!ChildrenLookup.ContainsKey(""))
-                ChildrenLookup[""] = new List<string>();
-            if (!ChildrenLookup[""].Contains(unverifiedSectionName))
-                ChildrenLookup[""].Add(unverifiedSectionName);
-            
-            // Initialize unverified section
-            if (!ChildrenLookup.ContainsKey(unverifiedSectionName))
-                ChildrenLookup[unverifiedSectionName] = new List<string>();
-            if (!TopicsByPath.ContainsKey(unverifiedSectionName))
-                TopicsByPath[unverifiedSectionName] = new List<TopicInfo>();
             
             // Group unverified topics by source type, then build folder structure
             var topicsBySourceType = unverifiedTopics.GroupBy(t => t.SourceType).ToList();
@@ -355,15 +448,18 @@
             }
         }
 
-        // Build only the root level nodes initially - use fast lookup
+        // Build separate node collections for tabs
+        BuildUnverifiedTreeStructure(unverifiedTopics);
+
+        // Keep the original root nodes for compatibility
         var rootChildNames = ChildrenLookup.GetValueOrDefault("", new List<string>());
+        var root = new List<TopicTreeNodeModel>();
         foreach (var childName in rootChildNames)
         {
             var node = CreateNode(childName, childName);
             root.Add(node);
             NodeLookup[childName] = node;
         }
-
         RootNodes = root;
     }
 
@@ -371,6 +467,18 @@
     {
         var hasData = TopicsByPath.ContainsKey(fullPath) && TopicsByPath[fullPath].Any();
         var hasChildren = ChildrenLookup.ContainsKey(fullPath) && ChildrenLookup[fullPath].Count > 0;
+        
+        // Special case: NS folder should always be expandable to show the NSTreeEditor
+        if (name == "📁 NS")
+        {
+            hasChildren = true;
+        }
+        
+        // Special case: Unverified Topics folder should always be expandable 
+        if (name == "🔍 Unverified Topics")
+        {
+            hasChildren = true;
+        }
         
         return new TopicTreeNodeModel
         {
@@ -542,6 +650,48 @@
     }
 
 
+    private void BuildUnverifiedTreeStructure(List<TopicInfo> unverifiedTopics)
+    {
+        if (!unverifiedTopics.Any()) return;
+
+        // Group unverified topics by source type
+        var topicsBySourceType = unverifiedTopics.GroupBy(t => t.SourceType).ToList();
+
+        foreach (var sourceGroup in topicsBySourceType)
+        {
+            var sourceType = sourceGroup.Key;
+            var sourceNode = new TopicTreeNodeModel
+            {
+                Name = sourceType,
+                FullPath = sourceType,
+                Children = new List<TopicTreeNodeModel>(),
+                HasChildren = true,
+                ChildrenLoaded = false,
+                IsExpanded = false
+            };
+
+            // Build folder structure for each topic within this source type
+            foreach (var topic in sourceGroup)
+            {
+                var topicNode = new TopicTreeNodeModel
+                {
+                    Name = topic.Topic,
+                    FullPath = $"{sourceType}/{topic.Topic}",
+                    Topic = topic,
+                    HasChildren = false,
+                    ChildrenLoaded = true,
+                    IsExpanded = false
+                };
+                sourceNode.Children.Add(topicNode);
+            }
+
+            UnverifiedNodes.Add(sourceNode);
+        }
+    }
+
+
+
+
     private string GetParentPath(string path)
     {
         var lastSlash = path.LastIndexOf('/');
@@ -567,11 +717,11 @@
                 SelectedNodePath = $"{unverifiedSectionName}/{topic.SourceType}/{topic.Topic}";
             }
             
-            // Force immediate re-render of all tree nodes to update selection highlighting
-            StateHasChanged();
-            await InvokeAsync(StateHasChanged); // Second render cycle to ensure highlighting
-            
+            // First invoke the callback to update the parent component
             await OnTopicSelected.InvokeAsync(topic);
+            
+            // Then force immediate re-render to update selection highlighting
+            StateHasChanged();
         }
         catch (Exception ex)
         {

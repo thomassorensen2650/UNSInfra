@@ -84,6 +84,8 @@ public class SQLiteTopicConfigurationRepository : ITopicConfigurationRepository
                 existingEntity.ModifiedAt = configuration.ModifiedAt;
                 existingEntity.CreatedBy = configuration.CreatedBy;
                 existingEntity.MetadataJson = System.Text.Json.JsonSerializer.Serialize(configuration.Metadata);
+                existingEntity.NSPath = configuration.NSPath;
+                existingEntity.NamespaceConfigurationId = configuration.NamespaceConfigurationId;
             }
             else
             {
@@ -125,6 +127,8 @@ public class SQLiteTopicConfigurationRepository : ITopicConfigurationRepository
                     entityToUpdate.ModifiedAt = configuration.ModifiedAt;
                     entityToUpdate.CreatedBy = configuration.CreatedBy;
                     entityToUpdate.MetadataJson = System.Text.Json.JsonSerializer.Serialize(configuration.Metadata);
+                    entityToUpdate.NSPath = configuration.NSPath;
+                    entityToUpdate.NamespaceConfigurationId = configuration.NamespaceConfigurationId;
                     
                     await updateContext.SaveChangesAsync();
                 }

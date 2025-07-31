@@ -1,7 +1,11 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using UNSInfra.Core.Configuration;
 using UNSInfra.Repositories;
 using UNSInfra.Storage.Abstractions;
+using UNSInfra.Storage.InMemory;
 using UNSInfra.Storage.SQLite.Repositories;
 using UNSInfra.Storage.SQLite.Storage;
 
@@ -98,12 +102,205 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ITopicConfigurationRepository, SQLiteTopicConfigurationRepository>();
         services.AddScoped<ISchemaRepository, SQLiteSchemaRepository>();
         services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
+        services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
 
         // Add storage services - Realtime storage as singleton for in-memory cache, Historical as scoped
         services.AddSingleton<IRealtimeStorage, SQLiteRealtimeStorage>();
         services.AddScoped<IHistoricalStorage, SQLiteHistoricalStorage>();
 
         return services;
+    }
+
+    /// <summary>
+    /// Adds configurable storage services based on appsettings.json configuration.
+    /// IRealtimeStorage is always InMemory for performance, but IHistoricalStorage uses the configured provider.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="configuration">The configuration provider.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    public static IServiceCollection AddConfigurableStorage(this IServiceCollection services, IConfiguration configuration)
+    {
+        // Bind storage configuration
+        var storageConfig = new StorageConfiguration();
+        configuration.GetSection("Storage").Bind(storageConfig);
+        services.Configure<StorageConfiguration>(options => configuration.GetSection("Storage").Bind(options));
+
+        // Always use InMemory for realtime storage (performance requirement)
+        services.AddSingleton<IRealtimeStorage, InMemoryRealtimeStorage>();
+
+        // Configure historical storage based on provider setting
+        switch (storageConfig.Provider.ToUpperInvariant())
+        {
+            case "SQLITE":
+                return services.AddSQLiteHistoricalStorage(storageConfig);
+            case "INMEMORY":
+                services.AddSingleton<IHistoricalStorage, InMemoryHistoricalStorage>();
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported storage provider: {storageConfig.Provider}. Supported providers: SQLite, InMemory");
+        }
+
+        return services;
+    }
+
+    /// <summary>
+    /// Adds SQLite storage specifically for historical data only.
+    /// </summary>
+    /// <param name="services">The service collection.</param>
+    /// <param name="storageConfig">The storage configuration.</param>
+    /// <returns>The service collection for method chaining.</returns>
+    private static IServiceCollection AddSQLiteHistoricalStorage(this IServiceCollection services, StorageConfiguration storageConfig)
+    {
+        var connectionString = storageConfig.ConnectionString;
+        var commandTimeout = storageConfig.CommandTimeoutSeconds;
+
+        // Add DbContextFactory for thread-safe context creation
+        services.AddDbContextFactory<UNSInfraDbContext>(options =>
+        {
+            string finalConnectionString;
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                // Use SQLite with a file-based database
+                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
+                    "UNSInfra", "unsinfra.db");
+                
+                // Ensure directory exists
+                Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+                
+                // Use optimized settings for better concurrency and reduced locking
+                finalConnectionString = $"Data Source={dbPath};Cache=Shared;Pooling=True;";
+            }
+            else
+            {
+                finalConnectionString = connectionString;
+            }
+            
+            options.UseSqlite(finalConnectionString, sqliteOptions =>
+            {
+                sqliteOptions.CommandTimeout(commandTimeout);
+            });
+            
+            // Enable sensitive data logging in development
+            options.EnableSensitiveDataLogging(false);
+            options.EnableDetailedErrors(true);
+            
+            // Reduce EF Core logging verbosity
+            options.ConfigureWarnings(warnings => warnings.Log(
+                (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuted, Microsoft.Extensions.Logging.LogLevel.Debug),
+                (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuting, Microsoft.Extensions.Logging.LogLevel.Debug),
+                (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandCreated, Microsoft.Extensions.Logging.LogLevel.Debug),
+                (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandCreating, Microsoft.Extensions.Logging.LogLevel.Debug),
+                (Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.QueryExecutionPlanned, Microsoft.Extensions.Logging.LogLevel.Debug)
+            ));
+        });
+
+        // Also add regular DbContext for non-concurrent operations (like initialization)
+        services.AddDbContext<UNSInfraDbContext>(options =>
+        {
+            string finalConnectionString;
+            if (string.IsNullOrEmpty(connectionString))
+            {
+                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
+                    "UNSInfra", "unsinfra.db");
+                Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
+                finalConnectionString = $"Data Source={dbPath};Cache=Shared;Pooling=True;";
+            }
+            else
+            {
+                finalConnectionString = connectionString;
+            }
+            
+            options.UseSqlite(finalConnectionString, sqliteOptions =>
+            {
+                sqliteOptions.CommandTimeout(commandTimeout);
+            });
+            options.EnableSensitiveDataLogging(false);
+            options.EnableDetailedErrors(true);
+            
+            // Reduce EF Core logging verbosity
+            options.ConfigureWarnings(warnings => warnings.Log(
+                (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuted, Microsoft.Extensions.Logging.LogLevel.Debug),
+                (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuting, Microsoft.Extensions.Logging.LogLevel.Debug),
+                (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandCreated, Microsoft.Extensions.Logging.LogLevel.Debug),
+                (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandCreating, Microsoft.Extensions.Logging.LogLevel.Debug),
+                (Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.QueryExecutionPlanned, Microsoft.Extensions.Logging.LogLevel.Debug)
+            ));
+        });
+
+        // Add repositories
+        services.AddScoped<IHierarchyConfigurationRepository, SQLiteHierarchyConfigurationRepository>();
+        services.AddScoped<ITopicConfigurationRepository, SQLiteTopicConfigurationRepository>();
+        services.AddScoped<ISchemaRepository, SQLiteSchemaRepository>();
+        services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
+        services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
+
+        // Add historical storage as scoped
+        services.AddScoped<IHistoricalStorage, SQLiteHistoricalStorage>();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Initializes the configured storage provider.
+    /// </summary>
+    /// <param name="serviceProvider">The service provider.</param>
+    /// <param name="configuration">The configuration provider.</param>
+    /// <returns>A task representing the async operation.</returns>
+    public static async Task InitializeConfigurableStorageAsync(this IServiceProvider serviceProvider, IConfiguration configuration)
+    {
+        var storageConfig = new StorageConfiguration();
+        configuration.GetSection("Storage").Bind(storageConfig);
+
+        switch (storageConfig.Provider.ToUpperInvariant())
+        {
+            case "SQLITE":
+                await serviceProvider.InitializeSQLiteDatabaseAsync(storageConfig);
+                break;
+            case "INMEMORY":
+                // No initialization needed for in-memory storage
+                break;
+            default:
+                throw new InvalidOperationException($"Unsupported storage provider: {storageConfig.Provider}");
+        }
+    }
+
+    /// <summary>
+    /// Initializes SQLite database with configuration options.
+    /// </summary>
+    /// <param name="serviceProvider">The service provider.</param>
+    /// <param name="storageConfig">The storage configuration.</param>
+    /// <returns>A task representing the async operation.</returns>
+    private static async Task InitializeSQLiteDatabaseAsync(this IServiceProvider serviceProvider, StorageConfiguration storageConfig)
+    {
+        using var scope = serviceProvider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<UNSInfraDbContext>();
+        
+        // Create database if it doesn't exist
+        await context.Database.EnsureCreatedAsync();
+        
+        // Apply configuration-based SQLite settings
+        try
+        {
+            if (storageConfig.EnableWalMode)
+            {
+                await context.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
+            }
+            await context.Database.ExecuteSqlRawAsync("PRAGMA synchronous=NORMAL;");
+            await context.Database.ExecuteSqlRawAsync("PRAGMA cache_size=" + storageConfig.CacheSize + ";");
+            await context.Database.ExecuteSqlRawAsync("PRAGMA temp_store=memory;");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Warning: Could not set SQLite PRAGMA settings: {ex.Message}");
+        }
+        
+        // Initialize default hierarchy configuration
+        var hierarchyRepo = scope.ServiceProvider.GetRequiredService<IHierarchyConfigurationRepository>();
+        await hierarchyRepo.EnsureDefaultConfigurationAsync();
+        
+        // Initialize default namespace configurations
+        var namespaceRepo = scope.ServiceProvider.GetRequiredService<INamespaceConfigurationRepository>();
+        await namespaceRepo.EnsureDefaultConfigurationAsync();
     }
 
     /// <summary>
@@ -135,6 +332,10 @@ public static class ServiceCollectionExtensions
         // Initialize default hierarchy configuration
         var hierarchyRepo = scope.ServiceProvider.GetRequiredService<IHierarchyConfigurationRepository>();
         await hierarchyRepo.EnsureDefaultConfigurationAsync();
+        
+        // Initialize default namespace configurations
+        var namespaceRepo = scope.ServiceProvider.GetRequiredService<INamespaceConfigurationRepository>();
+        await namespaceRepo.EnsureDefaultConfigurationAsync();
     }
 
 }

@@ -1,0 +1,113 @@
+@using UNSInfra.Models.Namespace
+@using UNSInfra.Services
+
+<div class="ns-node-selector-item">
+    <div class="d-flex align-items-center">
+        @if (Node.Children.Any())
+        {
+            <button class="btn btn-link btn-sm p-0 me-1" @onclick="ToggleExpansion" style="width: 16px;">
+                <i class="bi @(isExpanded ? "bi-chevron-down" : "bi-chevron-right")" style="font-size: 0.75rem;"></i>
+            </button>
+        }
+        else
+        {
+            <span style="width: 16px; display: inline-block;"></span>
+        }
+        
+        <div class="flex-grow-1 d-flex align-items-center">
+            @if (Node.NodeType == NSNodeType.HierarchyNode)
+            {
+                <i class="bi bi-folder text-primary me-1"></i>
+                <span class="fw-medium">@Node.Name</span>
+                <small class="text-muted ms-1">(@Node.HierarchyNode?.Name)</small>
+            }
+            else if (Node.NodeType == NSNodeType.Namespace)
+            {
+                <button class="btn btn-link btn-sm p-0 text-start flex-grow-1 namespace-select-btn @(IsSelected ? "selected" : "")" 
+                        @onclick="SelectNamespace">
+                    <i class="bi @GetNamespaceIcon() @GetNamespaceColor() me-1"></i>
+                    <span>@Node.Name</span>
+                    <small class="text-muted ms-1">(@Node.Namespace?.Type.GetDisplayName())</small>
+                    @if (IsSelected)
+                    {
+                        <i class="bi bi-check-circle text-success ms-2"></i>
+                    }
+                </button>
+            }
+        </div>
+    </div>
+    
+    @if (isExpanded && Node.Children.Any())
+    {
+        <div class="ms-3 mt-1">
+            @foreach (var child in Node.Children)
+            {
+                <NSNodeSelector Node="child" 
+                               SelectedPath="SelectedPath" 
+                               OnNodeSelected="OnNodeSelected" />
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public NSTreeNode Node { get; set; } = new();
+    [Parameter] public string SelectedPath { get; set; } = "";
+    [Parameter] public EventCallback<string> OnNodeSelected { get; set; }
+    
+    private bool isExpanded = false;
+    
+    private bool IsSelected => !string.IsNullOrEmpty(SelectedPath) && Node.FullPath == SelectedPath;
+    
+    private void ToggleExpansion()
+    {
+        isExpanded = !isExpanded;
+        StateHasChanged();
+    }
+    
+    private async Task SelectNamespace()
+    {
+        if (Node.NodeType == NSNodeType.Namespace)
+        {
+            await OnNodeSelected.InvokeAsync(Node.FullPath);
+        }
+    }
+    
+    private string GetNamespaceIcon()
+    {
+        return Node.Namespace?.Type.GetIconClass() ?? "bi-folder";
+    }
+    
+    private string GetNamespaceColor()
+    {
+        return Node.Namespace?.Type.GetColorClass() ?? "text-primary";
+    }
+}
+
+<style>
+.ns-node-selector-item {
+    margin-bottom: 2px;
+}
+
+.namespace-select-btn {
+    border: none !important;
+    text-decoration: none !important;
+    padding: 0.25rem 0.5rem;
+    border-radius: 0.25rem;
+    transition: all 0.15s ease-in-out;
+}
+
+.namespace-select-btn:hover {
+    background-color: #e9ecef !important;
+    text-decoration: none !important;
+}
+
+.namespace-select-btn.selected {
+    background-color: #d1ecf1 !important;
+    border: 1px solid #bee5eb !important;
+}
+
+.namespace-select-btn:focus {
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+</style>

@@ -1,0 +1,184 @@
+@using UNSInfra.Services.TopicBrowser
+
+<div class="topic-selection-node">
+    <div class="d-flex align-items-center mb-1">
+        @if (Node.HasChildren)
+        {
+            <button class="btn btn-link btn-sm p-0 me-1" @onclick="ToggleExpansion" style="width: 16px;">
+                <i class="bi @(Node.IsExpanded ? "bi-chevron-down" : "bi-chevron-right")" style="font-size: 0.75rem;"></i>
+            </button>
+        }
+        else
+        {
+            <span style="width: 16px; display: inline-block;"></span>
+        }
+        
+        <div class="form-check me-2">
+            <input class="form-check-input" type="checkbox" 
+                   checked="@IsSelected" 
+                   @onchange="OnCheckboxChanged" 
+                   disabled="@IsIndeterminate">
+            @if (IsIndeterminate)
+            {
+                <span class="indeterminate-indicator">-</span>
+            }
+        </div>
+        
+        <div class="flex-grow-1 d-flex align-items-center">
+            @if (Node.IsFolder)
+            {
+                <i class="bi bi-folder text-primary me-1"></i>
+                <span class="fw-medium">@Node.Name</span>
+                @if (Node.HasChildren)
+                {
+                    <small class="text-muted ms-1">(@GetChildCount() items)</small>
+                }
+            }
+            else
+            {
+                <i class="bi bi-file-text text-secondary me-1"></i>
+                <span>@Node.Name</span>
+                @if (Node.Topic != null)
+                {
+                    <small class="text-muted ms-1">(@Node.Topic.SourceType)</small>
+                }
+            }
+        </div>
+    </div>
+    
+    @if (Node.IsExpanded && Node.HasChildren)
+    {
+        <div class="ms-3">
+            @foreach (var child in Node.Children)
+            {
+                <TopicSelectionNode Node="child" 
+                                   SelectedTopics="SelectedTopics" 
+                                   OnSelectionChanged="OnSelectionChanged" />
+            }
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public TopicSelectionTree.TopicSelectionTreeNode Node { get; set; } = new();
+    [Parameter] public HashSet<TopicInfo> SelectedTopics { get; set; } = new();
+    [Parameter] public EventCallback<HashSet<TopicInfo>> OnSelectionChanged { get; set; }
+    
+    private bool IsSelected => Node.Topic != null && SelectedTopics.Contains(Node.Topic);
+    
+    private bool IsIndeterminate => Node.IsFolder && Node.HasChildren && 
+                                   GetSelectedChildren().Count > 0 && 
+                                   GetSelectedChildren().Count < GetAllTopics().Count;
+    
+    private void ToggleExpansion()
+    {
+        Node.IsExpanded = !Node.IsExpanded;
+        StateHasChanged();
+    }
+    
+    private async Task OnCheckboxChanged(ChangeEventArgs e)
+    {
+        var isChecked = (bool)(e.Value ?? false);
+        
+        if (Node.IsFolder)
+        {
+            // For folders, select/deselect all child topics
+            var allTopics = GetAllTopics();
+            
+            if (isChecked)
+            {
+                foreach (var topic in allTopics)
+                {
+                    SelectedTopics.Add(topic);
+                }
+            }
+            else
+            {
+                foreach (var topic in allTopics)
+                {
+                    SelectedTopics.Remove(topic);
+                }
+            }
+        }
+        else if (Node.Topic != null)
+        {
+            // For individual topics
+            if (isChecked)
+            {
+                SelectedTopics.Add(Node.Topic);
+            }
+            else
+            {
+                SelectedTopics.Remove(Node.Topic);
+            }
+        }
+        
+        await OnSelectionChanged.InvokeAsync(SelectedTopics);
+        StateHasChanged();
+    }
+    
+    private List<TopicInfo> GetAllTopics()
+    {
+        var topics = new List<TopicInfo>();
+        CollectTopics(Node, topics);
+        return topics;
+    }
+    
+    private void CollectTopics(TopicSelectionTree.TopicSelectionTreeNode node, List<TopicInfo> topics)
+    {
+        if (node.Topic != null)
+        {
+            topics.Add(node.Topic);
+        }
+        
+        foreach (var child in node.Children)
+        {
+            CollectTopics(child, topics);
+        }
+    }
+    
+    private List<TopicInfo> GetSelectedChildren()
+    {
+        var allTopics = GetAllTopics();
+        return allTopics.Where(t => SelectedTopics.Contains(t)).ToList();
+    }
+    
+    private int GetChildCount()
+    {
+        return GetAllTopics().Count;
+    }
+}
+
+<style>
+.topic-selection-node {
+    margin-bottom: 2px;
+}
+
+.form-check {
+    margin-bottom: 0;
+    position: relative;
+}
+
+.indeterminate-indicator {
+    position: absolute;
+    left: 6px;
+    top: 2px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    color: #6c757d;
+    pointer-events: none;
+}
+
+.form-check-input:disabled {
+    opacity: 0.3;
+}
+
+.btn-link {
+    color: #6c757d !important;
+    text-decoration: none !important;
+}
+
+.btn-link:hover {
+    color: #495057 !important;
+}
+</style>

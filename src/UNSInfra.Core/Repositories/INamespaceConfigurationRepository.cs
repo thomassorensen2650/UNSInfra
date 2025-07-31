@@ -65,4 +65,10 @@ public interface INamespaceConfigurationRepository
     /// <param name="excludeId">Configuration ID to exclude from conflict check (for updates)</param>
     /// <returns>True if there's a conflict, false otherwise</returns>
     Task<bool> HasConflictingPatternAsync(string topicPathPattern, string? excludeId = null);
+
+    /// <summary>
+    /// Ensures default namespace configurations are created if they don't exist.
+    /// </summary>
+    /// <returns>A task representing the async operation</returns>
+    Task EnsureDefaultConfigurationAsync();
 }

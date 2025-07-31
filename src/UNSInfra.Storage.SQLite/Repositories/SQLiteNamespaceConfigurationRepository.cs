@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using UNSInfra.Models.Namespace;
+using UNSInfra.Models.Hierarchy;
 using UNSInfra.Repositories;
 using UNSInfra.Storage.SQLite.Mappers;
 
@@ -81,24 +82,7 @@ public class SQLiteNamespaceConfigurationRepository : INamespaceConfigurationRep
     /// <inheritdoc />
     public async Task<NamespaceConfiguration?> FindMatchingNamespaceAsync(string topicPath)
     {
-        using var context = await _contextFactory.CreateDbContextAsync();
-        
-        // Get all active namespace configurations and find the best match
-        var entities = await context.NamespaceConfigurations
-            .Where(nc => nc.IsActive)
-            .OrderByDescending(nc => nc.TopicPathPattern.Length) // Prioritize more specific patterns
-            .ToListAsync();
-
-        // Find the first namespace that matches the topic path
-        foreach (var entity in entities)
-        {
-            var namespaceConfig = entity.ToModel();
-            if (namespaceConfig.MatchesTopicPath(topicPath))
-            {
-                return namespaceConfig;
-            }
-        }
-
+        // Auto pattern matching has been removed - topics must be manually assigned to namespaces
         return null;
     }
 
@@ -120,8 +104,8 @@ public class SQLiteNamespaceConfigurationRepository : INamespaceConfigurationRep
                 existingEntity.Type = (int)configuration.Type;
                 existingEntity.Description = configuration.Description;
                 existingEntity.HierarchicalPathJson = System.Text.Json.JsonSerializer.Serialize(configuration.HierarchicalPath.Values);
-                existingEntity.TopicPathPattern = configuration.TopicPathPattern;
-                existingEntity.AutoVerifyTopics = configuration.AutoVerifyTopics;
+                existingEntity.ParentNamespaceId = configuration.ParentNamespaceId;
+                existingEntity.AllowedParentHierarchyNodeId = configuration.AllowedParentHierarchyNodeId;
                 existingEntity.IsActive = configuration.IsActive;
                 existingEntity.ModifiedAt = configuration.ModifiedAt;
                 existingEntity.CreatedBy = configuration.CreatedBy;
@@ -143,9 +127,9 @@ public class SQLiteNamespaceConfigurationRepository : INamespaceConfigurationRep
         }
         catch (Microsoft.EntityFrameworkCore.DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException sqliteEx && sqliteEx.SqliteErrorCode == 19)
         {
-            // UNIQUE constraint violation - handle race condition for topic path pattern
+            // UNIQUE constraint violation - handle race condition for ID collision
             var existingEntity = await context.NamespaceConfigurations
-                .FirstOrDefaultAsync(nc => nc.TopicPathPattern == configuration.TopicPathPattern);
+                .FirstOrDefaultAsync(nc => nc.Id == configuration.Id);
                 
             if (existingEntity != null)
             {
@@ -154,7 +138,7 @@ public class SQLiteNamespaceConfigurationRepository : INamespaceConfigurationRep
                 
                 using var updateContext = await _contextFactory.CreateDbContextAsync();
                 var entityToUpdate = await updateContext.NamespaceConfigurations
-                    .FirstOrDefaultAsync(nc => nc.TopicPathPattern == configuration.TopicPathPattern);
+                    .FirstOrDefaultAsync(nc => nc.Id == configuration.Id);
                     
                 if (entityToUpdate != null)
                 {
@@ -162,7 +146,8 @@ public class SQLiteNamespaceConfigurationRepository : INamespaceConfigurationRep
                     entityToUpdate.Type = (int)configuration.Type;
                     entityToUpdate.Description = configuration.Description;
                     entityToUpdate.HierarchicalPathJson = System.Text.Json.JsonSerializer.Serialize(configuration.HierarchicalPath.Values);
-                    entityToUpdate.AutoVerifyTopics = configuration.AutoVerifyTopics;
+                    entityToUpdate.ParentNamespaceId = configuration.ParentNamespaceId;
+                    entityToUpdate.AllowedParentHierarchyNodeId = configuration.AllowedParentHierarchyNodeId;
                     entityToUpdate.IsActive = configuration.IsActive;
                     entityToUpdate.ModifiedAt = configuration.ModifiedAt;
                     entityToUpdate.CreatedBy = configuration.CreatedBy;
@@ -191,16 +176,191 @@ public class SQLiteNamespaceConfigurationRepository : INamespaceConfigurationRep
     /// <inheritdoc />
     public async Task<bool> HasConflictingPatternAsync(string topicPathPattern, string? excludeId = null)
     {
+        // Pattern matching has been removed, so no conflicts exist
+        return false;
+    }
+
+    /// <inheritdoc />
+    public async Task EnsureDefaultConfigurationAsync()
+    {
         using var context = await _contextFactory.CreateDbContextAsync();
         
-        var query = context.NamespaceConfigurations
-            .Where(nc => nc.TopicPathPattern == topicPathPattern && nc.IsActive);
-
-        if (!string.IsNullOrEmpty(excludeId))
+        // Check if any namespaces already exist
+        var existingCount = await context.NamespaceConfigurations.CountAsync();
+        if (existingCount > 0)
         {
-            query = query.Where(nc => nc.Id != excludeId);
+            return; // Default namespaces already exist
         }
 
-        return await query.AnyAsync();
+        // Create default namespaces for each type
+        var defaultNamespaces = new[]
+        {
+            // Functional namespaces
+            new NamespaceConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "KPIs",
+                Description = "Key Performance Indicators and operational metrics",
+                Type = NamespaceType.Functional,
+                HierarchicalPath = new HierarchicalPath(), // Root level
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                CreatedBy = "system",
+                Metadata = new Dictionary<string, object>
+                {
+                    { "category", "performance" },
+                    { "auto_created", true }
+                }
+            },
+            new NamespaceConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "Production",
+                Description = "Production data and manufacturing metrics",
+                Type = NamespaceType.Functional,
+                HierarchicalPath = new HierarchicalPath(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                CreatedBy = "system",
+                Metadata = new Dictionary<string, object>
+                {
+                    { "category", "manufacturing" },
+                    { "auto_created", true }
+                }
+            },
+            new NamespaceConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "Quality",
+                Description = "Quality control and assurance data",
+                Type = NamespaceType.Functional,
+                HierarchicalPath = new HierarchicalPath(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                CreatedBy = "system",
+                Metadata = new Dictionary<string, object>
+                {
+                    { "category", "quality" },
+                    { "auto_created", true }
+                }
+            },
+
+            // Informative namespaces
+            new NamespaceConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "Documentation",
+                Description = "Documentation, manuals, and reference materials",
+                Type = NamespaceType.Informative,
+                HierarchicalPath = new HierarchicalPath(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                CreatedBy = "system",
+                Metadata = new Dictionary<string, object>
+                {
+                    { "category", "reference" },
+                    { "auto_created", true }
+                }
+            },
+            new NamespaceConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "Reports",
+                Description = "Generated reports and analytics",
+                Type = NamespaceType.Informative,
+                HierarchicalPath = new HierarchicalPath(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                CreatedBy = "system",
+                Metadata = new Dictionary<string, object>
+                {
+                    { "category", "analytics" },
+                    { "auto_created", true }
+                }
+            },
+
+            // Definitional namespaces
+            new NamespaceConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "Configuration",
+                Description = "System and equipment configurations",
+                Type = NamespaceType.Definitional,
+                HierarchicalPath = new HierarchicalPath(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                CreatedBy = "system",
+                Metadata = new Dictionary<string, object>
+                {
+                    { "category", "system" },
+                    { "auto_created", true }
+                }
+            },
+            new NamespaceConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "Standards",
+                Description = "Industry standards and compliance definitions",
+                Type = NamespaceType.Definitional,
+                HierarchicalPath = new HierarchicalPath(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                CreatedBy = "system",
+                Metadata = new Dictionary<string, object>
+                {
+                    { "category", "compliance" },
+                    { "auto_created", true }
+                }
+            },
+
+            // Ad-Hoc namespaces
+            new NamespaceConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "Testing",
+                Description = "Temporary testing and experimental data",
+                Type = NamespaceType.AdHoc,
+                HierarchicalPath = new HierarchicalPath(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                CreatedBy = "system",
+                Metadata = new Dictionary<string, object>
+                {
+                    { "category", "experimental" },
+                    { "auto_created", true }
+                }
+            },
+            new NamespaceConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = "Sandbox",
+                Description = "Sandbox environment for development and prototyping",
+                Type = NamespaceType.AdHoc,
+                HierarchicalPath = new HierarchicalPath(),
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                CreatedBy = "system",
+                Metadata = new Dictionary<string, object>
+                {
+                    { "category", "development" },
+                    { "auto_created", true }
+                }
+            }
+        };
+
+        // Save all default namespaces
+        foreach (var namespaceConfig in defaultNamespaces)
+        {
+            await SaveNamespaceConfigurationAsync(namespaceConfig);
+        }
     }
 }

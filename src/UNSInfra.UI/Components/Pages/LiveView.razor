@@ -6,8 +6,8 @@
 
 <PageTitle>Live View</PageTitle>
 
-<div class="row h-100">
-    <div class="col-md-6 d-flex flex-column">
+<div class="liveview-container">
+    <div class="topics-section">
         <div class="d-flex justify-content-between align-items-center mb-2">
             <h5 class="mb-0">Topics</h5>
             @if (_isLoadingTopics)
@@ -20,7 +20,7 @@
                 </div>
             }
         </div>
-        <div class="tree-container flex-grow-1">
+        <div class="tree-container">
             @if (_isInitialLoad && Topics.Count == 0)
             {
                 <div class="d-flex align-items-center justify-content-center py-4">
@@ -32,11 +32,11 @@
             }
             else
             {
-                <TopicTree @ref="TopicTreeComponent" Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" />
+                <TopicTree @ref="TopicTreeComponent" Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" OnAddDataToNamespace="OnAddDataToNamespace" />
             }
         </div>
     </div>
-    <div class="col-md-6 d-flex flex-column">
+    <div class="payload-section">
         <h5 class="mb-2">Payload</h5>
         <div class="payload-container">
             @if (SelectedTopic != null && SelectedPayload != null)
@@ -67,6 +67,45 @@
     </div>
 </div>
 
+<!-- Add Data to Namespace Modal -->
+@if (showAddDataModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-lg modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Data to Namespace: @selectedNamespacePath</h5>
+                    <button type="button" class="btn-close" @onclick="HideAddDataModal"></button>
+                </div>
+                <div class="modal-body">
+                    <p class="text-muted mb-3">Select topics and folders from unverified data to add to this namespace:</p>
+                    
+                    <TopicSelectionTree RootNodes="topicTreeNodes" 
+                                       SelectedTopics="selectedTopicsForNamespace" 
+                                       OnSelectionChanged="OnTopicSelectionChanged" />
+                    
+                    @if (selectedTopicsForNamespace.Any())
+                    {
+                        <div class="mt-3">
+                            <small class="text-success">
+                                <i class="bi bi-check-circle me-1"></i>
+                                @selectedTopicsForNamespace.Count topic(s) selected
+                            </small>
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="HideAddDataModal">Cancel</button>
+                    <button type="button" class="btn btn-success" @onclick="AddSelectedTopicsToNamespace" 
+                            disabled="@(!selectedTopicsForNamespace.Any())">
+                        Add @selectedTopicsForNamespace.Count Topic(s)
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     private List<TopicInfo> Topics = new();
     private HashSet<string> HighlightedPaths = new();
@@ -78,6 +117,13 @@
     private TopicTree? TopicTreeComponent;
     private bool _isLoadingTopics = false;
     private bool _isInitialLoad = true;
+    
+    // Add Data to Namespace functionality
+    private bool showAddDataModal = false;
+    private string selectedNamespacePath = "";
+    private List<TopicInfo>? availableTopicsForNamespace;
+    private HashSet<TopicInfo> selectedTopicsForNamespace = new();
+    private List<TopicSelectionTree.TopicSelectionTreeNode>? topicTreeNodes;
 
     protected override async Task OnInitializedAsync()
     {
@@ -87,13 +133,20 @@
             TopicBrowserService.TopicDataUpdated += OnTopicDataUpdated;
             TopicBrowserService.TopicAdded += OnTopicAdded;
             
-            // Enable periodic refresh timer for real-time data updates
+            // Enable periodic refresh timer for real-time data updates (less aggressive)
             _ = Task.Run(async () =>
             {
+                var refreshCount = 0;
                 while (true)
                 {
                     await Task.Delay(RefreshThrottleMs);
-                    await ScheduleRefresh();
+                    refreshCount++;
+                    
+                    // Only refresh every 3rd cycle to reduce SignalR load
+                    if (refreshCount % 3 == 0)
+                    {
+                        await ScheduleRefresh();
+                    }
                 }
             });
         }
@@ -259,39 +312,28 @@
         SelectedPayload = null; // This triggers the loading spinner
         StateHasChanged(); // Force immediate UI update
         
-        // Force multiple render cycles to ensure immediate visual feedback
-        await Task.Delay(1); // Minimal delay to ensure UI updates
-        await InvokeAsync(StateHasChanged); // Second state change
-        
-        // Fetch data asynchronously without blocking UI
-        _ = Task.Run(async () =>
+        try
         {
-            try
+            // Since we're using EventDrivenTopicBrowserService with in-memory cache,
+            // this should be fast. No need for Task.Run.
+            var data = await TopicBrowserService.GetDataForTopicAsync(topic.Topic);
+            
+            // Only update if still selected (user didn't click another topic)
+            if (SelectedTopic?.Topic == topic.Topic)
             {
-                var data = await TopicBrowserService.GetDataForTopicAsync(topic.Topic);
-                
-                await InvokeAsync(() =>
-                {
-                    if (SelectedTopic?.Topic == topic.Topic) // Only update if still selected
-                    {
-                        SelectedPayload = data?.Value;
-                        StateHasChanged();
-                    }
-                });
+                SelectedPayload = data?.Value ?? "No data available";
+                StateHasChanged();
             }
-            catch (Exception)
+        }
+        catch (Exception ex)
+        {
+            // On error, still clear the loading state
+            if (SelectedTopic?.Topic == topic.Topic)
             {
-                // On error, still clear the loading state
-                await InvokeAsync(() =>
-                {
-                    if (SelectedTopic?.Topic == topic.Topic)
-                    {
-                        SelectedPayload = "Error loading payload";
-                        StateHasChanged();
-                    }
-                });
+                SelectedPayload = $"Error loading payload: {ex.Message}";
+                StateHasChanged();
             }
-        });
+        }
     }
 
     private async Task OnTopicVerified()
@@ -327,6 +369,179 @@
         await RefreshTopics();
     }
 
+    private async Task OnAddDataToNamespace((string namespacePath, List<TopicInfo> topics) args)
+    {
+        selectedNamespacePath = args.namespacePath;
+        availableTopicsForNamespace = args.topics;
+        selectedTopicsForNamespace.Clear();
+        
+        // Build tree structure from unverified topics
+        BuildTopicSelectionTree();
+        
+        showAddDataModal = true;
+        StateHasChanged();
+    }
+
+    private void HideAddDataModal()
+    {
+        showAddDataModal = false;
+        selectedTopicsForNamespace.Clear();
+        StateHasChanged();
+    }
+
+    private async Task OnTopicSelectionChanged(HashSet<TopicInfo> selectedTopics)
+    {
+        selectedTopicsForNamespace = selectedTopics;
+        StateHasChanged();
+    }
+    
+    private void BuildTopicSelectionTree()
+    {
+        if (availableTopicsForNamespace == null || !availableTopicsForNamespace.Any())
+        {
+            topicTreeNodes = new List<TopicSelectionTree.TopicSelectionTreeNode>();
+            return;
+        }
+        
+        var nodeDict = new Dictionary<string, TopicSelectionTree.TopicSelectionTreeNode>();
+        var rootNodes = new List<TopicSelectionTree.TopicSelectionTreeNode>();
+        
+        // Group topics by source type first
+        var topicsBySourceType = availableTopicsForNamespace.GroupBy(t => t.SourceType).ToList();
+        
+        foreach (var sourceGroup in topicsBySourceType)
+        {
+            var sourceType = sourceGroup.Key;
+            var sourceNode = new TopicSelectionTree.TopicSelectionTreeNode
+            {
+                Name = sourceType,
+                FullPath = sourceType,
+                IsFolder = true,
+                Children = new List<TopicSelectionTree.TopicSelectionTreeNode>()
+            };
+            
+            rootNodes.Add(sourceNode);
+            nodeDict[sourceType] = sourceNode;
+            
+            // Build folder structure for each topic within this source type
+            foreach (var topic in sourceGroup)
+            {
+                var topicParts = topic.Topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                
+                if (topicParts.Length == 1)
+                {
+                    // Simple topic - add directly to source node
+                    var topicNode = new TopicSelectionTree.TopicSelectionTreeNode
+                    {
+                        Name = topic.Topic,
+                        FullPath = $"{sourceType}/{topic.Topic}",
+                        IsFolder = false,
+                        Topic = topic
+                    };
+                    sourceNode.Children.Add(topicNode);
+                }
+                else
+                {
+                    // Nested topic - build folder structure
+                    string currentPath = sourceType;
+                    var currentParent = sourceNode;
+                    
+                    for (int i = 0; i < topicParts.Length; i++)
+                    {
+                        var part = topicParts[i];
+                        var partPath = $"{currentPath}/{part}";
+                        
+                        if (i == topicParts.Length - 1)
+                        {
+                            // This is the final part - create topic node
+                            var topicNode = new TopicSelectionTree.TopicSelectionTreeNode
+                            {
+                                Name = part,
+                                FullPath = partPath,
+                                IsFolder = false,
+                                Topic = topic
+                            };
+                            currentParent.Children.Add(topicNode);
+                        }
+                        else
+                        {
+                            // This is a folder - create or reuse folder node
+                            if (!nodeDict.TryGetValue(partPath, out var folderNode))
+                            {
+                                folderNode = new TopicSelectionTree.TopicSelectionTreeNode
+                                {
+                                    Name = part,
+                                    FullPath = partPath,
+                                    IsFolder = true,
+                                    Children = new List<TopicSelectionTree.TopicSelectionTreeNode>()
+                                };
+                                currentParent.Children.Add(folderNode);
+                                nodeDict[partPath] = folderNode;
+                            }
+                            
+                            currentParent = folderNode;
+                            currentPath = partPath;
+                        }
+                    }
+                }
+            }
+        }
+        
+        topicTreeNodes = rootNodes;
+    }
+
+    private async Task AddSelectedTopicsToNamespace()
+    {
+        try
+        {
+            Console.WriteLine($"Adding {selectedTopicsForNamespace.Count} topics to namespace: {selectedNamespacePath}");
+            
+            foreach (var topic in selectedTopicsForNamespace)
+            {
+                Console.WriteLine($"  - Processing topic: {topic.Topic} from {topic.SourceType}");
+                
+                // Get the current topic configuration
+                var currentConfig = await TopicBrowserService.GetTopicConfigurationAsync(topic.Topic);
+                if (currentConfig != null)
+                {
+                    // Update the configuration to map to the namespace
+                    currentConfig.NSPath = selectedNamespacePath;
+                    currentConfig.IsVerified = true;
+                    currentConfig.ModifiedAt = DateTime.UtcNow;
+                    
+                    // Add metadata about the namespace assignment
+                    currentConfig.Metadata["assigned_to_namespace"] = selectedNamespacePath;
+                    currentConfig.Metadata["assigned_at"] = DateTime.UtcNow.ToString("O");
+                    currentConfig.Metadata["assigned_by"] = "user";
+                    
+                    // Update the topic configuration
+                    await TopicBrowserService.UpdateTopicConfigurationAsync(currentConfig);
+                    
+                    Console.WriteLine($"  - Successfully updated topic configuration for {topic.Topic}");
+                }
+                else
+                {
+                    Console.WriteLine($"  - Warning: Could not find topic configuration for {topic.Topic}");
+                }
+            }
+            
+            HideAddDataModal();
+            
+            // Refresh the topics to show the changes
+            await RefreshTopics();
+            
+            Console.WriteLine($"Successfully added {selectedTopicsForNamespace.Count} topics to namespace: {selectedNamespacePath}");
+            
+            // Force the NS tree editor to refresh by triggering a small delay and manual refresh
+            await Task.Delay(500); // Give the database time to update
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error adding topics to namespace: {ex.Message}");
+        }
+    }
+
     private static List<string> GetAllParentPaths(HierarchicalPath path)
     {
         var parts = new[]
@@ -357,24 +572,48 @@
 }
 
 <style>
+/* Full height layout */
+.liveview-container {
+    display: flex;
+    height: calc(100vh - 3.5rem); /* Subtract the top-row height */
+    gap: 1rem;
+}
+
+.topics-section {
+    flex: 0 0 35%;
+    display: flex;
+    flex-direction: column;
+    min-width: 0; /* Allows flex shrinking */
+}
+
+.payload-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0; /* Allows flex shrinking */
+}
+
 .tree-container {
+    flex: 1;
     overflow-y: auto;
-    max-height: calc(100vh - 200px);
     border: 1px solid #dee2e6;
     border-radius: 0.375rem;
     padding: 0.75rem;
     background-color: #fff;
+    min-height: 0; /* Allows flex shrinking */
 }
 
 .payload-container {
+    flex: 1;
     overflow-y: auto;
-    max-height: calc(50vh - 100px);
     border: 1px solid #dee2e6;
     border-radius: 0.375rem;
     padding: 0.75rem;
     background-color: #f8f9fa;
     margin-bottom: 1rem;
     transition: border-color 0.15s ease-in-out;
+    min-height: 200px;
+    max-height: 400px; /* Fixed height to leave room for metadata */
 }
 
 .payload-container:has(.spinner-border) {
@@ -416,16 +655,17 @@
     background: #a8a8a8;
 }
 
-/* Ensure the page uses full height */
-.page {
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-}
-
-.main {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
+/* Responsive layout for smaller screens */
+@@media (max-width: 768px) {
+    .liveview-container {
+        flex-direction: column;
+        height: auto;
+        min-height: calc(100vh - 3.5rem);
+    }
+    
+    .topics-section, 
+    .payload-section {
+        min-height: 400px;
+    }
 }
 </style>

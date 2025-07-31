@@ -1,0 +1,709 @@
+@using UNSInfra.Services
+@using UNSInfra.Models.Hierarchy
+@using UNSInfra.Models.Namespace
+@using UNSInfra.Services.TopicBrowser
+@inject INamespaceStructureService NamespaceStructureService
+@inject ITopicBrowserService TopicBrowserService
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+@if (Node != null)
+{
+    <div class="ns-tree-node-wrapper">
+        <div class="ns-tree-node" @oncontextmenu="ShowContextMenu" @oncontextmenu:preventDefault="true" @onclick="ToggleExpanded" @onclick:stopPropagation="false">
+            <div class="node-content">
+                @* Expansion chevron for nodes with children *@
+                @if (HasChildren())
+                {
+                    <i class="bi @(isExpanded ? "bi-chevron-down" : "bi-chevron-right") expand-icon me-1"></i>
+                }
+                else
+                {
+                    <span class="expand-spacer me-1"></span>
+                }
+                
+                @if (Node.NodeType == NSNodeType.HierarchyNode)
+                {
+                    <i class="bi bi-folder text-primary me-2"></i>
+                    <span class="fw-bold">@Node.Name</span>
+                    <small class="text-muted ms-2">(@Node.HierarchyNode?.Name)</small>
+                }
+                else
+                {
+                    <i class="bi @GetNamespaceIcon() @GetNamespaceColor() me-2"></i>
+                    <span>@Node.Name</span>
+                    <small class="text-muted ms-2">(@Node.Namespace?.Type.GetDisplayName())</small>
+                }
+            </div>
+            
+            <!-- Add button for adding children - positioned absolutely -->
+            @if (Node.CanHaveHierarchyChildren || Node.CanHaveNamespaceChildren)
+            {
+                <div class="action-buttons">
+                    <i class="bi bi-plus-circle text-primary action-icon" 
+                       @onclick="ShowQuickAddMenu" 
+                       @onclick:stopPropagation="true"
+                       title="Add child nodes or namespaces"></i>
+                </div>
+            }
+        </div>
+        
+        @if (showQuickAddMenu)
+        {
+            <div class="dropdown-menu show position-absolute" style="z-index: 1050;" @onclick:stopPropagation="true">
+                @if (Node.NodeType == NSNodeType.HierarchyNode && Node.CanHaveHierarchyChildren)
+                {
+                    <button class="dropdown-item" @onclick="() => ShowAddHierarchyModal()">
+                        <i class="bi bi-plus-circle me-2"></i>Add Hierarchy Node
+                    </button>
+                }
+                @if (Node.CanHaveNamespaceChildren)
+                {
+                    <button class="dropdown-item" @onclick="() => ShowAddNamespaceModal()">
+                        <i class="bi bi-plus-square me-2"></i>Add Namespace
+                    </button>
+                }
+                @if (Node.NodeType == NSNodeType.Namespace)
+                {
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" @onclick="() => AddDataToNamespace()">
+                        <i class="bi bi-database me-2"></i>Add Data
+                    </button>
+                }
+            </div>
+        }
+        
+        @if (showContextMenu)
+        {
+            <div class="dropdown-menu show position-absolute" style="z-index: 1050;" @onclick:stopPropagation="true">
+                @if (Node.NodeType == NSNodeType.HierarchyNode && Node.CanHaveHierarchyChildren)
+                {
+                    <button class="dropdown-item" @onclick="() => ShowAddHierarchyModal()">
+                        <i class="bi bi-plus-circle me-2"></i>Add Hierarchy Node
+                    </button>
+                }
+                @if (Node.CanHaveNamespaceChildren)
+                {
+                    <button class="dropdown-item" @onclick="() => ShowAddNamespaceModal()">
+                        <i class="bi bi-plus-square me-2"></i>Add Namespace
+                    </button>
+                }
+                @if (Node.NodeType == NSNodeType.Namespace)
+                {
+                    <button class="dropdown-item" @onclick="() => AddDataToNamespace()">
+                        <i class="bi bi-database me-2"></i>Add Data
+                    </button>
+                }
+                @if (Node.NodeType == NSNodeType.HierarchyNode)
+                {
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item" @onclick="() => ShowEditModal()">
+                        <i class="bi bi-pencil me-2"></i>Edit
+                    </button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item text-danger" @onclick="() => DeleteNode()">
+                        <i class="bi bi-trash me-2"></i>Delete
+                    </button>
+                }
+            </div>
+        }
+
+        @if (isExpanded && (Node.Children.Any() || (Node.NodeType == NSNodeType.Namespace && assignedTopics?.Any() == true)))
+        {
+            <div class="ms-3 mt-1">
+                @foreach (var child in Node.Children)
+                {
+                    <NSTreeNodeEditor Node="child" OnNodeChanged="HandleChildNodeChanged" OnAddDataToNamespace="OnAddDataToNamespace" OnTopicSelected="OnTopicSelected" />
+                }
+                
+                @* Show topics assigned to this namespace *@
+                @if (Node.NodeType == NSNodeType.Namespace && assignedTopics?.Any() == true)
+                {
+                    @foreach (var topic in assignedTopics)
+                    {
+                        <div class="ns-tree-node topic-node" style="padding-left: 1rem;" @onclick="() => SelectTopic(topic)" @onclick:stopPropagation="true">
+                            <div class="node-content">
+                                <span class="expand-spacer me-1"></span>
+                                <i class="bi bi-file-earmark-check text-success me-2"></i>
+                                <span class="topic-name">@GetTopicDisplayName(topic.Topic)</span>
+                                <small class="text-muted ms-2">(Topic - @topic.SourceType)</small>
+                                @if (!string.IsNullOrEmpty(topic.Description))
+                                {
+                                    <small class="text-muted ms-1">- @topic.Description</small>
+                                }
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        }
+    </div>
+}
+
+<!-- Add Hierarchy Modal -->
+@if (showAddHierarchyModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Hierarchy Node</h5>
+                    <button type="button" class="btn-close" @onclick="HideAddHierarchyModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Hierarchy Type</label>
+                        <select class="form-select" @bind="selectedHierarchyNodeId">
+                            <option value="">Select hierarchy type...</option>
+                            @if (availableHierarchyNodes != null)
+                            {
+                                @foreach (var hierarchyNode in availableHierarchyNodes)
+                                {
+                                    <option value="@hierarchyNode.Id">@hierarchyNode.Name</option>
+                                }
+                            }
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Instance Name</label>
+                        <input type="text" class="form-control" @bind="newInstanceName" placeholder="e.g., Enterprise1, Site2, Production" />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="HideAddHierarchyModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="AddHierarchyInstance" disabled="@(string.IsNullOrEmpty(selectedHierarchyNodeId) || string.IsNullOrEmpty(newInstanceName))">
+                        Add Instance
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+<!-- Add Namespace Modal -->
+@if (showAddNamespaceModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Namespace</h5>
+                    <button type="button" class="btn-close" @onclick="HideAddNamespaceModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Namespace Type</label>
+                        <select class="form-select" @bind="selectedNamespaceType">
+                            <option value="">Select namespace type...</option>
+                            <option value="@((int)NamespaceType.Functional)">@NamespaceType.Functional.GetDisplayName() - @GetNamespaceTypeDescription(NamespaceType.Functional)</option>
+                            <option value="@((int)NamespaceType.Informative)">@NamespaceType.Informative.GetDisplayName() - @GetNamespaceTypeDescription(NamespaceType.Informative)</option>
+                            <option value="@((int)NamespaceType.Definitional)">@NamespaceType.Definitional.GetDisplayName() - @GetNamespaceTypeDescription(NamespaceType.Definitional)</option>
+                            <option value="@((int)NamespaceType.AdHoc)">@NamespaceType.AdHoc.GetDisplayName() - @GetNamespaceTypeDescription(NamespaceType.AdHoc)</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Namespace Name</label>
+                        <input type="text" class="form-control" @bind="newNamespaceName" placeholder="e.g., CustomKPIs, MyMetrics, SpecialReports" />
+                        <div class="form-text">
+                            Choose a descriptive name for this namespace that indicates its purpose.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" rows="3" @bind="newNamespaceDescription" placeholder="Describe what kind of data this namespace will contain..."></textarea>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="HideAddNamespaceModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="AddNamespace" disabled="@(string.IsNullOrEmpty(selectedNamespaceType) || string.IsNullOrEmpty(newNamespaceName))">
+                        Create Namespace
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public NSTreeNode? Node { get; set; }
+    [Parameter] public EventCallback OnNodeChanged { get; set; }
+    [Parameter] public EventCallback<string> OnAddDataToNamespace { get; set; }
+    [Parameter] public EventCallback<TopicInfo> OnTopicSelected { get; set; }
+
+    private bool showContextMenu = false;
+    private bool showQuickAddMenu = false;
+    private bool showAddHierarchyModal = false;
+    private bool showAddNamespaceModal = false;
+    private bool showEditModal = false;
+    private bool isExpanded = false;
+    
+    private List<TopicInfo>? assignedTopics = null;
+
+    private string selectedHierarchyNodeId = "";
+    private string newInstanceName = "";
+    private List<HierarchyNode>? availableHierarchyNodes;
+    
+    private string selectedNamespaceType = "";
+    private string newNamespaceName = "";
+    private string newNamespaceDescription = "";
+    
+    private CancellationTokenSource? _cancellationTokenSource;
+    
+    protected override void OnInitialized()
+    {
+        _cancellationTokenSource = new CancellationTokenSource();
+    }
+    
+    public void Dispose()
+    {
+        _cancellationTokenSource?.Cancel();
+        _cancellationTokenSource?.Dispose();
+    }
+
+    private async Task ShowContextMenu(MouseEventArgs e)
+    {
+        showContextMenu = true;
+        StateHasChanged();
+        
+        // Load available hierarchy nodes if needed
+        if (Node?.NodeType == NSNodeType.HierarchyNode && Node.CanHaveHierarchyChildren)
+        {
+            var parentNodeId = Node.HierarchyNode?.Id;
+            availableHierarchyNodes = (await NamespaceStructureService.GetAvailableHierarchyNodesAsync(parentNodeId)).ToList();
+        }
+
+        // Hide context menu after a delay or on outside click
+        try
+        {
+            await Task.Delay(5000, _cancellationTokenSource?.Token ?? CancellationToken.None);
+            if (!(_cancellationTokenSource?.Token.IsCancellationRequested ?? true))
+            {
+                showContextMenu = false;
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Component was disposed, ignore
+        }
+    }
+
+    private async Task ShowQuickAddMenu()
+    {
+        showQuickAddMenu = true;
+        StateHasChanged();
+        
+        // Load available hierarchy nodes if needed
+        if (Node?.NodeType == NSNodeType.HierarchyNode && Node.CanHaveHierarchyChildren)
+        {
+            var parentNodeId = Node.HierarchyNode?.Id;
+            availableHierarchyNodes = (await NamespaceStructureService.GetAvailableHierarchyNodesAsync(parentNodeId)).ToList();
+        }
+
+        // Hide quick add menu after a delay
+        try
+        {
+            await Task.Delay(5000, _cancellationTokenSource?.Token ?? CancellationToken.None);
+            if (!(_cancellationTokenSource?.Token.IsCancellationRequested ?? true))
+            {
+                showQuickAddMenu = false;
+                StateHasChanged();
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Component was disposed, ignore
+        }
+    }
+
+    private void ShowAddHierarchyModal()
+    {
+        showContextMenu = false;
+        showQuickAddMenu = false;
+        showAddHierarchyModal = true;
+        selectedHierarchyNodeId = "";
+        newInstanceName = "";
+        StateHasChanged();
+    }
+
+    private void HideAddHierarchyModal()
+    {
+        showAddHierarchyModal = false;
+        StateHasChanged();
+    }
+
+    private void ShowAddNamespaceModal()
+    {
+        showContextMenu = false;
+        showQuickAddMenu = false;
+        showAddNamespaceModal = true;
+        selectedNamespaceType = "";
+        newNamespaceName = "";
+        newNamespaceDescription = "";
+        StateHasChanged();
+    }
+
+    private void HideAddNamespaceModal()
+    {
+        showAddNamespaceModal = false;
+        StateHasChanged();
+    }
+
+    private void ShowEditModal()
+    {
+        showContextMenu = false;
+        showEditModal = true;
+        StateHasChanged();
+    }
+
+    private async Task AddHierarchyInstance()
+    {
+        if (string.IsNullOrEmpty(selectedHierarchyNodeId) || string.IsNullOrEmpty(newInstanceName))
+            return;
+
+        try
+        {
+            var parentInstanceId = Node?.Instance?.Id;
+            await NamespaceStructureService.AddHierarchyInstanceAsync(selectedHierarchyNodeId, newInstanceName, parentInstanceId);
+            
+            HideAddHierarchyModal();
+            await OnNodeChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error adding hierarchy instance: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteNode()
+    {
+        if (Node?.Instance == null) return;
+
+        showContextMenu = false;
+        var canDelete = await NamespaceStructureService.CanDeleteInstanceAsync(Node.Instance.Id);
+        
+        if (!canDelete)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", "Cannot delete this node because it has children or dependencies.");
+            return;
+        }
+
+        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", $"Are you sure you want to delete '{Node.Name}' and all its children?");
+        if (confirmed)
+        {
+            try
+            {
+                await NamespaceStructureService.DeleteInstanceAsync(Node.Instance.Id);
+                await OnNodeChanged.InvokeAsync();
+            }
+            catch (Exception ex)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Error deleting node: {ex.Message}");
+            }
+        }
+    }
+
+    private string GetNamespaceIcon()
+    {
+        return Node?.Namespace?.Type.GetIconClass() ?? "bi-folder";
+    }
+
+    private string GetNamespaceColor()
+    {
+        return Node?.Namespace?.Type.GetColorClass() ?? "text-primary";
+    }
+
+    private async Task AddNamespace()
+    {
+        if (string.IsNullOrEmpty(selectedNamespaceType) || string.IsNullOrEmpty(newNamespaceName))
+            return;
+
+        if (!int.TryParse(selectedNamespaceType, out var typeInt))
+            return;
+
+        var namespaceType = (NamespaceType)typeInt;
+
+        try
+        {
+            // Create the namespace configuration with safe hierarchical path construction
+            var hierarchicalPath = new HierarchicalPath();
+            
+            // Try to build hierarchical path from current node context
+            if (Node?.Instance != null)
+            {
+                try
+                {
+                    // Get the hierarchical path from the instance ID
+                    hierarchicalPath = await NamespaceStructureService.GetHierarchicalPathFromInstanceIdAsync(Node.Instance.Id) ?? new HierarchicalPath();
+                }
+                catch
+                {
+                    // Fallback to empty hierarchical path if there's an error
+                    hierarchicalPath = new HierarchicalPath();
+                }
+            }
+            
+            var namespaceConfig = new NamespaceConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = newNamespaceName,
+                Description = newNamespaceDescription ?? "",
+                Type = namespaceType,
+                HierarchicalPath = hierarchicalPath,
+                IsActive = true,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                CreatedBy = "user",
+                // Set parent relationship based on the current node
+                ParentNamespaceId = Node?.NodeType == NSNodeType.Namespace ? Node.Namespace?.Id : null,
+                Metadata = new Dictionary<string, object>
+                {
+                    { "created_via", "ns_editor" },
+                    { "parent_instance", Node?.Instance?.Id ?? "" },
+                    { "parent_node_type", Node?.NodeType.ToString() ?? "unknown" }
+                }
+            };
+
+            // Save it using the namespace structure service with proper parent path
+            var parentPath = Node?.FullPath ?? "";
+            await NamespaceStructureService.CreateNamespaceAsync(parentPath, namespaceConfig);
+            
+            // Add some debugging
+            await JSRuntime.InvokeVoidAsync("console.log", $"Created namespace: {namespaceConfig.Name} with hierarchical path: {hierarchicalPath.Enterprise}/{hierarchicalPath.Site}/{hierarchicalPath.Area}");
+            
+            HideAddNamespaceModal();
+            await OnNodeChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error creating namespace: {ex.Message}");
+        }
+    }
+
+    private async Task AddDataToNamespace()
+    {
+        showContextMenu = false;
+        if (Node != null)
+        {
+            await OnAddDataToNamespace.InvokeAsync(Node.FullPath);
+        }
+    }
+
+    private async Task HandleChildNodeChanged()
+    {
+        // Refresh assigned topics when child nodes change (e.g., when data is added)
+        if (Node?.NodeType == NSNodeType.Namespace)
+        {
+            await LoadAssignedTopics();
+            
+            // Auto-expand namespace nodes when topics are assigned to them
+            if (assignedTopics?.Any() == true && !isExpanded)
+            {
+                isExpanded = true;
+            }
+        }
+        
+        // Propagate the event up
+        await OnNodeChanged.InvokeAsync();
+    }
+    
+    protected override async Task OnParametersSetAsync()
+    {
+        if (Node?.NodeType == NSNodeType.Namespace)
+        {
+            await LoadAssignedTopics();
+        }
+        
+        // Initialize expansion state - hierarchy nodes start expanded, namespaces start collapsed
+        if (Node?.NodeType == NSNodeType.HierarchyNode)
+        {
+            isExpanded = true;
+        }
+    }
+
+    private async Task LoadAssignedTopics()
+    {
+        if (Node?.NodeType != NSNodeType.Namespace || Node?.FullPath == null)
+        {
+            assignedTopics = null;
+            return;
+        }
+
+        try
+        {
+            // Get all topics and filter for those assigned to this namespace path
+            var allTopics = await TopicBrowserService.GetLatestTopicStructureAsync();
+            assignedTopics = allTopics
+                .Where(t => t.IsVerified && !string.IsNullOrEmpty(t.NSPath) && 
+                           t.NSPath.StartsWith(Node.FullPath, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+                
+            Console.WriteLine($"Loading topics for namespace: {Node.FullPath}");
+            Console.WriteLine($"Found {assignedTopics.Count} assigned topics");
+            foreach (var topic in assignedTopics)
+            {
+                Console.WriteLine($"  - {topic.Topic} (NSPath: {topic.NSPath})");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading assigned topics for namespace {Node.FullPath}: {ex.Message}");
+            assignedTopics = new List<TopicInfo>();
+        }
+    }
+    
+    private string GetNamespaceTypeDescription(NamespaceType type) => type switch
+    {
+        NamespaceType.Functional => "Operational data and metrics",
+        NamespaceType.Informative => "Documentation and reference",
+        NamespaceType.Definitional => "Configurations and standards",
+        NamespaceType.AdHoc => "Temporary and experimental",
+        _ => ""
+    };
+
+    private void ToggleExpanded()
+    {
+        if (HasChildren())
+        {
+            isExpanded = !isExpanded;
+            StateHasChanged();
+        }
+    }
+
+    private bool HasChildren()
+    {
+        return Node?.Children.Any() == true || 
+               (Node?.NodeType == NSNodeType.Namespace && assignedTopics?.Any() == true);
+    }
+
+    private async Task SelectTopic(TopicInfo topic)
+    {
+        await OnTopicSelected.InvokeAsync(topic);
+    }
+
+    private string GetTopicDisplayName(string fullTopicName)
+    {
+        // Extract the last part after the final '/'
+        var lastSlashIndex = fullTopicName.LastIndexOf('/');
+        return lastSlashIndex >= 0 && lastSlashIndex < fullTopicName.Length - 1 
+            ? fullTopicName.Substring(lastSlashIndex + 1) 
+            : fullTopicName;
+    }
+}
+
+<style>
+.ns-tree-node-wrapper {
+    position: relative;
+}
+
+.ns-tree-node {
+    padding: 4px 40px 4px 8px; /* Add right padding for button space */
+    border-radius: 4px;
+    margin-bottom: 2px;
+    cursor: pointer;
+    position: relative;
+}
+
+.ns-tree-node:hover {
+    background-color: #f8f9fa;
+}
+
+.node-content {
+    display: flex;
+    align-items: center;
+}
+
+.dropdown-menu.show {
+    display: block;
+    background: white;
+    border: 1px solid #dee2e6;
+    border-radius: 0.375rem;
+    box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+    padding: 0.5rem 0;
+    min-width: 200px;
+}
+
+.dropdown-item {
+    background: none;
+    border: none;
+    width: 100%;
+    text-align: left;
+    padding: 0.5rem 1rem;
+    font-size: 0.875rem;
+    color: #212529;
+}
+
+.dropdown-item:hover {
+    background-color: #f8f9fa;
+}
+
+.dropdown-item.text-danger:hover {
+    background-color: #f8d7da;
+}
+
+.action-buttons {
+    opacity: 0.6;
+    transition: opacity 0.2s ease-in-out;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 2rem;
+    width: 2rem;
+    position: absolute;
+    right: 8px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.action-buttons .action-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100%;
+    width: 100%;
+    cursor: pointer;
+    border-radius: 50%;
+}
+
+.action-buttons .action-icon:hover {
+    background-color: rgba(13, 110, 253, 0.1);
+}
+
+.ns-tree-node:hover .action-buttons {
+    opacity: 1;
+}
+
+.expand-icon {
+    cursor: pointer;
+    font-size: 0.75rem;
+    color: #6c757d;
+    transition: transform 0.2s ease-in-out;
+}
+
+.expand-icon:hover {
+    color: #495057;
+}
+
+.expand-spacer {
+    display: inline-block;
+    width: 12px; /* Same width as chevron icon */
+}
+
+.topic-node {
+    cursor: pointer;
+    transition: background-color 0.2s ease-in-out;
+}
+
+.topic-node:hover {
+    background-color: #e3f2fd !important;
+}
+
+.topic-name {
+    font-weight: 500;
+    color: #1565c0;
+}
+
+.topic-node:hover .topic-name {
+    color: #0d47a1;
+}
+</style>

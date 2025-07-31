@@ -109,7 +109,8 @@ public static class EntityMapper
             ModifiedAt = config.ModifiedAt,
             CreatedBy = config.CreatedBy,
             MetadataJson = JsonSerializer.Serialize(config.Metadata, JsonOptions),
-            NamespaceConfigurationId = config.NamespaceConfigurationId
+            NamespaceConfigurationId = config.NamespaceConfigurationId,
+            NSPath = config.NSPath
         };
     }
 
@@ -133,7 +134,8 @@ public static class EntityMapper
             ModifiedAt = entity.ModifiedAt,
             CreatedBy = entity.CreatedBy,
             Metadata = JsonSerializer.Deserialize<Dictionary<string, object>>(entity.MetadataJson, JsonOptions) ?? new(),
-            NamespaceConfigurationId = entity.NamespaceConfigurationId
+            NamespaceConfigurationId = entity.NamespaceConfigurationId,
+            NSPath = entity.NSPath
         };
     }
 
@@ -231,8 +233,8 @@ public static class EntityMapper
             Type = (int)model.Type,
             Description = model.Description,
             HierarchicalPathJson = JsonSerializer.Serialize(model.HierarchicalPath?.Values ?? new Dictionary<string, string>(), JsonOptions),
-            TopicPathPattern = model.TopicPathPattern,
-            AutoVerifyTopics = model.AutoVerifyTopics,
+            ParentNamespaceId = model.ParentNamespaceId,
+            AllowedParentHierarchyNodeId = model.AllowedParentHierarchyNodeId,
             IsActive = model.IsActive,
             CreatedAt = model.CreatedAt,
             ModifiedAt = model.ModifiedAt,
@@ -278,12 +280,65 @@ public static class EntityMapper
             Type = (NamespaceType)entity.Type,
             Description = entity.Description,
             HierarchicalPath = new HierarchicalPath { Values = pathValues },
-            TopicPathPattern = entity.TopicPathPattern,
-            AutoVerifyTopics = entity.AutoVerifyTopics,
+            ParentNamespaceId = entity.ParentNamespaceId,
+            AllowedParentHierarchyNodeId = entity.AllowedParentHierarchyNodeId,
             IsActive = entity.IsActive,
             CreatedAt = entity.CreatedAt,
             ModifiedAt = entity.ModifiedAt,
             CreatedBy = entity.CreatedBy,
+            Metadata = metadata
+        };
+    }
+
+    #endregion
+
+    #region NSTreeInstance Mappings
+
+    /// <summary>
+    /// Converts an NSTreeInstance model to an NSTreeInstanceEntity.
+    /// </summary>
+    public static NSTreeInstanceEntity ToEntity(this NSTreeInstance model)
+    {
+        return new NSTreeInstanceEntity
+        {
+            Id = model.Id,
+            Name = model.Name,
+            HierarchyNodeId = model.HierarchyNodeId,
+            ParentInstanceId = model.ParentInstanceId,
+            IsActive = model.IsActive,
+            CreatedAt = model.CreatedAt,
+            ModifiedAt = model.ModifiedAt,
+            MetadataJson = JsonSerializer.Serialize(model.Metadata ?? new Dictionary<string, object>(), JsonOptions)
+        };
+    }
+
+    /// <summary>
+    /// Converts an NSTreeInstanceEntity to an NSTreeInstance model.
+    /// </summary>
+    public static NSTreeInstance ToModel(this NSTreeInstanceEntity entity)
+    {
+        Dictionary<string, object> metadata;
+
+        try
+        {
+            metadata = string.IsNullOrEmpty(entity.MetadataJson) 
+                ? new() 
+                : JsonSerializer.Deserialize<Dictionary<string, object>>(entity.MetadataJson, JsonOptions) ?? new();
+        }
+        catch (JsonException)
+        {
+            metadata = new();
+        }
+
+        return new NSTreeInstance
+        {
+            Id = entity.Id,
+            Name = entity.Name,
+            HierarchyNodeId = entity.HierarchyNodeId,
+            ParentInstanceId = entity.ParentInstanceId,
+            IsActive = entity.IsActive,
+            CreatedAt = entity.CreatedAt,
+            ModifiedAt = entity.ModifiedAt,
             Metadata = metadata
         };
     }

@@ -116,6 +116,11 @@ public class TopicInfo
     /// Gets or sets the timestamp of the latest data point for this topic.
     /// </summary>
     public DateTime? LastDataTimestamp { get; set; }
+
+    /// <summary>
+    /// Gets or sets the namespace path this topic is assigned to.
+    /// </summary>
+    public string NSPath { get; set; } = string.Empty;
 }
 
 /// <summary>

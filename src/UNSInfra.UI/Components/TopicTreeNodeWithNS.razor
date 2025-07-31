@@ -1,0 +1,247 @@
+@using UNSInfra.Services.TopicBrowser
+@using UNSInfra.Models.Hierarchy
+
+<li class="topic-tree-item @GetItemClass()">
+    <div class="tree-node-content @GetNodeContentClass()" @onclick="ToggleExpanded">
+        @if (Node.HasChildren)
+        {
+            <i class="bi @(Node.IsExpanded ? "bi-chevron-down" : "bi-chevron-right") expand-icon"></i>
+        }
+        else
+        {
+            <span class="expand-spacer"></span>
+        }
+        
+        @if (Node.Name == "📁 NS")
+        {
+            <i class="bi bi-folder-fill text-primary"></i>
+            <span class="ms-2">NS Structure</span>
+        }
+        else if (Node.Topic != null)
+        {
+            <i class="bi @GetTopicIcon() @GetTopicColor()"></i>
+            <span class="ms-2 @GetTopicTextClass()" @onclick="() => SelectTopic()" @onclick:stopPropagation="true">
+                @Node.Name
+            </span>
+            @if (Node.Topic.IsVerified)
+            {
+                <i class="bi bi-check-circle-fill text-success ms-1" title="Verified"></i>
+            }
+        }
+        else
+        {
+            <i class="bi bi-folder text-muted"></i>
+            <span class="ms-2">@Node.Name</span>
+            @if (Node.HasData)
+            {
+                <span class="badge bg-secondary ms-2">@GetChildTopicCount()</span>
+            }
+            
+        }
+        
+        @if (Node.IsBlinking)
+        {
+            <span class="blink-indicator ms-2"></span>
+        }
+    </div>
+
+    @if (Node.Name == "📁 NS" && Node.IsExpanded)
+    {
+        <!-- Special case: always render NS tree editor for the NS section, even if no children -->
+        <div class="ms-4 mt-2">
+            <NSTreeEditor OnAddDataToNamespace="OnAddDataToNamespace" OnTopicSelected="OnTopicSelected" />
+        </div>
+    }
+    else if (Node.IsExpanded && Node.HasChildren)
+    {
+        @if (Node.IsLoadingChildren)
+        {
+            <div class="ms-4 mt-2">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <small class="text-muted">Loading...</small>
+                </div>
+            </div>
+        }
+        else
+        {
+            <ul class="topic-tree">
+                @foreach (var child in Node.Children)
+                {
+                    <TopicTreeNodeWithNS Node="child" 
+                                        HighlightedPaths="HighlightedPaths" 
+                                        SelectedNodePath="SelectedNodePath"
+                                        OnTopicSelected="OnTopicSelected" 
+                                        OnToggleExpanded="OnToggleExpanded"
+                                        OnAddDataToNamespace="OnAddDataToNamespace" />
+                }
+            </ul>
+        }
+    }
+</li>
+
+@code {
+    [Parameter] public TopicTree.TopicTreeNodeModel Node { get; set; } = new();
+    [Parameter] public HashSet<string> HighlightedPaths { get; set; } = new();
+    [Parameter] public string? SelectedNodePath { get; set; }
+    [Parameter] public EventCallback<TopicInfo> OnTopicSelected { get; set; }
+    [Parameter] public EventCallback<TopicTree.TopicTreeNodeModel> OnToggleExpanded { get; set; }
+    [Parameter] public EventCallback<string> OnAddDataToNamespace { get; set; }
+
+    private async Task ToggleExpanded()
+    {
+        if (Node.Name == "📁 NS")
+        {
+            // Special handling for NS section - just toggle expansion
+            Node.IsExpanded = !Node.IsExpanded;
+            StateHasChanged();
+        }
+        else
+        {
+            await OnToggleExpanded.InvokeAsync(Node);
+        }
+    }
+
+    private async Task SelectTopic()
+    {
+        if (Node.Topic != null)
+        {
+            await OnTopicSelected.InvokeAsync(Node.Topic);
+        }
+    }
+
+    private string GetItemClass()
+    {
+        var classes = new List<string>();
+        
+        if (Node.IsBlinking)
+        {
+            classes.Add("blinking");
+        }
+        
+        if (HighlightedPaths.Contains(Node.FullPath))
+        {
+            classes.Add("highlighted");
+        }
+        
+        return string.Join(" ", classes);
+    }
+
+    private string GetNodeContentClass()
+    {
+        var classes = new List<string> { "d-flex", "align-items-center", "py-1", "px-2", "rounded" };
+        
+        if (SelectedNodePath == Node.FullPath)
+        {
+            classes.Add("bg-primary text-white");
+        }
+        else
+        {
+            classes.Add("hover-bg-light");
+        }
+        
+        return string.Join(" ", classes);
+    }
+
+    private string GetTopicIcon()
+    {
+        if (Node.Topic?.IsVerified == true)
+        {
+            return "bi-file-earmark-check";
+        }
+        return "bi-file-earmark";
+    }
+
+    private string GetTopicColor()
+    {
+        if (Node.Topic?.IsVerified == true)
+        {
+            return "text-success";
+        }
+        return "text-muted";
+    }
+
+    private string GetTopicTextClass()
+    {
+        if (Node.Topic?.IsVerified == true)
+        {
+            return "fw-medium";
+        }
+        return "";
+    }
+
+    private int GetChildTopicCount()
+    {
+        return CountTopicsInNode(Node);
+    }
+
+    private int CountTopicsInNode(TopicTree.TopicTreeNodeModel node)
+    {
+        var count = node.Topic != null ? 1 : 0;
+        foreach (var child in node.Children)
+        {
+            count += CountTopicsInNode(child);
+        }
+        return count;
+    }
+
+}
+
+<style>
+.topic-tree-item {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.tree-node-content {
+    cursor: pointer;
+    user-select: none;
+    transition: background-color 0.15s ease-in-out;
+}
+
+.tree-node-content:hover:not(.bg-primary) {
+    background-color: #f8f9fa !important;
+}
+
+.expand-icon {
+    width: 16px;
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.expand-spacer {
+    width: 16px;
+    display: inline-block;
+}
+
+.blinking {
+    animation: blink 1s ease-in-out 3;
+}
+
+.highlighted {
+    background-color: #fff3cd !important;
+    border-left: 3px solid #ffc107;
+    padding-left: 8px;
+}
+
+.blink-indicator {
+    width: 8px;
+    height: 8px;
+    background-color: #28a745;
+    border-radius: 50%;
+    animation: pulse 1s ease-in-out infinite;
+}
+
+@@keyframes blink {
+    0%, 100% { background-color: transparent; }
+    50% { background-color: #e3f2fd; }
+}
+
+@@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+</style>

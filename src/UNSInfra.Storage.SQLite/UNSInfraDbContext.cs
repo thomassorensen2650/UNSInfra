@@ -45,6 +45,8 @@ public class UNSInfraDbContext : DbContext
     /// Gets or sets the namespace configurations.
     /// </summary>
     public DbSet<NamespaceConfigurationEntity> NamespaceConfigurations { get; set; }
+    
+    public DbSet<NSTreeInstanceEntity> NSTreeInstances { get; set; }
 
     /// <summary>
     /// Configures the model relationships and constraints.
@@ -114,10 +116,20 @@ public class UNSInfraDbContext : DbContext
         {
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Name);
-            entity.HasIndex(e => e.TopicPathPattern).IsUnique();
             entity.HasIndex(e => e.Type);
             entity.HasIndex(e => e.IsActive);
+            entity.HasIndex(e => e.ParentNamespaceId);
             entity.HasIndex(e => new { e.Name, e.HierarchicalPathJson });
+        });
+
+        // Configure NSTreeInstance
+        modelBuilder.Entity<NSTreeInstanceEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Name);
+            entity.HasIndex(e => e.HierarchyNodeId);
+            entity.HasIndex(e => e.ParentInstanceId);
+            entity.HasIndex(e => e.IsActive);
         });
     }
 }

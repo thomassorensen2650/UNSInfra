@@ -34,15 +34,16 @@ public class NamespaceConfiguration
     public HierarchicalPath HierarchicalPath { get; set; } = new();
 
     /// <summary>
-    /// The topic path pattern that this namespace matches.
-    /// For example: "Enterprise1/KPI" would match "Enterprise1/KPI/OEE/Performance".
+    /// The parent namespace ID if this namespace is nested within another namespace.
+    /// Null for root-level namespaces.
     /// </summary>
-    public string TopicPathPattern { get; set; } = string.Empty;
+    public string? ParentNamespaceId { get; set; }
 
     /// <summary>
-    /// Whether topics matching this namespace should be automatically verified.
+    /// The hierarchy node ID that this namespace can be placed under.
+    /// This determines where in the NS tree structure this namespace can exist.
     /// </summary>
-    public bool AutoVerifyTopics { get; set; } = false;
+    public string? AllowedParentHierarchyNodeId { get; set; }
 
     /// <summary>
     /// Whether this namespace configuration is active.
@@ -82,32 +83,30 @@ public class NamespaceConfiguration
     }
 
     /// <summary>
-    /// Checks if a topic path matches this namespace pattern.
+    /// Gets the full hierarchical namespace path for display in the NS tree.
+    /// This includes parent namespaces if nested.
     /// </summary>
-    /// <param name="topicPath">The topic path to check</param>
-    /// <returns>True if the topic matches this namespace</returns>
-    public bool MatchesTopicPath(string topicPath)
+    /// <param name="allNamespaces">All available namespaces to resolve parent references</param>
+    /// <returns>The full NS tree path</returns>
+    public string GetFullNSTreePath(IEnumerable<NamespaceConfiguration> allNamespaces)
     {
-        if (string.IsNullOrEmpty(TopicPathPattern) || string.IsNullOrEmpty(topicPath))
-            return false;
-
-        // Simple prefix matching for now - can be enhanced with regex or glob patterns
-        return topicPath.StartsWith(TopicPathPattern, StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Extracts the namespace-relative path from a full topic path.
-    /// For example: "Enterprise1/KPI/OEE/Performance" with pattern "Enterprise1/KPI" 
-    /// returns "OEE/Performance".
-    /// </summary>
-    /// <param name="fullTopicPath">The full topic path</param>
-    /// <returns>The namespace-relative path</returns>
-    public string GetNamespaceRelativePath(string fullTopicPath)
-    {
-        if (!MatchesTopicPath(fullTopicPath))
-            return string.Empty;
-
-        var relativePath = fullTopicPath.Substring(TopicPathPattern.Length);
-        return relativePath.StartsWith("/") ? relativePath.Substring(1) : relativePath;
+        var pathParts = new List<string>();
+        var current = this;
+        
+        while (current != null)
+        {
+            pathParts.Insert(0, current.Name);
+            
+            if (!string.IsNullOrEmpty(current.ParentNamespaceId))
+            {
+                current = allNamespaces.FirstOrDefault(ns => ns.Id == current.ParentNamespaceId);
+            }
+            else
+            {
+                break;
+            }
+        }
+        
+        return string.Join("/", pathParts);
     }
 }

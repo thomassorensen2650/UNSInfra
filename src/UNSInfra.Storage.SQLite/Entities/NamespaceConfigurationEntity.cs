@@ -42,16 +42,16 @@ public class NamespaceConfigurationEntity
     public string HierarchicalPathJson { get; set; } = string.Empty;
 
     /// <summary>
-    /// The topic path pattern that this namespace matches.
+    /// The parent namespace ID if nested.
     /// </summary>
-    [Required]
-    [MaxLength(500)]
-    public string TopicPathPattern { get; set; } = string.Empty;
+    [MaxLength(50)]
+    public string? ParentNamespaceId { get; set; }
 
     /// <summary>
-    /// Whether topics should be automatically verified.
+    /// The hierarchy node ID this namespace can be placed under.
     /// </summary>
-    public bool AutoVerifyTopics { get; set; }
+    [MaxLength(50)]
+    public string? AllowedParentHierarchyNodeId { get; set; }
 
     /// <summary>
     /// Whether this configuration is active.

@@ -77,4 +77,10 @@ public class TopicConfigurationEntity
     /// </summary>
     [MaxLength(50)]
     public string? NamespaceConfigurationId { get; set; }
+
+    /// <summary>
+    /// Gets or sets the path within the assigned namespace.
+    /// </summary>
+    [MaxLength(500)]
+    public string NSPath { get; set; } = string.Empty;
 }

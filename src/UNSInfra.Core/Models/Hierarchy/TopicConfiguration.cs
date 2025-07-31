@@ -67,4 +67,10 @@ namespace UNSInfra.Models.Hierarchy;
         /// Gets or sets the namespace configuration ID this topic belongs to.
         /// </summary>
         public string? NamespaceConfigurationId { get; set; }
+
+        /// <summary>
+        /// Gets or sets the path within the assigned namespace.
+        /// For example, if namespace is "Enterprise1/KPIs", NSPath might be "Dashboard1/data".
+        /// </summary>
+        public string NSPath { get; set; } = string.Empty;
     }

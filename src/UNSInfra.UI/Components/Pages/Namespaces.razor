@@ -66,9 +66,8 @@
                                     <tr>
                                         <th>Name</th>
                                         <th>Type</th>
-                                        <th>Topic Pattern</th>
                                         <th>Full Path</th>
-                                        <th>Auto-Verify</th>
+                                        <th>Parent</th>
                                         <th>Actions</th>
                                     </tr>
                                 </thead>
@@ -95,21 +94,20 @@
                                                 </span>
                                             </td>
                                             <td>
-                                                <code>@ns.TopicPathPattern</code>
-                                            </td>
-                                            <td>
                                                 <small class="text-muted">@ns.GetFullNamespacePath()</small>
                                             </td>
                                             <td>
-                                                @if (ns.AutoVerifyTopics)
+                                                @if (!string.IsNullOrEmpty(ns.ParentNamespaceId))
                                                 {
-                                                    <span class="badge bg-success">
-                                                        <i class="bi bi-check-circle"></i> Yes
-                                                    </span>
+                                                    var parentNs = namespaces?.FirstOrDefault(n => n.Id == ns.ParentNamespaceId);
+                                                    if (parentNs != null)
+                                                    {
+                                                        <small class="text-muted">@parentNs.Name</small>
+                                                    }
                                                 }
                                                 else
                                                 {
-                                                    <span class="badge bg-secondary">No</span>
+                                                    <small class="text-muted">Root</small>
                                                 }
                                             </td>
                                             <td>
@@ -202,8 +200,8 @@
                                 <small class="text-muted">Active</small>
                             </div>
                             <div class="col-6">
-                                <h4 class="text-success">@namespaces.Count(n => n.AutoVerifyTopics)</h4>
-                                <small class="text-muted">Auto-Verify</small>
+                                <h4 class="text-info">@namespaces.Count(n => !string.IsNullOrEmpty(n.ParentNamespaceId))</h4>
+                                <small class="text-muted">Nested</small>
                             </div>
                         </div>
                         <hr />
@@ -273,13 +271,20 @@
                             </div>
 
                             <div class="mb-3">
-                                <label class="form-label">Topic Path Pattern *</label>
-                                <InputText @bind-Value="editingNamespace.TopicPathPattern" class="form-control" 
-                                           placeholder="e.g., Enterprise1/KPI or Production/Line1" />
+                                <label class="form-label">Parent Namespace</label>
+                                <InputSelect @bind-Value="editingNamespace.ParentNamespaceId" class="form-select">
+                                    <option value="">Root Level</option>
+                                    @if (namespaces != null)
+                                    {
+                                        @foreach (var ns in namespaces.Where(n => n.Id != editingNamespace.Id))
+                                        {
+                                            <option value="@ns.Id">@ns.Name</option>
+                                        }
+                                    }
+                                </InputSelect>
                                 <div class="form-text">
-                                    Topics starting with this pattern will be assigned to this namespace.
+                                    Select a parent namespace to create a nested structure.
                                 </div>
-                                <ValidationMessage For="@(() => editingNamespace.TopicPathPattern)" />
                             </div>
 
                             <div class="row">
@@ -296,17 +301,6 @@
                                 }
                             </div>
 
-                            <div class="mb-3">
-                                <div class="form-check">
-                                    <InputCheckbox @bind-Value="editingNamespace.AutoVerifyTopics" class="form-check-input" />
-                                    <label class="form-check-label">
-                                        Auto-verify topics in this namespace
-                                    </label>
-                                    <div class="form-text">
-                                        When enabled, new topics matching this namespace pattern will be automatically verified.
-                                    </div>
-                                </div>
-                            </div>
 
                             <div class="d-flex justify-content-end">
                                 <button type="button" class="btn btn-secondary me-2" @onclick="HideNamespaceForm">
@@ -399,8 +393,8 @@
             Type = ns.Type,
             Description = ns.Description,
             HierarchicalPath = new HierarchicalPath { Values = new Dictionary<string, string>(ns.HierarchicalPath?.Values ?? new Dictionary<string, string>()) },
-            TopicPathPattern = ns.TopicPathPattern,
-            AutoVerifyTopics = ns.AutoVerifyTopics,
+            ParentNamespaceId = ns.ParentNamespaceId,
+            AllowedParentHierarchyNodeId = ns.AllowedParentHierarchyNodeId,
             IsActive = ns.IsActive,
             CreatedAt = ns.CreatedAt,
             ModifiedAt = DateTime.UtcNow,

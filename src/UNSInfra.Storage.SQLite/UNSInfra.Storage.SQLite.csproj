@@ -23,10 +23,12 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
+    <PackageReference Include="Microsoft.Extensions.Configuration.Binder" Version="9.0.7" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\UNSInfra.Core\UNSInfra.Core.csproj" />
+    <ProjectReference Include="..\UNSInfra.Storage.InMemory\UNSInfra.Storage.InMemory.csproj" />
   </ItemGroup>
 
 </Project>
