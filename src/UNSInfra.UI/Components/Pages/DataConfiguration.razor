@@ -228,13 +228,12 @@
                     <button type="button" class="btn-close" @onclick="HideConfigurationForm"></button>
                 </div>
                 <div class="modal-body">
-                    @if (editingConfiguration != null)
-                    {
-                        <DynamicConfigurationForm Configuration="editingConfiguration" 
-                                                ServiceDescriptor="selectedServiceDescriptor"
-                                                OnSave="SaveConfiguration"
-                                                OnCancel="HideConfigurationForm" />
-                    }
+                    <DynamicConfigurationForm Configuration="editingConfiguration" 
+                                            ServiceDescriptor="selectedServiceDescriptor"
+                                            AvailableDescriptors="availableServiceTypes"
+                                            OnSave="SaveConfiguration"
+                                            OnCancel="HideConfigurationForm"
+                                            OnServiceTypeChanged="OnServiceTypeSelected" />
                 </div>
             </div>
         </div>
@@ -337,6 +336,13 @@
         showConfigurationForm = false;
         editingConfiguration = null;
         selectedServiceDescriptor = null;
+    }
+
+    private void OnServiceTypeSelected(IDataIngestionServiceDescriptor serviceDescriptor)
+    {
+        selectedServiceDescriptor = serviceDescriptor;
+        editingConfiguration = serviceDescriptor.CreateDefaultConfiguration();
+        StateHasChanged();
     }
 
     private async Task SaveConfiguration(IDataIngestionConfiguration configuration)
