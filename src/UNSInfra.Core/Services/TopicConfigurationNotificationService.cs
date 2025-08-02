@@ -1,4 +1,4 @@
-ø
+namespace UNSInfra.Services;
 
 /// <summary>
 /// Implementation of topic configuration notification service

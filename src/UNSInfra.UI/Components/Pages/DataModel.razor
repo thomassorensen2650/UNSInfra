@@ -1,11 +1,11 @@
-@page "/liveview"
+@page "/data-model"
 @using UNSInfra.Services.TopicBrowser
 @using UNSInfra.Models.Hierarchy
 @using UNSInfra.Models.Data
 @using UNSInfra.Storage.Abstractions
 @inject ITopicBrowserService TopicBrowserService
 @inject IHistoricalStorage HistoricalStorage
-@inject ILogger<LiveView> Logger
+@inject ILogger<DataModel> Logger
 @implements IDisposable
 
 <PageTitle>Data Model</PageTitle>
@@ -327,7 +327,7 @@
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error initializing LiveView");
+            Logger.LogError(ex, "Error initializing DataModel");
             _isInitialLoad = false;
             StateHasChanged();
         }

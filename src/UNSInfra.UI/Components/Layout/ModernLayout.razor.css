@@ -82,29 +82,46 @@
 .navbar-nav-desktop {
     display: none;
     align-items: center;
-    gap: 1.5rem;
+    gap: 2rem;
 }
 
 .navbar-nav-desktop .nav-item {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
+    padding: 0.75rem 1.25rem;
+    border-radius: 10px;
     color: var(--text-secondary);
     text-decoration: none;
     transition: all 0.2s ease;
     white-space: nowrap;
+    font-weight: 500;
+    position: relative;
 }
 
 .navbar-nav-desktop .nav-item:hover {
     background-color: var(--bg-accent);
     color: var(--text-primary);
+    text-decoration: none;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .navbar-nav-desktop .nav-item.active {
     background-color: var(--primary-color);
     color: white;
+    text-decoration: none;
+    pointer-events: none;
+    cursor: default;
+    box-shadow: 0 2px 8px rgba(13, 122, 244, 0.3);
+}
+
+.navbar-nav-desktop .nav-item.active:hover {
+    transform: none;
+}
+
+.navbar-nav-desktop .nav-item i {
+    font-size: 1.1rem;
 }
 
 /* Actions Section */
@@ -236,17 +253,22 @@
     text-decoration: none;
     transition: all 0.2s ease;
     border-left: 3px solid transparent;
+    font-weight: 500;
 }
 
 .mobile-nav-item:hover {
     background-color: var(--bg-accent);
     color: var(--text-primary);
+    text-decoration: none;
 }
 
 .mobile-nav-item.active {
     background-color: var(--bg-accent);
     color: var(--primary-color);
     border-left-color: var(--primary-color);
+    text-decoration: none;
+    pointer-events: none;
+    cursor: default;
 }
 
 .mobile-nav-item i {

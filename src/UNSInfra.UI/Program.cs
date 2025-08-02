@@ -43,6 +43,13 @@ builder.WebHost.ConfigureKestrel(options =>
 // Configure logging to suppress Entity Framework debug messages
 builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Information);
 
+// Add in-memory logging service for log viewer
+builder.Services.AddSingleton<UNSInfra.UI.Services.InMemoryLogService>();
+builder.Services.AddSingleton<UNSInfra.UI.Services.IInMemoryLogService>(provider => 
+    provider.GetRequiredService<UNSInfra.UI.Services.InMemoryLogService>());
+builder.Logging.AddProvider(new UNSInfra.UI.Services.InMemoryLoggerProvider(
+    builder.Services.BuildServiceProvider().GetRequiredService<UNSInfra.UI.Services.InMemoryLogService>()));
+
 // Add comprehensive SignalR connection logging for debugging
 builder.Logging.AddFilter("Microsoft.AspNetCore.SignalR", LogLevel.Debug);
 builder.Logging.AddFilter("Microsoft.AspNetCore.Http.Connections", LogLevel.Debug);
@@ -99,6 +106,10 @@ builder.Services.AddScoped<INamespaceStructureService, NamespaceStructureService
 
 // Register topic configuration notification service
 builder.Services.AddSingleton<ITopicConfigurationNotificationService, TopicConfigurationNotificationService>();
+
+// Register schema validation services
+builder.Services.AddScoped<UNSInfra.Repositories.ISchemaRepository, UNSInfra.Repositories.InMemorySchemaRepository>();
+builder.Services.AddScoped<UNSInfra.Validation.ISchemaValidator, UNSInfra.Validation.JsonSchemaValidator>();
 
 // Add new dynamic configuration system
 builder.Services.AddUNSInfrastructureCore();

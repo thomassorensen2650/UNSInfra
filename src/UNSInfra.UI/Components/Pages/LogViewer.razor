@@ -1,0 +1,343 @@
+@page "/logs"
+@using UNSInfra.UI.Services
+@using Microsoft.Extensions.Logging
+@inject IInMemoryLogService LogService
+@implements IDisposable
+
+<PageTitle>Log Viewer</PageTitle>
+
+<div class="log-viewer-container">
+    <div class="log-controls">
+        <div class="row g-3">
+            <div class="col-md-4">
+                <div class="input-group">
+                    <span class="input-group-text">
+                        <i class="bi bi-search"></i>
+                    </span>
+                    <input type="text" class="form-control" placeholder="Search logs..." 
+                           @bind="searchTerm" @oninput="OnSearchChanged" />
+                    @if (!string.IsNullOrWhiteSpace(searchTerm))
+                    {
+                        <button class="btn btn-outline-secondary" type="button" @onclick="ClearSearch">
+                            <i class="bi bi-x"></i>
+                        </button>
+                    }
+                </div>
+            </div>
+            <div class="col-md-2">
+                <select class="form-select" @bind="selectedLogLevel" @bind:after="OnFilterChanged">
+                    <option value="">All Levels</option>
+                    <option value="@LogLevel.Trace">Trace</option>
+                    <option value="@LogLevel.Debug">Debug</option>
+                    <option value="@LogLevel.Information">Information</option>
+                    <option value="@LogLevel.Warning">Warning</option>
+                    <option value="@LogLevel.Error">Error</option>
+                    <option value="@LogLevel.Critical">Critical</option>
+                </select>
+            </div>
+            <div class="col-md-2">
+                <input type="datetime-local" class="form-control" @bind="fromDate" @bind:after="OnFilterChanged" />
+            </div>
+            <div class="col-md-2">
+                <input type="datetime-local" class="form-control" @bind="toDate" @bind:after="OnFilterChanged" />
+            </div>
+            <div class="col-md-2">
+                <div class="btn-group w-100">
+                    <button class="btn btn-outline-primary" @onclick="RefreshLogs">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                    <button class="btn btn-outline-secondary" @onclick="ClearLogs">
+                        <i class="bi bi-trash"></i> Clear
+                    </button>
+                </div>
+            </div>
+        </div>
+        
+        <div class="row mt-2">
+            <div class="col-md-6">
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="autoRefresh" @bind="autoRefresh" @bind:after="OnAutoRefreshChanged">
+                    <label class="form-check-label" for="autoRefresh">
+                        Auto-refresh (@(autoRefreshInterval / 1000)s)
+                    </label>
+                </div>
+            </div>
+            <div class="col-md-6 text-end">
+                <small class="text-muted">
+                    Showing @displayedLogs.Count of @totalLogCount logs
+                    @if (!string.IsNullOrWhiteSpace(searchTerm) || selectedLogLevel != null || fromDate != null || toDate != null)
+                    {
+                        <span>(filtered)</span>
+                    }
+                </small>
+            </div>
+        </div>
+    </div>
+
+    <div class="log-content">
+        @if (isLoading)
+        {
+            <div class="text-center py-4">
+                <div class="spinner-border spinner-border-sm me-2" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                Refreshing logs...
+            </div>
+        }
+        else if (!displayedLogs.Any())
+        {
+            <div class="empty-logs-state">
+                <i class="bi bi-journal-text"></i>
+                <div class="text-center">
+                    <h5>No Logs Found</h5>
+                    <p class="mb-0">
+                        @if (!string.IsNullOrWhiteSpace(searchTerm) || selectedLogLevel != null)
+                        {
+                            <span>No logs match your current filters. Try adjusting your search criteria.</span>
+                        }
+                        else
+                        {
+                            <span>No logs are currently available. Logs will appear here as the application runs.</span>
+                        }
+                    </p>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="log-entries">
+                @foreach (var log in displayedLogs.Take(maxDisplayedLogs))
+                {
+                    <div class="log-entry @GetLogLevelClass(log.Level)" @onclick="@(() => ToggleLogDetails(log))">
+                        <div class="log-entry-header">
+                            <div class="log-timestamp">
+                                @log.Timestamp.ToString("HH:mm:ss.fff")
+                            </div>
+                            <div class="log-level">
+                                <span class="badge @GetLogLevelBadgeClass(log.Level)">
+                                    @log.Level
+                                </span>
+                            </div>
+                            <div class="log-source">
+                                @log.Source
+                            </div>
+                            <div class="log-message">
+                                @log.Message
+                            </div>
+                            @if (log.Exception != null)
+                            {
+                                <div class="log-exception-indicator">
+                                    <i class="bi bi-exclamation-triangle text-danger"></i>
+                                </div>
+                            }
+                        </div>
+                        
+                        @if (expandedLogs.Contains(log))
+                        {
+                            <div class="log-entry-details">
+                                <div class="log-detail-row">
+                                    <strong>Full Timestamp:</strong> @log.Timestamp.ToString("yyyy-MM-dd HH:mm:ss.fff UTC")
+                                </div>
+                                <div class="log-detail-row">
+                                    <strong>Category:</strong> @log.Category
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(log.Source))
+                                {
+                                    <div class="log-detail-row">
+                                        <strong>Source:</strong> @log.Source
+                                    </div>
+                                }
+                                @if (log.Exception != null)
+                                {
+                                    <div class="log-detail-row">
+                                        <strong>Exception:</strong>
+                                        <pre class="exception-details">@log.Exception.ToString()</pre>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                }
+                
+                @if (displayedLogs.Count > maxDisplayedLogs)
+                {
+                    <div class="log-load-more">
+                        <button class="btn btn-outline-primary" @onclick="LoadMoreLogs">
+                            Load More (@(displayedLogs.Count - maxDisplayedLogs) remaining)
+                        </button>
+                    </div>
+                }
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private List<LogEntry> displayedLogs = new();
+    private HashSet<LogEntry> expandedLogs = new();
+    private string searchTerm = string.Empty;
+    private LogLevel? selectedLogLevel;
+    private DateTime? fromDate;
+    private DateTime? toDate;
+    private bool autoRefresh = true;
+    private bool isLoading = false;
+    private int totalLogCount = 0;
+    private int maxDisplayedLogs = 100;
+    private int autoRefreshInterval = 5000; // 5 seconds
+    private Timer? refreshTimer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        RefreshLogs();
+        LogService.LogAdded += OnLogAdded;
+        
+        if (autoRefresh)
+        {
+            StartAutoRefresh();
+        }
+    }
+
+    private void OnLogAdded(object? sender, LogEntry logEntry)
+    {
+        InvokeAsync(() =>
+        {
+            RefreshLogs();
+            StateHasChanged();
+        });
+    }
+
+    private void RefreshLogs()
+    {
+        isLoading = true;
+        StateHasChanged();
+
+        try
+        {
+            var allLogs = LogService.GetLogs().ToList();
+            totalLogCount = allLogs.Count;
+
+            if (!string.IsNullOrWhiteSpace(searchTerm) || selectedLogLevel.HasValue || fromDate.HasValue || toDate.HasValue)
+            {
+                displayedLogs = LogService.SearchLogs(searchTerm, selectedLogLevel, fromDate, toDate).ToList();
+            }
+            else
+            {
+                displayedLogs = allLogs;
+            }
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private void OnSearchChanged(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? string.Empty;
+        RefreshLogs();
+    }
+
+    private void OnFilterChanged()
+    {
+        RefreshLogs();
+    }
+
+    private void ClearSearch()
+    {
+        searchTerm = string.Empty;
+        RefreshLogs();
+    }
+
+    private void ClearLogs()
+    {
+        LogService.ClearLogs();
+        displayedLogs.Clear();
+        expandedLogs.Clear();
+        totalLogCount = 0;
+        StateHasChanged();
+    }
+
+    private void LoadMoreLogs()
+    {
+        maxDisplayedLogs += 100;
+        StateHasChanged();
+    }
+
+    private void ToggleLogDetails(LogEntry log)
+    {
+        if (expandedLogs.Contains(log))
+        {
+            expandedLogs.Remove(log);
+        }
+        else
+        {
+            expandedLogs.Add(log);
+        }
+        StateHasChanged();
+    }
+
+    private void OnAutoRefreshChanged()
+    {
+        if (autoRefresh)
+        {
+            StartAutoRefresh();
+        }
+        else
+        {
+            StopAutoRefresh();
+        }
+    }
+
+    private void StartAutoRefresh()
+    {
+        StopAutoRefresh();
+        refreshTimer = new Timer(async _ =>
+        {
+            await InvokeAsync(() =>
+            {
+                RefreshLogs();
+                StateHasChanged();
+            });
+        }, null, autoRefreshInterval, autoRefreshInterval);
+    }
+
+    private void StopAutoRefresh()
+    {
+        refreshTimer?.Dispose();
+        refreshTimer = null;
+    }
+
+    private string GetLogLevelClass(LogLevel level)
+    {
+        return level switch
+        {
+            LogLevel.Critical => "log-critical",
+            LogLevel.Error => "log-error",
+            LogLevel.Warning => "log-warning",
+            LogLevel.Information => "log-info",
+            LogLevel.Debug => "log-debug",
+            LogLevel.Trace => "log-trace",
+            _ => "log-default"
+        };
+    }
+
+    private string GetLogLevelBadgeClass(LogLevel level)
+    {
+        return level switch
+        {
+            LogLevel.Critical => "bg-danger",
+            LogLevel.Error => "bg-danger",
+            LogLevel.Warning => "bg-warning text-dark",
+            LogLevel.Information => "bg-primary",
+            LogLevel.Debug => "bg-secondary",
+            LogLevel.Trace => "bg-light text-dark",
+            _ => "bg-secondary"
+        };
+    }
+
+    public void Dispose()
+    {
+        LogService.LogAdded -= OnLogAdded;
+        StopAutoRefresh();
+    }
+}
