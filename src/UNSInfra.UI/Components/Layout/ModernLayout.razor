@@ -1,0 +1,149 @@
+@inherits LayoutComponentBase
+@using Microsoft.AspNetCore.Components.Web
+@inject IJSRuntime JSRuntime
+
+<div class="modern-layout" data-theme="@currentTheme">
+    <!-- Top Navigation Bar -->
+    <nav class="top-navbar">
+        <div class="navbar-container">
+            <!-- Brand -->
+            <div class="navbar-brand">
+                <i class="bi bi-diagram-3-fill me-2"></i>
+                <span>UNS Infrastructure</span>
+            </div>
+
+            <!-- Desktop Navigation -->
+            <div class="navbar-nav-desktop">
+                <NavLink class="nav-item" href="" Match="NavLinkMatch.All">
+                    <i class="bi bi-house-door"></i>
+                    <span>Overview</span>
+                </NavLink>
+                <NavLink class="nav-item" href="liveview">
+                    <i class="bi bi-diagram-3"></i>
+                    <span>Data Model</span>
+                </NavLink>
+                <NavLink class="nav-item" href="ingress">
+                    <i class="bi bi-arrow-down-circle"></i>
+                    <span>Ingress</span>
+                </NavLink>
+                <NavLink class="nav-item" href="egress">
+                    <i class="bi bi-arrow-up-circle"></i>
+                    <span>Egress</span>
+                </NavLink>
+                <NavLink class="nav-item" href="connection-status">
+                    <i class="bi bi-activity"></i>
+                    <span>Status</span>
+                </NavLink>
+                <NavLink class="nav-item" href="settings">
+                    <i class="bi bi-gear"></i>
+                    <span>Settings</span>
+                </NavLink>
+            </div>
+
+            <!-- Theme Toggle & Mobile Menu -->
+            <div class="navbar-actions">
+                <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
+                    <i class="bi @(currentTheme == "dark" ? "bi-sun" : "bi-moon")"></i>
+                </button>
+                
+                <button class="mobile-menu-toggle" @onclick="ToggleMobileMenu" title="Toggle menu">
+                    <span class="hamburger-line"></span>
+                    <span class="hamburger-line"></span>
+                    <span class="hamburger-line"></span>
+                </button>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Mobile Sidebar Overlay -->
+    <div class="mobile-sidebar-overlay @(isMobileMenuOpen ? "open" : "")" @onclick="CloseMobileMenu"></div>
+    
+    <!-- Mobile Sidebar -->
+    <div class="mobile-sidebar @(isMobileMenuOpen ? "open" : "")">
+        <div class="mobile-sidebar-header">
+            <div class="navbar-brand">
+                <i class="bi bi-diagram-3-fill me-2"></i>
+                <span>UNS Infrastructure</span>
+            </div>
+            <button class="close-sidebar" @onclick="CloseMobileMenu">
+                <i class="bi bi-x"></i>
+            </button>
+        </div>
+        
+        <nav class="mobile-nav">
+            <NavLink class="mobile-nav-item" href="" Match="NavLinkMatch.All" @onclick="CloseMobileMenu">
+                <i class="bi bi-house-door"></i>
+                <span>Overview</span>
+            </NavLink>
+            <NavLink class="mobile-nav-item" href="liveview" @onclick="CloseMobileMenu">
+                <i class="bi bi-diagram-3"></i>
+                <span>Data Model</span>
+            </NavLink>
+            <NavLink class="mobile-nav-item" href="ingress" @onclick="CloseMobileMenu">
+                <i class="bi bi-arrow-down-circle"></i>
+                <span>Ingress</span>
+            </NavLink>
+            <NavLink class="mobile-nav-item" href="egress" @onclick="CloseMobileMenu">
+                <i class="bi bi-arrow-up-circle"></i>
+                <span>Egress</span>
+            </NavLink>
+            <NavLink class="mobile-nav-item" href="connection-status" @onclick="CloseMobileMenu">
+                <i class="bi bi-activity"></i>
+                <span>Status</span>
+            </NavLink>
+            <NavLink class="mobile-nav-item" href="settings" @onclick="CloseMobileMenu">
+                <i class="bi bi-gear"></i>
+                <span>Settings</span>
+            </NavLink>
+        </nav>
+    </div>
+
+    <!-- Main Content -->
+    <main class="main-content">
+        <div class="content-container">
+            @Body
+        </div>
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    An unhandled error has occurred.
+    <a href="." class="reload">Reload</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private string currentTheme = "light";
+    private bool isMobileMenuOpen = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            // Load saved theme preference
+            var savedTheme = await JSRuntime.InvokeAsync<string>("localStorage.getItem", "theme");
+            if (!string.IsNullOrEmpty(savedTheme))
+            {
+                currentTheme = savedTheme;
+                StateHasChanged();
+            }
+        }
+    }
+
+    private async Task ToggleTheme()
+    {
+        currentTheme = currentTheme == "light" ? "dark" : "light";
+        await JSRuntime.InvokeVoidAsync("localStorage.setItem", "theme", currentTheme);
+        StateHasChanged();
+    }
+
+    private void ToggleMobileMenu()
+    {
+        isMobileMenuOpen = !isMobileMenuOpen;
+    }
+
+    private void CloseMobileMenu()
+    {
+        isMobileMenuOpen = false;
+    }
+}

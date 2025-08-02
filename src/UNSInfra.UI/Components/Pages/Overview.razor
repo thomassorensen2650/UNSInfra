@@ -1,0 +1,285 @@
+@page "/"
+@using UNSInfra.Services.TopicBrowser
+@using UNSInfra.Core.Services
+@using UNSInfra.Core.Repositories
+@inject ITopicBrowserService TopicBrowserService
+@inject IDataIngestionServiceManager ServiceManager
+@inject IDataIngestionConfigurationRepository ConfigurationRepository
+
+<PageTitle>System Overview - UNS Infrastructure</PageTitle>
+
+<div class="overview-page">
+    <div class="hero-section">
+        <div class="hero-content">
+            <h1 class="hero-title">
+                <i class="bi bi-diagram-3-fill me-3"></i>
+                UNS Infrastructure
+            </h1>
+            <p class="hero-subtitle">
+                Unified Namespace Infrastructure for Industrial IoT Data Management
+            </p>
+        </div>
+    </div>
+
+    <!-- Status Cards -->
+    <div class="status-grid">
+        <!-- System Status Card -->
+        <div class="status-card status-card-primary">
+            <div class="status-icon">
+                <i class="bi bi-cpu"></i>
+            </div>
+            <div class="status-info">
+                <h3>System Status</h3>
+                <div class="status-badge status-running">
+                    <i class="bi bi-check-circle-fill"></i>
+                    Running
+                </div>
+                <p class="status-detail">All services operational</p>
+            </div>
+        </div>
+
+        <!-- Topic Statistics Card -->
+        <div class="status-card">
+            <div class="status-icon">
+                <i class="bi bi-diagram-3"></i>
+            </div>
+            <div class="status-info">
+                <h3>Topics</h3>
+                @if (topicStats != null)
+                {
+                    <div class="metric-value">@topicStats.TotalTopics</div>
+                    <p class="status-detail">@topicStats.UNSAssignedTopics assigned to UNS</p>
+                }
+                else
+                {
+                    <div class="loading-placeholder">Loading...</div>
+                }
+            </div>
+        </div>
+
+        <!-- Data Connections Card -->
+        <div class="status-card">
+            <div class="status-icon">
+                <i class="bi bi-arrow-down-circle"></i>
+            </div>
+            <div class="status-info">
+                <h3>Data Connections</h3>
+                @if (connectionStats != null)
+                {
+                    <div class="metric-value">@connectionStats.ActiveConnections</div>
+                    <p class="status-detail">@connectionStats.TotalConnections total configured</p>
+                }
+                else
+                {
+                    <div class="loading-placeholder">Loading...</div>
+                }
+            </div>
+        </div>
+
+        <!-- Data Flow Card -->
+        <div class="status-card">
+            <div class="status-icon">
+                <i class="bi bi-activity"></i>
+            </div>
+            <div class="status-info">
+                <h3>Data Flow</h3>
+                <div class="metric-value">@activeTopics</div>
+                <p class="status-detail">Active data points</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Recent Activity Section -->
+    <div class="activity-section">
+        <div class="row">
+            <div class="col-lg-8">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-clock-history me-2"></i>
+                            Recent Activity
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="activity-list">
+                            <div class="activity-item">
+                                <div class="activity-icon activity-icon-success">
+                                    <i class="bi bi-check"></i>
+                                </div>
+                                <div class="activity-content">
+                                    <div class="activity-title">System Started</div>
+                                    <div class="activity-time">@DateTime.Now.ToString("HH:mm")</div>
+                                </div>
+                            </div>
+                            
+                            @if (connectionStats?.ActiveConnections > 0)
+                            {
+                                <div class="activity-item">
+                                    <div class="activity-icon activity-icon-info">
+                                        <i class="bi bi-link"></i>
+                                    </div>
+                                    <div class="activity-content">
+                                        <div class="activity-title">@connectionStats.ActiveConnections data connections active</div>
+                                        <div class="activity-time">@DateTime.Now.AddMinutes(-2).ToString("HH:mm")</div>
+                                    </div>
+                                </div>
+                            }
+                            
+                            @if (topicStats?.TotalTopics > 0)
+                            {
+                                <div class="activity-item">
+                                    <div class="activity-icon activity-icon-primary">
+                                        <i class="bi bi-diagram-3"></i>
+                                    </div>
+                                    <div class="activity-content">
+                                        <div class="activity-title">@topicStats.TotalTopics topics discovered</div>
+                                        <div class="activity-time">@DateTime.Now.AddMinutes(-5).ToString("HH:mm")</div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="col-lg-4">
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-info-circle me-2"></i>
+                            System Information
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="info-list">
+                            <div class="info-item">
+                                <span class="info-label">Last Refresh:</span>
+                                <span class="info-value">@lastRefresh.ToString("HH:mm:ss")</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Uptime:</span>
+                                <span class="info-value">@GetUptime()</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Version:</span>
+                                <span class="info-value">1.0.0</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">Environment:</span>
+                                <span class="info-value">Development</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions -->
+    <div class="quick-actions">
+        <h4 class="mb-3">Quick Actions</h4>
+        <div class="action-grid">
+            <a href="/liveview" class="action-card">
+                <i class="bi bi-diagram-3"></i>
+                <span>View Data Model</span>
+            </a>
+            <a href="/ingress" class="action-card">
+                <i class="bi bi-arrow-down-circle"></i>
+                <span>Configure Ingress</span>
+            </a>
+            <a href="/connection-status" class="action-card">
+                <i class="bi bi-activity"></i>
+                <span>Check Status</span>
+            </a>
+            <a href="/settings" class="action-card">
+                <i class="bi bi-gear"></i>
+                <span>Settings</span>
+            </a>
+        </div>
+    </div>
+</div>
+
+@code {
+    private TopicStats? topicStats;
+    private ConnectionStats? connectionStats;
+    private int activeTopics = 0;
+    private DateTime lastRefresh = DateTime.UtcNow;
+    private readonly DateTime startTime = DateTime.UtcNow;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadStatistics();
+        
+        // Set up auto-refresh every 30 seconds
+        var timer = new System.Timers.Timer(30000);
+        timer.Elapsed += async (sender, e) => await InvokeAsync(async () =>
+        {
+            await LoadStatistics();
+            StateHasChanged();
+        });
+        timer.Start();
+    }
+
+    private async Task LoadStatistics()
+    {
+        try
+        {
+            // Load topic statistics
+            var topics = await TopicBrowserService.GetLatestTopicStructureAsync();
+            var topicList = topics.ToList();
+            
+            topicStats = new TopicStats
+            {
+                TotalTopics = topicList.Count,
+                UNSAssignedTopics = topicList.Count(t => !string.IsNullOrEmpty(t.NSPath)),
+                UnassignedTopics = topicList.Count(t => string.IsNullOrEmpty(t.NSPath)),
+                ActiveTopics = topicList.Count(t => t.IsActive)
+            };
+            
+            activeTopics = topicStats.ActiveTopics;
+
+            // Load connection statistics
+            var configurations = await ConfigurationRepository.GetAllConfigurationsAsync();
+            var enabledConfigurations = configurations.Where(c => c.Enabled).ToList();
+            
+            connectionStats = new ConnectionStats
+            {
+                TotalConnections = configurations.Count,
+                ActiveConnections = enabledConfigurations.Count,
+                InactiveConnections = configurations.Count - enabledConfigurations.Count
+            };
+            
+            lastRefresh = DateTime.UtcNow;
+        }
+        catch (Exception ex)
+        {
+            // Handle error silently for now
+            Console.WriteLine($"Error loading statistics: {ex.Message}");
+        }
+    }
+
+    private string GetUptime()
+    {
+        var uptime = DateTime.UtcNow - startTime;
+        if (uptime.TotalDays >= 1)
+            return $"{(int)uptime.TotalDays}d {uptime.Hours}h";
+        if (uptime.TotalHours >= 1)
+            return $"{uptime.Hours}h {uptime.Minutes}m";
+        return $"{uptime.Minutes}m {uptime.Seconds}s";
+    }
+
+    public class TopicStats
+    {
+        public int TotalTopics { get; set; }
+        public int UNSAssignedTopics { get; set; }
+        public int UnassignedTopics { get; set; }
+        public int ActiveTopics { get; set; }
+    }
+
+    public class ConnectionStats
+    {
+        public int TotalConnections { get; set; }
+        public int ActiveConnections { get; set; }
+        public int InactiveConnections { get; set; }
+    }
+}

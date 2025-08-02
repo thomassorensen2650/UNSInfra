@@ -11,34 +11,7 @@
 <PageTitle>Data Model</PageTitle>
 
 <div class="liveview-container">
-    <div class="topics-section">
-        @if (_isLoadingTopics)
-        {
-            <div class="d-flex justify-content-end align-items-center mb-2">
-                <div class="d-flex align-items-center">
-                    <div class="spinner-border spinner-border-sm me-2" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <small class="text-muted">Updating...</small>
-                </div>
-            </div>
-        }
-        <div class="tree-container">
-            @if (_isInitialLoad && Topics.Count == 0)
-            {
-                <div class="d-flex align-items-center justify-content-center py-4">
-                    <div class="spinner-border spinner-border-sm me-2" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <span class="text-muted">Loading topics...</span>
-                </div>
-            }
-            else
-            {
-                <TopicTree @ref="TopicTreeComponent" Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" OnAddDataToNamespace="OnAddDataToNamespace" />
-            }
-        </div>
-    </div>
+    <!-- Payload section now on the left -->
     <div class="payload-section">
         @if (SelectedTopic != null)
         {
@@ -217,13 +190,44 @@
         }
         else
         {
-            <div class="d-flex align-items-center justify-content-center h-100 text-muted">
+            <div class="empty-payload-state">
+                <i class="bi bi-diagram-3"></i>
                 <div class="text-center">
-                    <i class="bi bi-cursor" style="font-size: 3rem;"></i>
-                    <p class="mt-3">Select a topic to view its details</p>
+                    <h5>No Topic Selected</h5>
+                    <p class="mb-0">Select a topic from the tree on the right to view its metadata, data, and history.</p>
                 </div>
             </div>
         }
+    </div>
+    
+    <!-- Topics section now on the right -->
+    <div class="topics-section">
+        @if (_isLoadingTopics)
+        {
+            <div class="d-flex justify-content-end align-items-center mb-2">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <small class="text-muted">Updating...</small>
+                </div>
+            </div>
+        }
+        <div class="tree-container">
+            @if (_isInitialLoad && Topics.Count == 0)
+            {
+                <div class="d-flex align-items-center justify-content-center py-4">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span class="text-muted">Loading topics...</span>
+                </div>
+            }
+            else
+            {
+                <TopicTree @ref="TopicTreeComponent" Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" OnAddDataToNamespace="OnAddDataToNamespace" />
+            }
+        </div>
     </div>
 </div>
 
@@ -742,186 +746,3 @@
     }
 }
 
-<style>
-/* Full height layout */
-.liveview-container {
-    display: flex;
-    height: calc(100vh - 3.5rem); /* Subtract the top-row height */
-    gap: 1rem;
-}
-
-.topics-section {
-    flex: 0 0 35%;
-    display: flex;
-    flex-direction: column;
-    min-width: 0; /* Allows flex shrinking */
-}
-
-.payload-section {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0; /* Allows flex shrinking */
-}
-
-.tree-container {
-    flex: 1;
-    overflow-y: auto;
-    border: 1px solid #dee2e6;
-    border-radius: 0.375rem;
-    padding: 0.75rem;
-    background-color: #fff;
-    min-height: 0; /* Allows flex shrinking */
-}
-
-.payload-container {
-    flex: 1;
-    overflow-y: auto;
-    border: 1px solid #dee2e6;
-    border-radius: 0.375rem;
-    padding: 0.75rem;
-    background-color: #f8f9fa;
-    margin-bottom: 1rem;
-    transition: border-color 0.15s ease-in-out;
-    min-height: 200px;
-    max-height: 400px; /* Fixed height to leave room for metadata */
-}
-
-.payload-container:has(.spinner-border) {
-    border-color: #0d6efd;
-    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
-}
-
-.payload-content {
-    margin: 0;
-    background-color: transparent;
-    border: none;
-    padding: 0;
-    white-space: pre-wrap;
-    word-wrap: break-word;
-    font-size: 0.875rem;
-    line-height: 1.4;
-}
-
-/* Custom scrollbar styling */
-.tree-container::-webkit-scrollbar,
-.payload-container::-webkit-scrollbar {
-    width: 8px;
-}
-
-.tree-container::-webkit-scrollbar-track,
-.payload-container::-webkit-scrollbar-track {
-    background: #f1f1f1;
-    border-radius: 4px;
-}
-
-.tree-container::-webkit-scrollbar-thumb,
-.payload-container::-webkit-scrollbar-thumb {
-    background: #c1c1c1;
-    border-radius: 4px;
-}
-
-.tree-container::-webkit-scrollbar-thumb:hover,
-.payload-container::-webkit-scrollbar-thumb:hover {
-    background: #a8a8a8;
-}
-
-/* Topic Detail Tabs */
-.topic-details-tabs {
-    height: 100%;
-    display: flex;
-    flex-direction: column;
-}
-
-.topic-detail-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-}
-
-.topic-detail-content .tab-pane.show.active {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-height: 0;
-}
-
-.topic-detail-content .tab-pane:not(.show) {
-    display: none;
-}
-
-.metadata-container,
-.history-container {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
-}
-
-.history-controls {
-    flex-shrink: 0;
-    background-color: #f8f9fa;
-    border-radius: 0.375rem;
-    padding: 1rem;
-    margin-bottom: 1rem;
-}
-
-.history-results {
-    flex: 1;
-    overflow-y: auto;
-    min-height: 0;
-}
-
-
-.history-controls .form-label {
-    font-weight: 500;
-    margin-bottom: 0.25rem;
-}
-
-.nav-tabs .nav-link {
-    font-size: 0.9rem;
-    padding: 0.5rem 1rem;
-    border: none;
-    color: #6c757d;
-    transition: all 0.15s ease-in-out;
-}
-
-.nav-tabs .nav-link:hover {
-    color: #495057;
-    background-color: #f8f9fa;
-}
-
-.nav-tabs .nav-link.active {
-    color: #495057;
-    background-color: #fff;
-    border-color: #dee2e6 #dee2e6 #fff;
-    font-weight: 500;
-}
-
-.nav-tabs {
-    border-bottom: 1px solid #dee2e6;
-    margin-bottom: 0;
-}
-
-/* Responsive layout for smaller screens */
-@@media (max-width: 768px) {
-    .liveview-container {
-        flex-direction: column;
-        height: auto;
-        min-height: calc(100vh - 3.5rem);
-    }
-    
-    .topics-section, 
-    .payload-section {
-        min-height: 400px;
-    }
-    
-    .history-controls .row {
-        --bs-gutter-x: 0.5rem;
-    }
-    
-    .history-controls .col-md-3 {
-        margin-bottom: 0.5rem;
-    }
-}
-</style>
