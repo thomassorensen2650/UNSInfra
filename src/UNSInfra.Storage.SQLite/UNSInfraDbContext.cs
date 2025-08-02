@@ -46,7 +46,15 @@ public class UNSInfraDbContext : DbContext
     /// </summary>
     public DbSet<NamespaceConfigurationEntity> NamespaceConfigurations { get; set; }
     
+    /// <summary>
+    /// Gets or sets the NS tree instances.
+    /// </summary>
     public DbSet<NSTreeInstanceEntity> NSTreeInstances { get; set; }
+
+    /// <summary>
+    /// Gets or sets the data ingestion configurations.
+    /// </summary>
+    public DbSet<DataIngestionConfigurationEntity> DataIngestionConfigurations { get; set; }
 
     /// <summary>
     /// Configures the model relationships and constraints.
@@ -89,7 +97,6 @@ public class UNSInfraDbContext : DbContext
             entity.HasKey(e => e.Id);
             entity.HasIndex(e => e.Topic).IsUnique();
             entity.HasIndex(e => e.IsActive);
-            entity.HasIndex(e => e.IsVerified);
             entity.HasIndex(e => e.SourceType);
             entity.HasIndex(e => e.NamespaceConfigurationId);
         });
@@ -130,6 +137,17 @@ public class UNSInfraDbContext : DbContext
             entity.HasIndex(e => e.HierarchyNodeId);
             entity.HasIndex(e => e.ParentInstanceId);
             entity.HasIndex(e => e.IsActive);
+        });
+
+        // Configure DataIngestionConfiguration
+        modelBuilder.Entity<DataIngestionConfigurationEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Name);
+            entity.HasIndex(e => e.ServiceType);
+            entity.HasIndex(e => e.Enabled);
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasIndex(e => e.ModifiedAt);
         });
     }
 }

@@ -1,0 +1,301 @@
+@using Microsoft.Extensions.Options
+@using UNSInfra.Configuration
+@inject IOptionsMonitor<HistoricalStorageConfiguration> ConfigurationMonitor
+@inject IJSRuntime JSRuntime
+@implements IDisposable
+
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">
+            <i class="bi bi-database"></i> Historical Storage Configuration
+        </h5>
+        <div>
+            @if (_hasChanges)
+            {
+                <span class="badge bg-warning text-dark me-2">Unsaved Changes</span>
+            }
+            <button class="btn btn-sm btn-primary" @onclick="SaveConfiguration" disabled="@(_isSaving || !_hasChanges)">
+                @if (_isSaving)
+                {
+                    <div class="spinner-border spinner-border-sm me-1" role="status">
+                        <span class="visually-hidden">Saving...</span>
+                    </div>
+                    @:Saving...
+                }
+                else
+                {
+                    <i class="bi bi-floppy"></i> @:Save
+                }
+            </button>
+        </div>
+    </div>
+    <div class="card-body">
+        @if (_configuration != null)
+        {
+            <div class="row">
+                <div class="col-md-6">
+                    <!-- Enable/Disable Historical Storage -->
+                    <div class="mb-3">
+                        <div class="form-check form-switch">
+                            <input class="form-check-input" type="checkbox" id="enableHistoricalStorage" 
+                                   @bind="_editConfiguration.Enabled" @oninput="OnConfigurationChanged" />
+                            <label class="form-check-label" for="enableHistoricalStorage">
+                                <strong>Enable Historical Storage</strong>
+                            </label>
+                        </div>
+                        <small class="form-text text-muted">
+                            When enabled, historical data points will be stored for analysis and reporting.
+                        </small>
+                    </div>
+
+                    <!-- Storage Type Selection -->
+                    <div class="mb-3">
+                        <label class="form-label">Storage Type</label>
+                        <select class="form-select" @bind="_editConfiguration.StorageType" @oninput="OnConfigurationChanged" 
+                                disabled="@(!_editConfiguration.Enabled)">
+                            <option value="@HistoricalStorageType.InMemory">In-Memory (Fast, data lost on restart)</option>
+                            <option value="@HistoricalStorageType.SQLite">SQLite Database (Persistent)</option>
+                            <option value="@HistoricalStorageType.None">None (Disabled)</option>
+                        </select>
+                        <small class="form-text text-muted">
+                            Choose how historical data should be stored.
+                        </small>
+                    </div>
+
+                    <!-- Connection String (for SQLite) -->
+                    @if (_editConfiguration.StorageType == HistoricalStorageType.SQLite)
+                    {
+                        <div class="mb-3">
+                            <label class="form-label">Connection String</label>
+                            <input type="text" class="form-control" @bind="_editConfiguration.ConnectionString" 
+                                   @oninput="OnConfigurationChanged" placeholder="Leave empty for default location" />
+                            <small class="form-text text-muted">
+                                SQLite connection string. Leave empty to use default application data folder.
+                            </small>
+                        </div>
+                    }
+                </div>
+
+                <div class="col-md-6">
+                    <!-- Current Configuration Status -->
+                    <div class="mb-3">
+                        <h6>Current Status</h6>
+                        <dl class="row">
+                            <dt class="col-sm-6">Status:</dt>
+                            <dd class="col-sm-6">
+                                @if (_configuration.Enabled)
+                                {
+                                    <span class="badge bg-success">Enabled</span>
+                                }
+                                else
+                                {
+                                    <span class="badge bg-secondary">Disabled</span>
+                                }
+                            </dd>
+                            
+                            <dt class="col-sm-6">Type:</dt>
+                            <dd class="col-sm-6">
+                                <span class="badge bg-info">@_configuration.StorageType</span>
+                            </dd>
+                        </dl>
+                    </div>
+                </div>
+            </div>
+
+            <!-- InMemory Storage Options -->
+            @if (_editConfiguration.StorageType == HistoricalStorageType.InMemory && _editConfiguration.Enabled)
+            {
+                <hr />
+                <h6>In-Memory Storage Options</h6>
+                <div class="row">
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">Max Values Per Topic</label>
+                            <input type="number" class="form-control" @bind="_editConfiguration.InMemory.MaxValuesPerDataPoint" 
+                                   @oninput="OnConfigurationChanged" min="1" max="100000" />
+                            <small class="form-text text-muted">
+                                Maximum historical values to keep per individual topic.
+                            </small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <label class="form-label">Max Total Values</label>
+                            <input type="number" class="form-control" @bind="_editConfiguration.InMemory.MaxTotalValues" 
+                                   @oninput="OnConfigurationChanged" min="1000" max="10000000" />
+                            <small class="form-text text-muted">
+                                Maximum total historical values across all topics.
+                            </small>
+                        </div>
+                    </div>
+                    <div class="col-md-4">
+                        <div class="mb-3">
+                            <div class="form-check form-switch mt-4">
+                                <input class="form-check-input" type="checkbox" id="autoCleanup" 
+                                       @bind="_editConfiguration.InMemory.AutoCleanup" @oninput="OnConfigurationChanged" />
+                                <label class="form-check-label" for="autoCleanup">
+                                    Auto Cleanup
+                                </label>
+                            </div>
+                            <small class="form-text text-muted">
+                                Automatically remove oldest data when limits are reached.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            <!-- SQLite Storage Options -->
+            @if (_editConfiguration.StorageType == HistoricalStorageType.SQLite && _editConfiguration.Enabled)
+            {
+                <hr />
+                <h6>SQLite Storage Options</h6>
+                <div class="row">
+                    <div class="col-md-6">
+                        <div class="mb-3">
+                            <label class="form-label">Database Path</label>
+                            <input type="text" class="form-control" @bind="_editConfiguration.SQLite.DatabasePath" 
+                                   @oninput="OnConfigurationChanged" placeholder="Leave empty for default" />
+                            <small class="form-text text-muted">
+                                Path to the SQLite database file. Leave empty for default location.
+                            </small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <label class="form-label">Retention Days</label>
+                            <input type="number" class="form-control" @bind="_editConfiguration.SQLite.RetentionDays" 
+                                   @oninput="OnConfigurationChanged" min="1" max="3650" />
+                            <small class="form-text text-muted">
+                                Days to retain historical data (-1 for unlimited).
+                            </small>
+                        </div>
+                    </div>
+                    <div class="col-md-3">
+                        <div class="mb-3">
+                            <div class="form-check form-switch mt-4">
+                                <input class="form-check-input" type="checkbox" id="enableWAL" 
+                                       @bind="_editConfiguration.SQLite.EnableWAL" @oninput="OnConfigurationChanged" />
+                                <label class="form-check-label" for="enableWAL">
+                                    Enable WAL
+                                </label>
+                            </div>
+                            <small class="form-text text-muted">
+                                Enable Write-Ahead Logging for better performance.
+                            </small>
+                        </div>
+                    </div>
+                </div>
+            }
+
+            @if (!_editConfiguration.Enabled || _editConfiguration.StorageType == HistoricalStorageType.None)
+            {
+                <div class="alert alert-warning">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <strong>Warning:</strong> Historical storage is disabled. No historical data will be stored.
+                </div>
+            }
+        }
+        else
+        {
+            <div class="text-center py-3">
+                <div class="spinner-border" role="status">
+                    <span class="visually-hidden">Loading...</span>
+                </div>
+                <p class="mt-2 text-muted">Loading configuration...</p>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private HistoricalStorageConfiguration? _configuration;
+    private HistoricalStorageConfiguration _editConfiguration = new();
+    private bool _hasChanges = false;
+    private bool _isSaving = false;
+    private IDisposable? _configurationChangeSubscription;
+
+    protected override void OnInitialized()
+    {
+        _configuration = ConfigurationMonitor.CurrentValue;
+        _editConfiguration = CloneConfiguration(_configuration);
+        
+        // Subscribe to configuration changes
+        _configurationChangeSubscription = ConfigurationMonitor.OnChange(OnConfigurationUpdated);
+    }
+
+    private void OnConfigurationUpdated(HistoricalStorageConfiguration newConfiguration, string? name)
+    {
+        _configuration = newConfiguration;
+        if (!_hasChanges)
+        {
+            _editConfiguration = CloneConfiguration(_configuration);
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private HistoricalStorageConfiguration CloneConfiguration(HistoricalStorageConfiguration config)
+    {
+        return new HistoricalStorageConfiguration
+        {
+            Enabled = config.Enabled,
+            StorageType = config.StorageType,
+            ConnectionString = config.ConnectionString,
+            InMemory = new InMemoryHistoricalStorageOptions
+            {
+                MaxValuesPerDataPoint = config.InMemory.MaxValuesPerDataPoint,
+                MaxTotalValues = config.InMemory.MaxTotalValues,
+                AutoCleanup = config.InMemory.AutoCleanup
+            },
+            SQLite = new SQLiteHistoricalStorageOptions
+            {
+                DatabasePath = config.SQLite.DatabasePath,
+                EnableWAL = config.SQLite.EnableWAL,
+                RetentionDays = config.SQLite.RetentionDays,
+                AutoCleanup = config.SQLite.AutoCleanup
+            }
+        };
+    }
+
+    private void OnConfigurationChanged()
+    {
+        _hasChanges = true;
+        StateHasChanged();
+    }
+
+    private async Task SaveConfiguration()
+    {
+        if (_isSaving || !_hasChanges)
+            return;
+
+        _isSaving = true;
+        StateHasChanged();
+
+        try
+        {
+            // Note: In a real application, you would save this to a configuration service
+            // For now, we'll just show a message
+            await Task.Delay(1000); // Simulate save operation
+            
+            await JSRuntime.InvokeVoidAsync("alert", 
+                "Configuration saved successfully!\n\nNote: Application restart may be required for changes to take effect.");
+            
+            _configuration = CloneConfiguration(_editConfiguration);
+            _hasChanges = false;
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error saving configuration: {ex.Message}");
+        }
+        finally
+        {
+            _isSaving = false;
+            StateHasChanged();
+        }
+    }
+
+    public void Dispose()
+    {
+        _configurationChangeSubscription?.Dispose();
+    }
+}

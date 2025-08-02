@@ -29,11 +29,6 @@ public class TopicConfigurationEntity
     public string PathValuesJson { get; set; } = "{}";
 
     /// <summary>
-    /// Gets or sets whether this topic configuration has been verified by a user.
-    /// </summary>
-    public bool IsVerified { get; set; }
-
-    /// <summary>
     /// Gets or sets whether this topic configuration is currently active.
     /// </summary>
     public bool IsActive { get; set; }
@@ -83,4 +78,10 @@ public class TopicConfigurationEntity
     /// </summary>
     [MaxLength(500)]
     public string NSPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the display name for this topic when used in UNS.
+    /// </summary>
+    [MaxLength(200)]
+    public string UNSName { get; set; } = string.Empty;
 }

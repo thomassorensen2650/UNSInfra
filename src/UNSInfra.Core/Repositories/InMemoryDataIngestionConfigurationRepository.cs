@@ -224,4 +224,5 @@ internal class DeletedConfigurationPlaceholder : IDataIngestionConfiguration
 
     public List<string> Validate() => new();
     public IDataIngestionConfiguration Clone() => new DeletedConfigurationPlaceholder { Id = this.Id };
+    public IDataIngestionConfiguration CloneAsNew() => new DeletedConfigurationPlaceholder { Id = Guid.NewGuid().ToString() };
 }

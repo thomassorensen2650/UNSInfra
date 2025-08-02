@@ -101,7 +101,6 @@ public static class EntityMapper
             Id = config.Id,
             Topic = config.Topic,
             PathValuesJson = JsonSerializer.Serialize(config.Path.Values, JsonOptions),
-            IsVerified = config.IsVerified,
             IsActive = config.IsActive,
             SourceType = config.SourceType,
             Description = config.Description,
@@ -110,7 +109,8 @@ public static class EntityMapper
             CreatedBy = config.CreatedBy,
             MetadataJson = JsonSerializer.Serialize(config.Metadata, JsonOptions),
             NamespaceConfigurationId = config.NamespaceConfigurationId,
-            NSPath = config.NSPath
+            NSPath = config.NSPath,
+            UNSName = config.UNSName
         };
     }
 
@@ -126,7 +126,6 @@ public static class EntityMapper
             Id = entity.Id,
             Topic = entity.Topic,
             Path = new HierarchicalPath { Values = pathValues },
-            IsVerified = entity.IsVerified,
             IsActive = entity.IsActive,
             SourceType = entity.SourceType,
             Description = entity.Description,
@@ -135,7 +134,8 @@ public static class EntityMapper
             CreatedBy = entity.CreatedBy,
             Metadata = JsonSerializer.Deserialize<Dictionary<string, object>>(entity.MetadataJson, JsonOptions) ?? new(),
             NamespaceConfigurationId = entity.NamespaceConfigurationId,
-            NSPath = entity.NSPath
+            NSPath = entity.NSPath,
+            UNSName = entity.UNSName
         };
     }
 

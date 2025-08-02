@@ -77,10 +77,6 @@ public class TopicInfo
     /// </summary>
     public HierarchicalPath Path { get; set; } = new();
 
-    /// <summary>
-    /// Gets or sets whether this topic is verified.
-    /// </summary>
-    public bool IsVerified { get; set; }
 
     /// <summary>
     /// Gets or sets whether this topic is active.
@@ -121,6 +117,11 @@ public class TopicInfo
     /// Gets or sets the namespace path this topic is assigned to.
     /// </summary>
     public string NSPath { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Gets or sets the display name for this topic when used in UNS.
+    /// </summary>
+    public string UNSName { get; set; } = string.Empty;
 }
 
 /// <summary>

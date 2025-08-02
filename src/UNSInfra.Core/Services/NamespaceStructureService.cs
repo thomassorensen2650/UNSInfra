@@ -45,12 +45,31 @@ public class NamespaceStructureService : INamespaceStructureService
             }
         }
         
-        // If there are no hierarchy instances but there are namespaces, show them as root-level nodes
+        // Build namespace-only tree if no hierarchy instances exist
         if (!rootNodes.Any() && namespacesList.Any())
         {
-            var rootNamespaces = namespacesList.Where(ns => string.IsNullOrEmpty(ns.ParentNamespaceId));
-            
-            foreach (var ns in rootNamespaces)
+            // Create hierarchy nodes based on namespace hierarchical paths
+            var uniqueHierarchyPaths = namespacesList
+                .Select(ns => ns.HierarchicalPath)
+                .Where(path => !string.IsNullOrEmpty(GetHierarchyPathKey(path)))
+                .Distinct(new HierarchicalPathComparer())
+                .ToList();
+
+            foreach (var hierarchyPath in uniqueHierarchyPaths)
+            {
+                var hierarchyNode = await BuildHierarchyNodeTreeAsync(hierarchyPath, hierarchyConfig, namespacesList);
+                if (hierarchyNode != null)
+                {
+                    rootNodes.Add(hierarchyNode);
+                }
+            }
+
+            // Handle namespaces without hierarchical paths
+            var namespacesWithoutPath = namespacesList
+                .Where(ns => string.IsNullOrEmpty(GetHierarchyPathKey(ns.HierarchicalPath)) && string.IsNullOrEmpty(ns.ParentNamespaceId))
+                .ToList();
+
+            foreach (var ns in namespacesWithoutPath)
             {
                 var nsNode = new NSTreeNode
                 {
@@ -62,7 +81,6 @@ public class NamespaceStructureService : INamespaceStructureService
                     CanHaveNamespaceChildren = true
                 };
 
-                // Add nested namespaces
                 await AddNestedNamespacesAsync(nsNode, namespacesList);
                 rootNodes.Add(nsNode);
             }
@@ -225,7 +243,7 @@ public class NamespaceStructureService : INamespaceStructureService
         var pathParts = nsPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
         var hierarchyLevels = hierarchyConfig.Nodes.OrderBy(n => n.Order).ToList();
         
-        // Map path parts to hierarchy levels
+        // Map path parts to hierarchy levels based on the configured hierarchy
         for (int i = 0; i < Math.Min(pathParts.Length, hierarchyLevels.Count); i++)
         {
             path.SetValue(hierarchyLevels[i].Name, pathParts[i]);
@@ -261,17 +279,19 @@ public class NamespaceStructureService : INamespaceStructureService
         var orderedNodes = hierarchyConfig.Nodes.OrderBy(n => n.Order).ToList();
         NSTreeNode? rootNode = null;
         NSTreeNode? currentNode = null;
+        var fullPath = new List<string>();
 
-        // Build the hierarchy chain
+        // Build the hierarchy chain based on the configured hierarchy levels
         foreach (var hierarchyNode in orderedNodes)
         {
             var value = hierarchyPath.GetValue(hierarchyNode.Name);
             if (string.IsNullOrEmpty(value)) break;
 
+            fullPath.Add(value);
             var node = new NSTreeNode
             {
                 Name = value,
-                FullPath = rootNode == null ? value : $"{rootNode.FullPath}/{value}",
+                FullPath = string.Join("/", fullPath),
                 NodeType = NSNodeType.HierarchyNode,
                 HierarchyNode = hierarchyNode,
                 CanHaveHierarchyChildren = hierarchyNode.AllowedChildNodeIds.Any(),
@@ -294,7 +314,8 @@ public class NamespaceStructureService : INamespaceStructureService
         if (currentNode != null)
         {
             var matchingNamespaces = allNamespaces.Where(ns => 
-                GetHierarchyPathKey(ns.HierarchicalPath) == GetHierarchyPathKey(hierarchyPath));
+                GetHierarchyPathKey(ns.HierarchicalPath) == GetHierarchyPathKey(hierarchyPath) &&
+                string.IsNullOrEmpty(ns.ParentNamespaceId));
 
             foreach (var ns in matchingNamespaces)
             {
@@ -367,14 +388,71 @@ public class NamespaceStructureService : INamespaceStructureService
         return await _nsTreeInstanceRepository.CanDeleteInstanceAsync(instanceId);
     }
 
+    private async Task<string> GetHierarchyPathKeyAsync(HierarchicalPath path)
+    {
+        var hierarchyConfig = await GetActiveHierarchyConfigurationAsync();
+        if (hierarchyConfig == null)
+        {
+            // Fallback to simple join if no hierarchy config
+            return string.Join("/", path.Values.Values.Where(v => !string.IsNullOrEmpty(v)));
+        }
+
+        // Use the configured hierarchy order
+        var orderedNodes = hierarchyConfig.Nodes.OrderBy(n => n.Order).ToList();
+        var parts = new List<string>();
+        
+        foreach (var node in orderedNodes)
+        {
+            var value = path.GetValue(node.Name);
+            if (!string.IsNullOrEmpty(value))
+            {
+                parts.Add(value);
+            }
+        }
+        
+        return string.Join("/", parts);
+    }
+
     private string GetHierarchyPathKey(HierarchicalPath path)
     {
-        var parts = new List<string>();
-        if (!string.IsNullOrEmpty(path.Enterprise)) parts.Add(path.Enterprise);
-        if (!string.IsNullOrEmpty(path.Site)) parts.Add(path.Site);
-        if (!string.IsNullOrEmpty(path.Area)) parts.Add(path.Area);
-        if (!string.IsNullOrEmpty(path.WorkCenter)) parts.Add(path.WorkCenter);
-        if (!string.IsNullOrEmpty(path.WorkUnit)) parts.Add(path.WorkUnit);
-        return string.Join("/", parts);
+        // Simple version for synchronous use - just return all values joined
+        return string.Join("/", path.Values.Values.Where(v => !string.IsNullOrEmpty(v)));
+    }
+}
+
+/// <summary>
+/// Comparer for HierarchicalPath objects to enable Distinct operations.
+/// </summary>
+public class HierarchicalPathComparer : IEqualityComparer<HierarchicalPath>
+{
+    public bool Equals(HierarchicalPath? x, HierarchicalPath? y)
+    {
+        if (ReferenceEquals(x, y)) return true;
+        if (x is null || y is null) return false;
+        
+        // Compare all values in both dictionaries
+        if (x.Values.Count != y.Values.Count) return false;
+        
+        foreach (var kvp in x.Values)
+        {
+            if (!y.Values.TryGetValue(kvp.Key, out var yValue) || 
+                !string.Equals(kvp.Value, yValue, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+        }
+        
+        return true;
+    }
+
+    public int GetHashCode(HierarchicalPath obj)
+    {
+        var hash = new HashCode();
+        foreach (var kvp in obj.Values.OrderBy(x => x.Key))
+        {
+            hash.Add(kvp.Key);
+            hash.Add(kvp.Value?.ToLowerInvariant());
+        }
+        return hash.ToHashCode();
     }
 }

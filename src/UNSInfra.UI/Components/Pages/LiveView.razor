@@ -1,25 +1,28 @@
 @page "/liveview"
 @using UNSInfra.Services.TopicBrowser
 @using UNSInfra.Models.Hierarchy
+@using UNSInfra.Models.Data
+@using UNSInfra.Storage.Abstractions
 @inject ITopicBrowserService TopicBrowserService
+@inject IHistoricalStorage HistoricalStorage
+@inject ILogger<LiveView> Logger
 @implements IDisposable
 
 <PageTitle>Data Model</PageTitle>
 
 <div class="liveview-container">
     <div class="topics-section">
-        <div class="d-flex justify-content-between align-items-center mb-2">
-            <h5 class="mb-0">Topics</h5>
-            @if (_isLoadingTopics)
-            {
+        @if (_isLoadingTopics)
+        {
+            <div class="d-flex justify-content-end align-items-center mb-2">
                 <div class="d-flex align-items-center">
                     <div class="spinner-border spinner-border-sm me-2" role="status">
                         <span class="visually-hidden">Loading...</span>
                     </div>
                     <small class="text-muted">Updating...</small>
                 </div>
-            }
-        </div>
+            </div>
+        }
         <div class="tree-container">
             @if (_isInitialLoad && Topics.Count == 0)
             {
@@ -37,31 +40,188 @@
         </div>
     </div>
     <div class="payload-section">
-        <h5 class="mb-2">Payload</h5>
-        <div class="payload-container">
-            @if (SelectedTopic != null && SelectedPayload != null)
-            {
-                <pre class="payload-content">@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true})</pre>
-            }
-            else if (SelectedTopic != null && SelectedPayload == null)
-            {
-                <div class="d-flex align-items-center">
-                    <div class="spinner-border spinner-border-sm me-2" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <span class="text-muted">Loading payload...</span>
-                </div>
-            }
-            else
-            {
-                <p class="text-muted">Select a topic to view its payload.</p>
-            }
-        </div>
-        
         @if (SelectedTopic != null)
         {
-            <div class="mt-3">
-                <TopicMetadataEditor SelectedTopic="SelectedTopic" OnTopicVerified="OnTopicVerified" OnTopicUpdated="OnTopicUpdated" />
+            <div class="topic-details-tabs">
+                <!-- Tab Navigation -->
+                <ul class="nav nav-tabs" id="topicDetailTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link @(activeDetailTab == "meta" ? "active" : "")" id="meta-tab" type="button" role="tab"
+                                @onclick="@(() => SetActiveDetailTab("meta"))">
+                            <i class="bi bi-tags me-1"></i> Meta
+                        </button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link @(activeDetailTab == "data" ? "active" : "")" id="data-tab" type="button" role="tab" 
+                                @onclick="@(() => SetActiveDetailTab("data"))">
+                            <i class="bi bi-code-square me-1"></i> Data
+                        </button>
+                    </li>
+                    @if (!string.IsNullOrEmpty(SelectedTopic.NSPath))
+                    {
+                        <li class="nav-item" role="presentation">
+                            <button class="nav-link @(activeDetailTab == "history" ? "active" : "")" id="history-tab" type="button" role="tab"
+                                    @onclick="@(() => SetActiveDetailTab("history"))">
+                                <i class="bi bi-clock-history me-1"></i> History
+                            </button>
+                        </li>
+                    }
+                </ul>
+
+                <!-- Tab Content -->
+                <div class="tab-content topic-detail-content">
+                    <!-- Meta Tab -->
+                    <div class="tab-pane @(activeDetailTab == "meta" ? "show active" : "")" id="meta-pane" role="tabpanel">
+                        <div class="metadata-container">
+                            <TopicMetadataEditor SelectedTopic="SelectedTopic" OnTopicUpdated="OnTopicUpdated" />
+                        </div>
+                    </div>
+
+                    <!-- Data Tab -->
+                    <div class="tab-pane @(activeDetailTab == "data" ? "show active" : "")" id="data-pane" role="tabpanel">
+                        <div class="payload-container">
+                            @if (SelectedPayload != null)
+                            {
+                                <pre class="payload-content">@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true})</pre>
+                            }
+                            else
+                            {
+                                <div class="d-flex align-items-center">
+                                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                                        <span class="visually-hidden">Loading...</span>
+                                    </div>
+                                    <span class="text-muted">Loading payload...</span>
+                                </div>
+                            }
+                        </div>
+                    </div>
+
+                    <!-- History Tab -->
+                    @if (!string.IsNullOrEmpty(SelectedTopic.NSPath))
+                    {
+                        <div class="tab-pane @(activeDetailTab == "history" ? "show active" : "")" id="history-pane" role="tabpanel">
+                            <div class="history-container">
+                                <div class="history-controls mb-3">
+                                    <div class="row g-2">
+                                        <div class="col-md-3">
+                                            <label class="form-label small">Query Type</label>
+                                            <select class="form-select form-select-sm" @bind="historyQueryType" @bind:after="OnHistoryQueryTypeChanged">
+                                                <option value="timeRange">Time Range</option>
+                                                <option value="lastValues">Last X Values</option>
+                                            </select>
+                                        </div>
+                                        @if (historyQueryType == "timeRange")
+                                        {
+                                            <div class="col-md-3">
+                                                <label class="form-label small">Start Date</label>
+                                                <input type="datetime-local" class="form-control form-control-sm" @bind="historyStartDate" />
+                                            </div>
+                                            <div class="col-md-3">
+                                                <label class="form-label small">End Date</label>
+                                                <input type="datetime-local" class="form-control form-control-sm" @bind="historyEndDate" />
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="col-md-3">
+                                                <label class="form-label small">Number of Values</label>
+                                                <input type="number" class="form-control form-control-sm" @bind="historyValueCount" min="1" max="1000" placeholder="100" />
+                                            </div>
+                                        }
+                                        <div class="col-md-3 d-flex align-items-end">
+                                            <button class="btn btn-primary btn-sm" @onclick="LoadHistoricalData" disabled="@_isLoadingHistory">
+                                                @if (_isLoadingHistory)
+                                                {
+                                                    <div class="spinner-border spinner-border-sm me-1" role="status">
+                                                        <span class="visually-hidden">Loading...</span>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <i class="bi bi-search me-1"></i>
+                                                }
+                                                Query
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="history-results">
+                                    @if (_isLoadingHistory)
+                                    {
+                                        <div class="text-center py-4">
+                                            <div class="spinner-border" role="status">
+                                                <span class="visually-hidden">Loading...</span>
+                                            </div>
+                                            <p class="text-muted mt-2">Loading historical data...</p>
+                                        </div>
+                                    }
+                                    else if (historicalData?.Any() == true)
+                                    {
+                                        <div class="table-responsive">
+                                            <table class="table table-sm table-striped">
+                                                <thead>
+                                                    <tr>
+                                                        <th>Timestamp</th>
+                                                        <th>Value</th>
+                                                        <th>Source</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    @foreach (var dataPoint in historicalData.OrderByDescending(d => d.Timestamp))
+                                                    {
+                                                        <tr>
+                                                            <td>@dataPoint.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                                            <td>
+                                                                <code class="small">@System.Text.Json.JsonSerializer.Serialize(dataPoint.Value, new System.Text.Json.JsonSerializerOptions { WriteIndented = false })</code>
+                                                            </td>
+                                                            <td>
+                                                                <span class="badge bg-info">@dataPoint.Source</span>
+                                                            </td>
+                                                        </tr>
+                                                    }
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                        <div class="mt-2">
+                                            <small class="text-muted">Showing @historicalData.Count records</small>
+                                        </div>
+                                    }
+                                    else if (historicalData != null)
+                                    {
+                                        <div class="text-center py-4 text-muted">
+                                            <i class="bi bi-database" style="font-size: 2rem;"></i>
+                                            <p class="mt-2 mb-2"><strong>No historical data found</strong></p>
+                                            <p class="mb-2">No data was found for the specified time range.</p>
+                                            <small class="text-muted">
+                                                Try expanding your time range or check if historical data storage is enabled and collecting data for this topic.
+                                            </small>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="text-center py-4 text-muted">
+                                            <i class="bi bi-clock-history" style="font-size: 2rem;"></i>
+                                            <p class="mt-2 mb-2">Ready to query historical data</p>
+                                            <small class="text-muted">
+                                                Select your query type and time range above, then click "Query" to load historical data for this topic.
+                                            </small>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="d-flex align-items-center justify-content-center h-100 text-muted">
+                <div class="text-center">
+                    <i class="bi bi-cursor" style="font-size: 3rem;"></i>
+                    <p class="mt-3">Select a topic to view its details</p>
+                </div>
             </div>
         }
     </div>
@@ -121,6 +281,17 @@
     // Add Data to Namespace functionality
     private bool showAddDataModal = false;
     private string selectedNamespacePath = "";
+    
+    // Topic Detail Tabs
+    private string activeDetailTab = "meta";
+    
+    // Historical Data functionality
+    private string historyQueryType = "timeRange";
+    private DateTime historyStartDate = DateTime.Today.AddDays(-1);
+    private DateTime historyEndDate = DateTime.Now;
+    private int historyValueCount = 100;
+    private bool _isLoadingHistory = false;
+    private List<DataPoint>? historicalData;
     private List<TopicInfo>? availableTopicsForNamespace;
     private HashSet<TopicInfo> selectedTopicsForNamespace = new();
     private List<TopicSelectionTree.TopicSelectionTreeNode>? topicTreeNodes;
@@ -152,11 +323,13 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error initializing LiveView: {ex.Message}");
+            Logger.LogError(ex, "Error initializing LiveView");
             _isInitialLoad = false;
             StateHasChanged();
         }
+        
     }
+
 
     private async Task RefreshTopics()
     {
@@ -189,7 +362,7 @@
         catch (Exception ex)
         {
             // Log error but don't crash the UI
-            Console.WriteLine($"Error refreshing topics: {ex.Message}");
+            Logger.LogError(ex, "Error refreshing topics");
             _isLoadingTopics = false;
             _isInitialLoad = false;
             StateHasChanged();
@@ -204,32 +377,23 @@
         {
             string fullPath;
             
-            // Use different path structure based on verification status
-            if (topicInfo.IsVerified)
+            // Use different path structure based on UNS assignment
+            if (!string.IsNullOrEmpty(topicInfo.NSPath))
             {
-                // For verified topics, build path from hierarchical path parts
-                var pathParts = new[]
-                {
-                    topicInfo.Path.Enterprise,
-                    topicInfo.Path.Site,
-                    topicInfo.Path.Area,
-                    topicInfo.Path.WorkCenter,
-                    topicInfo.Path.WorkUnit,
-                    topicInfo.Path.Property
-                }.Where(p => !string.IsNullOrEmpty(p)).ToArray();
-                fullPath = string.Join("/", pathParts);
+                // For UNS-assigned topics, use the NSPath
+                fullPath = topicInfo.NSPath;
             }
             else
             {
-                // For unverified topics, use the raw topic path under unverified section
-                const string unverifiedSectionName = "🔍 Unverified Topics";
-                fullPath = $"{unverifiedSectionName}/{topicInfo.SourceType}/{topicInfo.Topic}";
+                // For unassigned topics, use the raw topic path under data browser section
+                const string dataBrowserSectionName = "📊 Data Browser";
+                fullPath = $"{dataBrowserSectionName}/{topicInfo.SourceType}/{topicInfo.Topic}";
             }
             
             // Start blinking animation in the tree - this is sufficient for showing updates
             if (TopicTreeComponent != null)
             {
-                _ = InvokeAsync(async () => await TopicTreeComponent.BlinkNode(fullPath));
+                _ = InvokeAsync(() => TopicTreeComponent.BlinkNode(fullPath));
             }
         }
         
@@ -248,31 +412,22 @@
         // Trigger blinking for the new topic
         string fullPath;
         
-        // Use different path structure based on verification status
-        if (e.TopicInfo.IsVerified)
+        // Use different path structure based on UNS assignment
+        if (!string.IsNullOrEmpty(e.TopicInfo.NSPath))
         {
-            // For verified topics, build path from hierarchical path parts
-            var pathParts = new[]
-            {
-                e.TopicInfo.Path.Enterprise,
-                e.TopicInfo.Path.Site,
-                e.TopicInfo.Path.Area,
-                e.TopicInfo.Path.WorkCenter,
-                e.TopicInfo.Path.WorkUnit,
-                e.TopicInfo.Path.Property
-            }.Where(p => !string.IsNullOrEmpty(p)).ToArray();
-            fullPath = string.Join("/", pathParts);
+            // For UNS-assigned topics, use the NSPath
+            fullPath = e.TopicInfo.NSPath;
         }
         else
         {
-            // For unverified topics, use the raw topic path under unverified section
-            const string unverifiedSectionName = "🔍 Unverified Topics";
-            fullPath = $"{unverifiedSectionName}/{e.TopicInfo.SourceType}/{e.TopicInfo.Topic}";
+            // For unassigned topics, use the raw topic path under data browser section
+            const string dataBrowserSectionName = "📊 Data Browser";
+            fullPath = $"{dataBrowserSectionName}/{e.TopicInfo.SourceType}/{e.TopicInfo.Topic}";
         }
         
         if (TopicTreeComponent != null)
         {
-            _ = InvokeAsync(async () => await TopicTreeComponent.BlinkNode(fullPath));
+            _ = InvokeAsync(() => TopicTreeComponent.BlinkNode(fullPath));
         }
         
         ScheduleThrottledUpdate();
@@ -336,31 +491,6 @@
         }
     }
 
-    private async Task OnTopicVerified()
-    {
-        // Update the current selected topic's verification status immediately
-        if (SelectedTopic != null)
-        {
-            SelectedTopic.IsVerified = true;
-            
-            // Also update the topic in the Topics list used by the tree
-            var topicInList = Topics.FirstOrDefault(t => t.Topic == SelectedTopic.Topic);
-            if (topicInList != null)
-            {
-                topicInList.IsVerified = true;
-            }
-            
-            // Force an immediate UI update to show verification change in tree
-            StateHasChanged();
-            
-            // Small delay to ensure the tree component processes the change
-            await Task.Delay(50);
-        }
-        
-        // Also refresh the entire topics list to get the latest data from repository
-        // This ensures we have the most up-to-date data and the tree will rebuild
-        await RefreshTopics();
-    }
 
     private async Task OnTopicUpdated()
     {
@@ -494,11 +624,11 @@
     {
         try
         {
-            Console.WriteLine($"Adding {selectedTopicsForNamespace.Count} topics to namespace: {selectedNamespacePath}");
+            Logger.LogInformation("Adding {TopicCount} topics to namespace: {NamespacePath}", selectedTopicsForNamespace.Count, selectedNamespacePath);
             
             foreach (var topic in selectedTopicsForNamespace)
             {
-                Console.WriteLine($"  - Processing topic: {topic.Topic} from {topic.SourceType}");
+                Logger.LogDebug("Processing topic: {Topic} from {SourceType}", topic.Topic, topic.SourceType);
                 
                 // Get the current topic configuration
                 var currentConfig = await TopicBrowserService.GetTopicConfigurationAsync(topic.Topic);
@@ -517,11 +647,11 @@
                     // Update the topic configuration
                     await TopicBrowserService.UpdateTopicConfigurationAsync(currentConfig);
                     
-                    Console.WriteLine($"  - Successfully updated topic configuration for {topic.Topic}");
+                    Logger.LogDebug("Successfully updated topic configuration for {Topic}", topic.Topic);
                 }
                 else
                 {
-                    Console.WriteLine($"  - Warning: Could not find topic configuration for {topic.Topic}");
+                    Logger.LogWarning("Could not find topic configuration for {Topic}", topic.Topic);
                 }
             }
             
@@ -530,7 +660,7 @@
             // Refresh the topics to show the changes
             await RefreshTopics();
             
-            Console.WriteLine($"Successfully added {selectedTopicsForNamespace.Count} topics to namespace: {selectedNamespacePath}");
+            Logger.LogInformation("Successfully added {TopicCount} topics to namespace: {NamespacePath}", selectedTopicsForNamespace.Count, selectedNamespacePath);
             
             // Force the NS tree editor to refresh by triggering a small delay and manual refresh
             await Task.Delay(500); // Give the database time to update
@@ -538,30 +668,71 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error adding topics to namespace: {ex.Message}");
+            Logger.LogError(ex, "Error adding topics to namespace");
         }
     }
 
-    private static List<string> GetAllParentPaths(HierarchicalPath path)
+
+    // Tab Management Methods
+    private void SetActiveDetailTab(string tabName)
     {
-        var parts = new[]
+        activeDetailTab = tabName;
+        
+        // Clear historical data when switching away from history tab
+        if (tabName != "history")
         {
-            path.Enterprise,
-            path.Site,
-            path.Area,
-            path.WorkCenter,
-            path.WorkUnit,
-            path.Property
-        };
-        var result = new List<string>();
-        string current = "";
-        for (int i = 0; i < parts.Length; i++)
-        {
-            if (string.IsNullOrEmpty(parts[i])) break;
-            current = string.IsNullOrEmpty(current) ? parts[i] : $"{current}/{parts[i]}";
-            result.Add(current);
+            historicalData = null;
         }
-        return result;
+        
+        StateHasChanged();
+    }
+
+    // Historical Data Methods
+    private void OnHistoryQueryTypeChanged()
+    {
+        historicalData = null; // Clear previous results
+        StateHasChanged();
+    }
+
+    private async Task LoadHistoricalData()
+    {
+        if (SelectedTopic == null || string.IsNullOrEmpty(SelectedTopic.NSPath))
+            return;
+
+        _isLoadingHistory = true;
+        historicalData = null;
+        StateHasChanged();
+
+        try
+        {
+            IEnumerable<DataPoint> results;
+
+            if (historyQueryType == "timeRange")
+            {
+                // Query by time range
+                results = await HistoricalStorage.GetHistoryAsync(SelectedTopic.Topic, historyStartDate, historyEndDate);
+            }
+            else
+            {
+                // Query last X values - simulate by getting recent data and taking top X
+                var endTime = DateTime.Now;
+                var startTime = endTime.AddDays(-30); // Get last 30 days and then limit results
+                var allResults = await HistoricalStorage.GetHistoryAsync(SelectedTopic.Topic, startTime, endTime);
+                results = allResults.OrderByDescending(d => d.Timestamp).Take(historyValueCount);
+            }
+
+            historicalData = results.ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error loading historical data");
+            historicalData = new List<DataPoint>(); // Empty list to show "no data found"
+        }
+        finally
+        {
+            _isLoadingHistory = false;
+            StateHasChanged();
+        }
     }
 
     public void Dispose()
@@ -655,6 +826,83 @@
     background: #a8a8a8;
 }
 
+/* Topic Detail Tabs */
+.topic-details-tabs {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.topic-detail-content {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.topic-detail-content .tab-pane.show.active {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.topic-detail-content .tab-pane:not(.show) {
+    display: none;
+}
+
+.metadata-container,
+.history-container {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+.history-controls {
+    flex-shrink: 0;
+    background-color: #f8f9fa;
+    border-radius: 0.375rem;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.history-results {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
+}
+
+
+.history-controls .form-label {
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.nav-tabs .nav-link {
+    font-size: 0.9rem;
+    padding: 0.5rem 1rem;
+    border: none;
+    color: #6c757d;
+    transition: all 0.15s ease-in-out;
+}
+
+.nav-tabs .nav-link:hover {
+    color: #495057;
+    background-color: #f8f9fa;
+}
+
+.nav-tabs .nav-link.active {
+    color: #495057;
+    background-color: #fff;
+    border-color: #dee2e6 #dee2e6 #fff;
+    font-weight: 500;
+}
+
+.nav-tabs {
+    border-bottom: 1px solid #dee2e6;
+    margin-bottom: 0;
+}
+
 /* Responsive layout for smaller screens */
 @@media (max-width: 768px) {
     .liveview-container {
@@ -666,6 +914,14 @@
     .topics-section, 
     .payload-section {
         min-height: 400px;
+    }
+    
+    .history-controls .row {
+        --bs-gutter-x: 0.5rem;
+    }
+    
+    .history-controls .col-md-3 {
+        margin-bottom: 0.5rem;
     }
 }
 </style>

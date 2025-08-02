@@ -1,6 +1,7 @@
 @using UNSInfra.Core.Configuration
 @using System.Reflection
 @using UNSInfra.Services.SocketIO.Configuration
+@using UNSInfra.Services.AutoMapping
 @inject IJSRuntime JSRuntime
 
 <div class="container-fluid">
@@ -22,7 +23,7 @@
             </select>
         </div>
     }
-    else
+    else if (Configuration != null)
     {
         <form @onsubmit="HandleSubmit" @onsubmit:preventDefault="true">
             <!-- Basic Configuration Fields -->
@@ -209,6 +210,13 @@
             </div>
         </form>
     }
+    else
+    {
+        <div class="alert alert-warning">
+            <i class="bi bi-exclamation-triangle"></i>
+            No configuration provided.
+        </div>
+    }
 </div>
 
 @code {
@@ -393,6 +401,10 @@
             "AuthUsername" => GetFromDictionary(socketIOConfig.AuthenticationData, "username"),
             "AuthPassword" => GetFromDictionary(socketIOConfig.AuthenticationData, "password"),
             "CustomHeaders" => FormatDictionaryAsJson(socketIOConfig.ExtraHeaders),
+            "AutoMapperEnabled" => socketIOConfig.AutoMapperConfiguration?.Enabled ?? false,
+            "AutoMapperMinConfidence" => socketIOConfig.AutoMapperConfiguration?.MinimumConfidence ?? 0.8,
+            "AutoMapperCaseSensitive" => socketIOConfig.AutoMapperConfiguration?.CaseSensitive ?? false,
+            "AutoMapperStripPrefixes" => string.Join(", ", socketIOConfig.AutoMapperConfiguration?.StripPrefixes ?? new List<string>()),
             _ => null
         };
     }
@@ -419,6 +431,22 @@
                     break;
                 case "CustomHeaders":
                     ParseJsonToDictionary(value, socketIOConfig.ExtraHeaders);
+                    break;
+                case "AutoMapperEnabled":
+                    EnsureAutoMapperConfiguration(socketIOConfig);
+                    socketIOConfig.AutoMapperConfiguration!.Enabled = bool.TryParse(value, out var enabled) && enabled;
+                    break;
+                case "AutoMapperMinConfidence":
+                    EnsureAutoMapperConfiguration(socketIOConfig);
+                    socketIOConfig.AutoMapperConfiguration!.MinimumConfidence = double.TryParse(value, out var confidence) ? confidence : 0.8;
+                    break;
+                case "AutoMapperCaseSensitive":
+                    EnsureAutoMapperConfiguration(socketIOConfig);
+                    socketIOConfig.AutoMapperConfiguration!.CaseSensitive = bool.TryParse(value, out var caseSensitive) && caseSensitive;
+                    break;
+                case "AutoMapperStripPrefixes":
+                    EnsureAutoMapperConfiguration(socketIOConfig);
+                    socketIOConfig.AutoMapperConfiguration!.StripPrefixes = ParseCommaSeparatedList(value);
                     break;
                 default:
                     return false;
@@ -505,5 +533,28 @@
         {
             throw new ArgumentException($"Invalid JSON format: {ex.Message}");
         }
+    }
+
+    private void EnsureAutoMapperConfiguration(UNSInfra.Services.SocketIO.Configuration.SocketIODataIngestionConfiguration socketIOConfig)
+    {
+        if (socketIOConfig.AutoMapperConfiguration == null)
+        {
+            socketIOConfig.AutoMapperConfiguration = new UNSInfra.Services.AutoMapping.AutoTopicMapperConfiguration
+            {
+                Enabled = false,
+                MinimumConfidence = 0.8,
+                StripPrefixes = new List<string> { "socketio/", "socketio/update/" },
+                CaseSensitive = false
+            };
+        }
+    }
+
+    private List<string> ParseCommaSeparatedList(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return new List<string>();
+
+        return value.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                   .ToList();
     }
 }

@@ -94,7 +94,6 @@ public class EventDrivenDataIngestionBackgroundService : BackgroundService
                 {
                     Topic = config.Topic,
                     Path = config.Path,
-                    IsVerified = config.IsVerified,
                     IsActive = config.IsActive,
                     SourceType = config.SourceType,
                     CreatedAt = config.CreatedAt,
@@ -114,7 +113,7 @@ public class EventDrivenDataIngestionBackgroundService : BackgroundService
 
                 // Publish bulk initialization event for any other subscribers
                 await _eventBus.PublishAsync(new BulkTopicsAddedEvent(
-                    existingTopics.Select(t => (t.Topic, t.Path, t.IsVerified, t.CreatedAt)).ToList(),
+                    existingTopics.Select(t => (t.Topic, t.Path, t.CreatedAt)).ToList(),
                     "initialization"
                 ));
             }
@@ -303,7 +302,7 @@ public class EventDrivenDataIngestionBackgroundService : BackgroundService
             }
 
             // Publish bulk event for UI updates
-            var topicData = configurations.Select(c => (c.Topic, c.Path, c.IsVerified, c.CreatedAt)).ToList();
+            var topicData = configurations.Select(c => (c.Topic, c.Path, c.CreatedAt)).ToList();
             await _eventBus.PublishAsync(new BulkTopicsAddedEvent(topicData, batch.First().SourceType));
 
             _logger.LogDebug("Processed batch of {Count} new topics", batch.Count);

@@ -2,8 +2,14 @@
 @using UNSInfra.Models.Namespace
 @using UNSInfra.Models.Hierarchy
 @using UNSInfra.Repositories
+@using UNSInfra.Services
+@using UNSInfra.Services.TopicBrowser
 @inject INamespaceConfigurationRepository NamespaceRepository
 @inject IHierarchyConfigurationRepository HierarchyRepository
+@inject INamespaceStructureService NamespaceStructureService
+@inject ITopicBrowserService TopicBrowserService
+@inject ITopicConfigurationRepository TopicConfigurationRepository
+@inject ITopicConfigurationNotificationService NotificationService
 @inject IJSRuntime JSRuntime
 @implements IDisposable
 @rendermode InteractiveServer
@@ -14,186 +20,100 @@
     <div class="row">
         <div class="col-12">
             <h1 class="mb-4">
-                <i class="bi bi-folder-fill"></i> Namespace Management
+                <i class="bi bi-folder-fill"></i> UNS Structure
             </h1>
             <p class="text-muted mb-4">
-                Configure and manage namespaces for organizing your UNS topics.
+                Hierarchical view of your UNS structure with namespaces and topics.
             </p>
         </div>
     </div>
 
     <div class="row">
-        <!-- Namespace List -->
+        <!-- UNS Tree Structure -->
         <div class="col-md-8">
             <div class="card">
-                <div class="card-header d-flex justify-content-between align-items-center">
-                    <h5 class="mb-0">Configured Namespaces</h5>
-                    <div class="btn-group">
-                        <button class="btn btn-primary btn-sm" @onclick="ShowAddNamespace">
-                            <i class="bi bi-plus-circle"></i> Add Namespace
-                        </button>
-                        <button class="btn btn-outline-secondary btn-sm" @onclick="RefreshNamespaces">
-                            <i class="bi bi-arrow-repeat"></i> Refresh
-                        </button>
-                    </div>
+                <div class="card-header">
+                    <h5 class="mb-0">UNS Tree Structure</h5>
                 </div>
                 <div class="card-body">
-                    @if (namespaces == null)
-                    {
-                        <div class="text-center p-4">
-                            <div class="spinner-border text-primary" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            <p class="mt-2 text-muted">Loading namespaces...</p>
-                        </div>
-                    }
-                    else if (!namespaces.Any())
-                    {
-                        <div class="text-center p-4">
-                            <i class="bi bi-folder2-open text-muted" style="font-size: 3rem;"></i>
-                            <h6 class="text-muted mt-3">No namespaces configured</h6>
-                            <p class="text-muted">Create your first namespace to organize your UNS topics.</p>
-                            <button class="btn btn-primary" @onclick="ShowAddNamespace">
-                                <i class="bi bi-plus-circle"></i> Add Namespace
-                            </button>
-                        </div>
-                    }
-                    else
-                    {
-                        <div class="table-responsive">
-                            <table class="table table-hover">
-                                <thead>
-                                    <tr>
-                                        <th>Name</th>
-                                        <th>Type</th>
-                                        <th>Full Path</th>
-                                        <th>Parent</th>
-                                        <th>Actions</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    @foreach (var ns in namespaces)
-                                    {
-                                        <tr class="@(ns.IsActive ? "" : "table-secondary")">
-                                            <td>
-                                                <div class="d-flex align-items-center">
-                                                    <i class="bi @ns.Type.GetIconClass() @ns.Type.GetColorClass() me-2"></i>
-                                                    <div>
-                                                        <strong>@ns.Name</strong>
-                                                        @if (!string.IsNullOrEmpty(ns.Description))
-                                                        {
-                                                            <br />
-                                                            <small class="text-muted">@ns.Description</small>
-                                                        }
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td>
-                                                <span class="badge @GetTypeBadgeClass(ns.Type)">
-                                                    @ns.Type.GetDisplayName()
-                                                </span>
-                                            </td>
-                                            <td>
-                                                <small class="text-muted">@ns.GetFullNamespacePath()</small>
-                                            </td>
-                                            <td>
-                                                @if (!string.IsNullOrEmpty(ns.ParentNamespaceId))
-                                                {
-                                                    var parentNs = namespaces?.FirstOrDefault(n => n.Id == ns.ParentNamespaceId);
-                                                    if (parentNs != null)
-                                                    {
-                                                        <small class="text-muted">@parentNs.Name</small>
-                                                    }
-                                                }
-                                                else
-                                                {
-                                                    <small class="text-muted">Root</small>
-                                                }
-                                            </td>
-                                            <td>
-                                                <div class="btn-group btn-group-sm">
-                                                    <button class="btn btn-outline-primary" 
-                                                            @onclick="@(() => EditNamespace(ns))">
-                                                        <i class="bi bi-pencil"></i>
-                                                    </button>
-                                                    <button class="btn @(ns.IsActive ? "btn-outline-warning" : "btn-outline-success")" 
-                                                            @onclick="@(() => ToggleNamespace(ns))">
-                                                        <i class="bi @(ns.IsActive ? "bi-pause-circle" : "bi-play-circle")"></i>
-                                                    </button>
-                                                    <button class="btn btn-outline-danger" 
-                                                            @onclick="@(() => DeleteNamespace(ns))">
-                                                        <i class="bi bi-trash"></i>
-                                                    </button>
-                                                </div>
-                                            </td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
+                    <NSTreeEditor @ref="treeEditor" OnAddDataToNamespace="HandleAddDataToNamespace" OnTopicSelected="HandleTopicSelected" />
                 </div>
             </div>
         </div>
 
-        <!-- Namespace Types Info -->
+        <!-- Tree Information -->
         <div class="col-md-4">
+            <!-- Selected Topic Info -->
+            @if (!string.IsNullOrEmpty(selectedTopicInfo))
+            {
+                <div class="card mb-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-file-earmark-check"></i> Selected Topic
+                        </h5>
+                    </div>
+                    <div class="card-body">
+                        <p class="mb-0">@selectedTopicInfo</p>
+                    </div>
+                </div>
+            }
+
+            <!-- Namespace Types Info -->
             <div class="card">
                 <div class="card-header">
                     <h5 class="mb-0">
-                        <i class="bi bi-info-circle"></i> Namespace Types
+                        <i class="bi bi-info-circle"></i> UNS Tree Guide
                     </h5>
                 </div>
                 <div class="card-body">
                     <div class="mb-3">
                         <div class="d-flex align-items-center mb-2">
-                            <i class="bi bi-graph-up text-primary me-2"></i>
-                            <strong>Functional</strong>
+                            <i class="bi bi-folder text-primary me-2"></i>
+                            <strong>Hierarchy Nodes</strong>
                         </div>
                         <small class="text-muted">
-                            Operational data like KPIs, production metrics, and process control parameters.
+                            ISA-S95 levels like Enterprise, Site, Area - right-click to add children.
                         </small>
                     </div>
                     <div class="mb-3">
                         <div class="d-flex align-items-center mb-2">
-                            <i class="bi bi-info-circle text-info me-2"></i>
-                            <strong>Informative</strong>
+                            <i class="bi bi-collection text-secondary me-2"></i>
+                            <strong>Namespaces</strong>
                         </div>
                         <small class="text-muted">
-                            Reference data, documentation, and contextual information for operations.
+                            Functional, Informative, Definitional, Ad-Hoc containers for organizing topics.
                         </small>
                     </div>
                     <div class="mb-3">
                         <div class="d-flex align-items-center mb-2">
-                            <i class="bi bi-gear text-success me-2"></i>
-                            <strong>Definitional</strong>
+                            <i class="bi bi-file-earmark-check text-success me-2"></i>
+                            <strong>Topics</strong>
                         </div>
                         <small class="text-muted">
-                            Schema definitions, data models, and structural information.
+                            MQTT/data topics assigned to namespaces - click to view details.
                         </small>
                     </div>
-                    <div class="mb-3">
-                        <div class="d-flex align-items-center mb-2">
-                            <i class="bi bi-lightning text-warning me-2"></i>
-                            <strong>Ad-Hoc</strong>
-                        </div>
+                    <hr />
+                    <div class="mb-2">
                         <small class="text-muted">
-                            Temporary or experimental data that doesn't fit standard classifications.
+                            • Right-click nodes to add children<br />
+                            • Use + buttons for quick actions<br />
+                            • Expand/collapse with chevrons
                         </small>
                     </div>
                 </div>
             </div>
 
             <!-- Quick Stats -->
-            <div class="card mt-3">
-                <div class="card-header">
-                    <h5 class="mb-0">
-                        <i class="bi bi-bar-chart"></i> Summary
-                    </h5>
-                </div>
-                <div class="card-body">
-                    @if (namespaces != null)
-                    {
+            @if (namespaces != null)
+            {
+                <div class="card mt-3">
+                    <div class="card-header">
+                        <h5 class="mb-0">
+                            <i class="bi bi-bar-chart"></i> Summary
+                        </h5>
+                    </div>
+                    <div class="card-body">
                         <div class="row text-center">
                             <div class="col-6">
                                 <h4 class="text-primary">@namespaces.Count(n => n.IsActive)</h4>
@@ -204,113 +124,99 @@
                                 <small class="text-muted">Nested</small>
                             </div>
                         </div>
-                        <hr />
-                        <div class="row text-center">
-                            @foreach (var type in Enum.GetValues<NamespaceType>())
-                            {
-                                var count = namespaces.Count(n => n.Type == type);
-                                <div class="col-3">
-                                    <div class="@type.GetColorClass()">
-                                        <i class="bi @type.GetIconClass()"></i>
-                                    </div>
-                                    <small class="text-muted d-block">@count</small>
-                                </div>
-                            }
-                        </div>
-                    }
+                    </div>
                 </div>
-            </div>
+            }
         </div>
     </div>
 </div>
 
-<!-- Namespace Form Modal -->
-@if (showNamespaceForm)
+<!-- Add Data to Namespace Modal -->
+@if (showAddDataModal)
 {
-    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5); z-index: 1050;">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
-                        @(editingNamespace?.Id != null && !string.IsNullOrEmpty(editingNamespace.Id) ? "Edit" : "Add") Namespace
+                        <i class="bi bi-plus-circle"></i> Add Topics to Namespace
                     </h5>
-                    <button type="button" class="btn-close" @onclick="HideNamespaceForm"></button>
+                    <button type="button" class="btn-close" @onclick="HideAddDataModal"></button>
                 </div>
                 <div class="modal-body">
-                    @if (editingNamespace != null)
+                    <div class="mb-3">
+                        <h6>Target Namespace:</h6>
+                        <div class="alert alert-info">
+                            <i class="bi bi-folder"></i> @selectedNamespacePath
+                        </div>
+                    </div>
+
+                    @if (availableTopicsForNamespace.Any())
                     {
-                        <EditForm Model="editingNamespace" OnValidSubmit="SaveNamespace">
-                            <DataAnnotationsValidator />
-                            <ValidationSummary class="text-danger" />
+                        <div class="mb-3">
+                            <h6>Available Topics (@availableTopicsForNamespace.Count unassigned topics)</h6>
+                            <p class="text-muted">Select topics to assign to this namespace:</p>
+                        </div>
 
-                            <div class="row">
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Name *</label>
-                                        <InputText @bind-Value="editingNamespace.Name" class="form-control" placeholder="e.g., KPIs, Production, Quality" />
-                                        <ValidationMessage For="@(() => editingNamespace.Name)" />
-                                    </div>
-                                </div>
-                                <div class="col-md-6">
-                                    <div class="mb-3">
-                                        <label class="form-label">Type *</label>
-                                        <InputSelect @bind-Value="editingNamespace.Type" class="form-select">
-                                            @foreach (var type in Enum.GetValues<NamespaceType>())
+                        <div class="topic-selection-list" style="max-height: 400px; overflow-y: auto;">
+                            @foreach (var topic in availableTopicsForNamespace.Take(50))
+                            {
+                                var isSelected = selectedTopicsForNamespace.Contains(topic);
+                                <div class="form-check topic-item p-2 @(isSelected ? "bg-light" : "")" 
+                                     style="border: 1px solid #dee2e6; margin-bottom: 5px; border-radius: 4px;">
+                                    <input class="form-check-input" type="checkbox" 
+                                           checked="@isSelected" 
+                                           @onchange="@(() => ToggleTopicSelection(topic))" />
+                                    <label class="form-check-label ms-2">
+                                        <strong>@topic.Topic</strong>
+                                        <br />
+                                        <small class="text-muted">
+                                            Source: @topic.SourceType
+                                            @if (!string.IsNullOrEmpty(topic.Description))
                                             {
-                                                <option value="@type">@type.GetDisplayName()</option>
+                                                <span> | @topic.Description</span>
                                             }
-                                        </InputSelect>
-                                    </div>
+                                        </small>
+                                    </label>
                                 </div>
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label">Description</label>
-                                <InputTextArea @bind-Value="editingNamespace.Description" class="form-control" rows="2" 
-                                               placeholder="Brief description for MCP and documentation purposes" />
-                            </div>
-
-                            <div class="mb-3">
-                                <label class="form-label">Parent Namespace</label>
-                                <InputSelect @bind-Value="editingNamespace.ParentNamespaceId" class="form-select">
-                                    <option value="">Root Level</option>
-                                    @if (namespaces != null)
-                                    {
-                                        @foreach (var ns in namespaces.Where(n => n.Id != editingNamespace.Id))
-                                        {
-                                            <option value="@ns.Id">@ns.Name</option>
-                                        }
-                                    }
-                                </InputSelect>
-                                <div class="form-text">
-                                    Select a parent namespace to create a nested structure.
+                            }
+                            
+                            @if (availableTopicsForNamespace.Count > 50)
+                            {
+                                <div class="alert alert-warning">
+                                    <i class="bi bi-info-circle"></i> 
+                                    Showing first 50 of @availableTopicsForNamespace.Count available topics. 
+                                    Use search in Data Model view for more specific selection.
                                 </div>
-                            </div>
+                            }
+                        </div>
 
-                            <div class="row">
-                                @foreach (var level in hierarchyLevels)
-                                {
-                                    <div class="col-md-4 mb-3">
-                                        <label class="form-label">@level</label>
-                                        <input type="text" 
-                                               value="@GetHierarchyValue(level)" 
-                                               @onchange="@((ChangeEventArgs e) => SetHierarchyValue(level, e.Value?.ToString() ?? ""))"
-                                               class="form-control" 
-                                               placeholder="@($"{level} value")" />
-                                    </div>
-                                }
+                        @if (selectedTopicsForNamespace.Count > 0)
+                        {
+                            <div class="mt-3 alert alert-success">
+                                <i class="bi bi-check-circle"></i> 
+                                @selectedTopicsForNamespace.Count topic(s) selected for assignment.
                             </div>
-
-
-                            <div class="d-flex justify-content-end">
-                                <button type="button" class="btn btn-secondary me-2" @onclick="HideNamespaceForm">
-                                    Cancel
-                                </button>
-                                <button type="submit" class="btn btn-primary">
-                                    <i class="bi bi-check-circle"></i> Save Namespace
-                                </button>
-                            </div>
-                        </EditForm>
+                        }
+                    }
+                    else
+                    {
+                        <div class="alert alert-warning">
+                            <i class="bi bi-exclamation-triangle"></i> 
+                            No unassigned topics available. All topics are already assigned to namespaces.
+                        </div>
+                    }
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="HideAddDataModal">
+                        Cancel
+                    </button>
+                    @if (selectedTopicsForNamespace.Count > 0)
+                    {
+                        <button type="button" class="btn btn-primary" @onclick="AssignSelectedTopics">
+                            <i class="bi bi-check-circle"></i> 
+                            Assign @selectedTopicsForNamespace.Count Topic(s)
+                        </button>
                     }
                 </div>
             </div>
@@ -320,15 +226,24 @@
 
 @code {
     private List<NamespaceConfiguration>? namespaces;
-    private NamespaceConfiguration? editingNamespace;
-    private bool showNamespaceForm = false;
-    private List<string> hierarchyLevels = new() { "Enterprise", "Site", "Area", "WorkCenter", "WorkUnit" };
     private bool _disposed = false;
+    private string? selectedTopicInfo;
+    private NSTreeEditor? treeEditor;
+    
+    // Topic assignment modal state
+    private bool showAddDataModal = false;
+    private string selectedNamespacePath = "";
+    private List<TopicInfo> availableTopicsForNamespace = new();
+    private List<TopicInfo> selectedTopicsForNamespace = new();
+    private List<TopicInfo> allTopics = new();
 
     protected override async Task OnInitializedAsync()
     {
+        // Subscribe to topic configuration changes
+        NotificationService.TopicConfigurationChanged += OnTopicConfigurationChanged;
+        
         await LoadNamespaces();
-        await LoadHierarchyLevels();
+        await LoadTopics();
     }
 
     private async Task LoadNamespaces()
@@ -345,173 +260,172 @@
         }
     }
 
-    private async Task LoadHierarchyLevels()
-    {
-        try
-        {
-            var hierarchyConfigs = await HierarchyRepository.GetAllConfigurationsAsync();
-            var activeConfig = hierarchyConfigs.FirstOrDefault(h => h.IsActive);
-            if (activeConfig != null)
-            {
-                hierarchyLevels = activeConfig.Nodes
-                    .OrderBy(n => n.Order)
-                    .Select(n => n.Name)
-                    .ToList();
-            }
-        }
-        catch (Exception)
-        {
-            // Fall back to default levels if hierarchy config is not available
-            hierarchyLevels = new() { "Enterprise", "Site", "Area", "WorkCenter", "WorkUnit" };
-        }
-    }
-
-    private async Task RefreshNamespaces()
-    {
-        await LoadNamespaces();
-    }
-
-    private void ShowAddNamespace()
-    {
-        editingNamespace = new NamespaceConfiguration
-        {
-            Id = Guid.NewGuid().ToString(),
-            CreatedAt = DateTime.UtcNow,
-            ModifiedAt = DateTime.UtcNow,
-            HierarchicalPath = new HierarchicalPath { Values = new Dictionary<string, string>() },
-            Metadata = new Dictionary<string, object>()
-        };
-        showNamespaceForm = true;
-    }
-
-    private void EditNamespace(NamespaceConfiguration ns)
-    {
-        editingNamespace = new NamespaceConfiguration
-        {
-            Id = ns.Id,
-            Name = ns.Name,
-            Type = ns.Type,
-            Description = ns.Description,
-            HierarchicalPath = new HierarchicalPath { Values = new Dictionary<string, string>(ns.HierarchicalPath?.Values ?? new Dictionary<string, string>()) },
-            ParentNamespaceId = ns.ParentNamespaceId,
-            AllowedParentHierarchyNodeId = ns.AllowedParentHierarchyNodeId,
-            IsActive = ns.IsActive,
-            CreatedAt = ns.CreatedAt,
-            ModifiedAt = DateTime.UtcNow,
-            CreatedBy = ns.CreatedBy,
-            Metadata = new Dictionary<string, object>(ns.Metadata ?? new Dictionary<string, object>())
-        };
-        showNamespaceForm = true;
-    }
-
-    private void HideNamespaceForm()
-    {
-        showNamespaceForm = false;
-        editingNamespace = null;
-    }
-
-    private async Task SaveNamespace()
-    {
-        if (editingNamespace == null || _disposed) return;
-
-        try
-        {
-            editingNamespace.ModifiedAt = DateTime.UtcNow;
-            await NamespaceRepository.SaveNamespaceConfigurationAsync(editingNamespace);
-            if (!_disposed)
-            {
-                await LoadNamespaces();
-                HideNamespaceForm();
-            }
-        }
-        catch (Exception ex)
-        {
-            if (!_disposed)
-            {
-                await JSRuntime.InvokeVoidAsync("alert", $"Error saving namespace: {ex.Message}");
-            }
-        }
-    }
-
-    private async Task ToggleNamespace(NamespaceConfiguration ns)
+    private async Task LoadTopics()
     {
         if (_disposed) return;
         
         try
         {
-            ns.IsActive = !ns.IsActive;
-            ns.ModifiedAt = DateTime.UtcNow;
-            await NamespaceRepository.SaveNamespaceConfigurationAsync(ns);
-            if (!_disposed)
-            {
-                await LoadNamespaces();
-            }
+            var topics = await TopicBrowserService.GetLatestTopicStructureAsync();
+            allTopics = topics.ToList();
         }
         catch (Exception ex)
         {
-            if (!_disposed)
-            {
-                await JSRuntime.InvokeVoidAsync("alert", $"Error updating namespace: {ex.Message}");
-            }
+            Console.WriteLine($"Error loading topics: {ex.Message}");
+            allTopics = new List<TopicInfo>();
         }
     }
 
-    private async Task DeleteNamespace(NamespaceConfiguration ns)
+    private async Task HandleAddDataToNamespace(string namespacePath)
     {
         if (_disposed) return;
         
-        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
-            $"Are you sure you want to delete namespace '{ns.Name}'?");
+        selectedNamespacePath = namespacePath;
         
-        if (confirmed && !_disposed)
+        // Get topics that are not yet assigned to namespaces for selection
+        availableTopicsForNamespace = allTopics.Where(t => string.IsNullOrEmpty(t.NSPath)).ToList();
+        selectedTopicsForNamespace.Clear();
+        
+        showAddDataModal = true;
+        StateHasChanged();
+    }
+
+    private void HideAddDataModal()
+    {
+        showAddDataModal = false;
+        selectedNamespacePath = "";
+        availableTopicsForNamespace.Clear();
+        selectedTopicsForNamespace.Clear();
+        StateHasChanged();
+    }
+
+    private void ToggleTopicSelection(TopicInfo topic)
+    {
+        if (selectedTopicsForNamespace.Contains(topic))
         {
-            try
+            selectedTopicsForNamespace.Remove(topic);
+        }
+        else
+        {
+            selectedTopicsForNamespace.Add(topic);
+        }
+        StateHasChanged();
+    }
+
+    private async Task AssignSelectedTopics()
+    {
+        if (_disposed || selectedTopicsForNamespace.Count == 0) return;
+
+        try
+        {
+            // Create or update TopicConfiguration objects for each selected topic
+            foreach (var topic in selectedTopicsForNamespace)
             {
-                await NamespaceRepository.DeleteNamespaceConfigurationAsync(ns.Id);
-                if (!_disposed)
+                // Check if topic configuration already exists
+                var existingConfig = await TopicConfigurationRepository.GetTopicConfigurationAsync(topic.Topic);
+                
+                TopicConfiguration config;
+                if (existingConfig != null)
                 {
-                    await LoadNamespaces();
+                    // Update existing configuration
+                    config = existingConfig;
+                    config.NSPath = selectedNamespacePath;
+                    config.ModifiedAt = DateTime.UtcNow;
                 }
+                else
+                {
+                    // Create new configuration
+                    config = new TopicConfiguration
+                    {
+                        Id = Guid.NewGuid().ToString(),
+                        Topic = topic.Topic,
+                        NSPath = selectedNamespacePath,
+                        UNSName = GetTopicDisplayName(topic.Topic), // Extract display name
+                        SourceType = topic.SourceType,
+                        Description = topic.Description,
+                        IsActive = true,
+                        CreatedAt = DateTime.UtcNow,
+                        ModifiedAt = DateTime.UtcNow,
+                        CreatedBy = "User",
+                        Metadata = new Dictionary<string, object>
+                        {
+                            { "assigned_via", "namespace_editor" },
+                            { "namespace_path", selectedNamespacePath }
+                        }
+                    };
+                }
+                
+                // Save the configuration
+                await TopicConfigurationRepository.SaveTopicConfigurationAsync(config);
+                
+                // Update the in-memory topic as well
+                topic.NSPath = selectedNamespacePath;
             }
-            catch (Exception ex)
+
+            // Refresh the topics and tree to show the newly assigned topics
+            await LoadTopics();
+            if (treeEditor != null)
             {
-                if (!_disposed)
-                {
-                    await JSRuntime.InvokeVoidAsync("alert", $"Error deleting namespace: {ex.Message}");
-                }
+                await treeEditor.RefreshTree();
             }
+            StateHasChanged();
+            HideAddDataModal();
+            
+            await JSRuntime.InvokeVoidAsync("alert", $"Successfully assigned {selectedTopicsForNamespace.Count} topics to {selectedNamespacePath}");
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error assigning topics: {ex.Message}");
         }
     }
 
-    private string GetTypeBadgeClass(NamespaceType type)
+    private string GetTopicDisplayName(string fullTopicName)
     {
-        return type switch
-        {
-            NamespaceType.Functional => "bg-primary",
-            NamespaceType.Informative => "bg-info",
-            NamespaceType.Definitional => "bg-warning",
-            NamespaceType.AdHoc => "bg-secondary",
-            _ => "bg-secondary"
-        };
+        // Extract the last part after the final '/' for display
+        var lastSlashIndex = fullTopicName.LastIndexOf('/');
+        return lastSlashIndex >= 0 && lastSlashIndex < fullTopicName.Length - 1 
+            ? fullTopicName.Substring(lastSlashIndex + 1) 
+            : fullTopicName;
     }
 
-    private string GetHierarchyValue(string level)
+    private Task HandleTopicSelected(TopicInfo topic)
     {
-        if (editingNamespace?.HierarchicalPath?.Values == null)
-            return "";
-        return editingNamespace.HierarchicalPath.GetValue(level) ?? "";
+        if (!_disposed)
+        {
+            selectedTopicInfo = $"Selected topic: {topic.Topic} (Source: {topic.SourceType})";
+            StateHasChanged();
+        }
+        return Task.CompletedTask;
     }
 
-    private void SetHierarchyValue(string level, string value)
+    private async void OnTopicConfigurationChanged(object? sender, TopicConfigurationChangedEventArgs e)
     {
-        if (editingNamespace?.HierarchicalPath?.Values != null)
+        if (_disposed) return;
+        
+        try
         {
-            editingNamespace.HierarchicalPath.SetValue(level, value);
+            Console.WriteLine($"Topic configuration changed: {e.TopicName} - {e.ChangeType}");
+            
+            // Refresh topics and tree when configurations change
+            await LoadTopics();
+            if (treeEditor != null)
+            {
+                await treeEditor.RefreshTree();
+            }
+            
+            // Update UI
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error handling topic configuration change: {ex.Message}");
         }
     }
 
     public void Dispose()
     {
+        // Unsubscribe from events before disposing
+        NotificationService.TopicConfigurationChanged -= OnTopicConfigurationChanged;
         _disposed = true;
     }
 }

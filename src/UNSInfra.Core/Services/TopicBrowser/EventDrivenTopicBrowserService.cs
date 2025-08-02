@@ -103,14 +103,14 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
             Id = $"config_{topic}",
             Topic = topicInfo.Topic,
             Path = topicInfo.Path,
-            IsVerified = topicInfo.IsVerified,
             IsActive = topicInfo.IsActive,
             SourceType = topicInfo.SourceType,
             CreatedAt = topicInfo.CreatedAt,
             ModifiedAt = topicInfo.ModifiedAt,
             Description = topicInfo.Description,
             Metadata = topicInfo.Metadata,
-            NSPath = topicInfo.NSPath
+            NSPath = topicInfo.NSPath,
+            UNSName = topicInfo.UNSName
         };
     }
 
@@ -139,14 +139,14 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
             {
                 Topic = configuration.Topic,
                 Path = configuration.Path,
-                IsVerified = configuration.IsVerified,
                 IsActive = configuration.IsActive,
                 SourceType = configuration.SourceType,
                 CreatedAt = configuration.CreatedAt,
                 ModifiedAt = configuration.ModifiedAt,
                 Description = configuration.Description,
                 Metadata = configuration.Metadata,
-                NSPath = configuration.NSPath
+                NSPath = configuration.NSPath,
+                UNSName = configuration.UNSName
             };
             
             _topicCache.TryUpdate(configuration.Topic, updatedTopic, existingTopic);
@@ -200,7 +200,6 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
         {
             Topic = eventData.Topic,
             Path = eventData.Path,
-            IsVerified = eventData.IsVerified,
             IsActive = true,
             SourceType = eventData.SourceType,
             CreatedAt = eventData.CreatedAt,
@@ -235,7 +234,6 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
             {
                 Topic = topicInfo.Topic,
                 Path = topicInfo.Path,
-                IsVerified = true,
                 IsActive = topicInfo.IsActive,
                 SourceType = topicInfo.SourceType,
                 CreatedAt = topicInfo.CreatedAt,
@@ -255,7 +253,6 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
             {
                 Topic = topicInfo.Topic,
                 Path = eventData.NewPath,
-                IsVerified = topicInfo.IsVerified,
                 IsActive = topicInfo.IsActive,
                 SourceType = topicInfo.SourceType,
                 CreatedAt = topicInfo.CreatedAt,
@@ -271,13 +268,12 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
     {
         var addedTopics = new List<TopicInfo>();
 
-        foreach (var (topic, path, isVerified, createdAt) in eventData.Topics)
+        foreach (var (topic, path, createdAt) in eventData.Topics)
         {
             var topicInfo = new TopicInfo
             {
                 Topic = topic,
                 Path = path,
-                IsVerified = isVerified,
                 IsActive = true,
                 SourceType = eventData.SourceType,
                 CreatedAt = createdAt,
@@ -311,7 +307,6 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
                 topicInfo.Topic,
                 topicInfo.Path,
                 topicInfo.SourceType,
-                topicInfo.IsVerified,
                 topicInfo.CreatedAt
             ));
         });

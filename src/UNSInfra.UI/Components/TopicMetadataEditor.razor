@@ -2,11 +2,10 @@
 @using UNSInfra.Models.Hierarchy
 @using UNSInfra.Models.Namespace
 @using UNSInfra.Services
-@using UNSInfra.Repositories
 @inject ITopicBrowserService TopicBrowserService
-@inject IHierarchyService HierarchyService
-@inject INamespaceConfigurationRepository NamespaceRepository
 @inject INamespaceStructureService NamespaceStructureService
+@inject ITopicConfigurationNotificationService NotificationService
+@inject ILogger<TopicMetadataEditor> Logger
 
 @if (TopicConfiguration != null)
 {
@@ -14,28 +13,6 @@
         <div class="d-flex justify-content-between align-items-center mb-3">
             <h6 class="mb-0">Topic Metadata</h6>
             <div class="d-flex gap-2">
-                @if (!TopicConfiguration.IsVerified)
-                {
-                    <button class="btn btn-success btn-sm" @onclick="VerifyTopic" disabled="@(_isSaving || !CanVerifyTopic)" title="@GetVerifyTooltip()">
-                        @if (_isSaving && _saveAction == "verify")
-                        {
-                            <div class="spinner-border spinner-border-sm me-1" role="status">
-                                <span class="visually-hidden">Loading...</span>
-                            </div>
-                            @("Verifying...")
-                        }
-                        else
-                        {
-                            <i class="bi bi-check-circle"></i> @("Verify")
-                        }
-                    </button>
-                }
-                else
-                {
-                    <span class="badge bg-success">
-                        <i class="bi bi-check-circle"></i> Verified
-                    </span>
-                }
                 <button class="btn btn-primary btn-sm" @onclick="SaveChanges" disabled="@(_isSaving || !_hasChanges)">
                     @if (_isSaving && _saveAction == "save")
                     {
@@ -54,15 +31,15 @@
 
         <div class="metadata-form">
             <div class="row mb-3">
-                <div class="col-md-6">
+                <div class="col-md-4">
                     <label class="form-label small">Topic</label>
                     <input type="text" class="form-control form-control-sm" value="@TopicConfiguration.Topic" readonly />
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <label class="form-label small">Source Type</label>
-                    <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.SourceType" @oninput="OnFieldChanged" />
+                    <input type="text" class="form-control form-control-sm" value="@_editConfiguration.SourceType" readonly />
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-4">
                     <label class="form-label small">Active</label>
                     <div class="form-check mt-2">
                         <input class="form-check-input" type="checkbox" @bind="_editConfiguration.IsActive" @bind:after="OnFieldChanged" />
@@ -73,96 +50,58 @@
                 </div>
             </div>
 
-            <div class="mb-3">
-                <label class="form-label small">Description</label>
-                <textarea class="form-control form-control-sm" rows="2" @bind="_editConfiguration.Description" @oninput="OnFieldChanged" placeholder="Optional description..."></textarea>
+            <div class="row mb-3">
+                <div class="col-md-6">
+                    <label class="form-label small">UNS Display Name</label>
+                    <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.UNSName" @oninput="OnFieldChanged" 
+                           placeholder="Enter a friendly name for use in UNS..." />
+                    <div class="form-text">
+                        Display name shown in the UNS namespace structure
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label small">Description</label>
+                    <textarea class="form-control form-control-sm" rows="2" @bind="_editConfiguration.Description" @oninput="OnFieldChanged" placeholder="Optional description..."></textarea>
+                </div>
             </div>
 
             <div class="mb-3">
-                <label class="form-label small">Namespace from UNS Verified Topics</label>
-                <div class="namespace-selector">
-                    @if (availableNSNodes?.Any() == true)
-                    {
-                        <div class="ns-tree-selector" style="max-height: 200px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 0.5rem;">
-                            @foreach (var rootNode in availableNSNodes)
-                            {
-                                <div class="ns-node-selector">
-                                    <NSNodeSelector Node="rootNode" 
-                                                   SelectedPath="@_editConfiguration.NSPath" 
-                                                   OnNodeSelected="OnNamespaceSelected" />
-                                </div>
-                            }
-                        </div>
-                        
-                        @if (!string.IsNullOrEmpty(_editConfiguration.NSPath))
-                        {
-                            <div class="mt-2">
-                                <small class="text-success">
-                                    <i class="bi bi-check-circle me-1"></i>
-                                    Selected: <strong>@_editConfiguration.NSPath</strong>
-                                </small>
-                            </div>
-                        }
-                    }
-                    else
-                    {
-                        <div class="text-center py-3 border border-dashed rounded">
-                            <i class="bi bi-folder2-open text-muted" style="font-size: 1.5rem;"></i>
-                            <p class="text-muted mt-2 mb-0">No verified namespace structure available</p>
-                            <small class="text-muted">Create namespaces in the NS Structure first</small>
-                        </div>
-                    }
+                <div class="d-flex justify-content-between align-items-center mb-2">
+                    <label class="form-label small mb-0">UNS Namespace Assignments</label>
+                    <button type="button" class="btn btn-outline-primary btn-sm" @onclick="ShowAddNamespaceModal" disabled="@_isSaving">
+                        <i class="bi bi-plus"></i> Add Assignment
+                    </button>
                 </div>
                 
-                <!-- Fallback: Traditional namespace dropdown for compatibility -->
-                <div class="mt-3">
-                    <label class="form-label small">Or select from namespace repository:</label>
-                    <select class="form-select form-select-sm" @bind="_editConfiguration.NamespaceConfigurationId" @bind:after="OnFieldChanged">
-                        <option value="">Select namespace...</option>
-                        @if (availableNamespaces != null)
-                        {
-                            @foreach (var ns in availableNamespaces)
-                            {
-                                <option value="@ns.Id">
-                                    @ns.GetFullNSTreePath(availableNamespaces) (@ns.Type.GetDisplayName())
-                                </option>
-                            }
-                        }
-                    </select>
-                </div>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label small">NS Path</label>
-                <input type="text" class="form-control form-control-sm" @bind="_editConfiguration.NSPath" @oninput="OnFieldChanged" 
-                       placeholder="e.g., Dashboard1/data or Metrics/OEE" />
-                <div class="form-text">
-                    Path within the selected namespace where this topic data should be organized.
-                </div>
-            </div>
-
-            <div class="mb-3">
-                <label class="form-label small">Hierarchical Path</label>
-                @if (hierarchyLevels != null)
+                @if (!string.IsNullOrEmpty(_editConfiguration.NSPath))
                 {
-                    <div class="row g-2">
-                        @foreach (var level in hierarchyLevels)
-                        {
-                            <div class="col-md-2">
-                                <label class="form-label small text-muted">@level</label>
-                                <input type="text" class="form-control form-control-sm" 
-                                       value="@_editConfiguration.Path.GetValue(level)" 
-                                       @onchange="@(e => UpdatePathValue(level, e.Value?.ToString() ?? ""))" />
+                    <div class="border border-1 rounded p-2 mb-2">
+                        <div class="d-flex align-items-center justify-content-between">
+                            <div class="d-flex align-items-center">
+                                <i class="bi bi-folder2 text-primary me-2"></i>
+                                <span class="fw-medium">@_editConfiguration.NSPath</span>
                             </div>
-                        }
+                            <div class="d-flex gap-1">
+                                <button type="button" class="btn btn-outline-secondary btn-sm" @onclick="() => EditNamespaceAssignment(_editConfiguration.NSPath)" title="Edit assignment">
+                                    <i class="bi bi-pencil"></i>
+                                </button>
+                                <button type="button" class="btn btn-outline-danger btn-sm" @onclick="() => RemoveNamespaceAssignment(_editConfiguration.NSPath)" title="Remove assignment">
+                                    <i class="bi bi-trash"></i>
+                                </button>
+                            </div>
+                        </div>
                     </div>
                 }
-                <div class="mt-2">
-                    <small class="text-muted">
-                        <strong>Tree path:</strong> @_editConfiguration.Path.GetFullPath()
-                    </small>
-                </div>
+                else
+                {
+                    <div class="text-center py-3 border border-dashed rounded text-muted">
+                        <i class="bi bi-folder2-open" style="font-size: 1.5rem;"></i>
+                        <p class="mt-2 mb-0">No UNS assignments</p>
+                        <small>Click "Add Assignment" to assign this topic to a UNS namespace</small>
+                    </div>
+                }
             </div>
+
 
             <div class="mb-3">
                 <label class="form-label small">Custom Metadata</label>
@@ -193,11 +132,67 @@
             </div>
         </div>
     </div>
+
+    <!-- Add/Edit Namespace Assignment Modal -->
+    @if (_showNamespaceModal)
+    {
+        <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+            <div class="modal-dialog modal-lg">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title">
+                            @(_isEditingNamespace ? "Edit" : "Add") UNS Namespace Assignment
+                        </h5>
+                        <button type="button" class="btn-close" @onclick="CloseNamespaceModal"></button>
+                    </div>
+                    <div class="modal-body">
+                        @if (availableNSNodes?.Any() == true)
+                        {
+                            <div class="ns-tree-selector" style="max-height: 400px; overflow-y: auto; border: 1px solid #dee2e6; border-radius: 0.375rem; padding: 0.5rem;">
+                                @foreach (var rootNode in availableNSNodes)
+                                {
+                                    <div class="ns-node-selector">
+                                        <NSNodeSelector Node="rootNode" 
+                                                       SelectedPath="@_tempNamespacePath" 
+                                                       OnNodeSelected="OnTempNamespaceSelected" />
+                                    </div>
+                                }
+                            </div>
+                            
+                            @if (!string.IsNullOrEmpty(_tempNamespacePath))
+                            {
+                                <div class="mt-3 p-2 bg-light rounded">
+                                    <small class="text-success">
+                                        <i class="bi bi-check-circle me-1"></i>
+                                        Selected: <strong>@_tempNamespacePath</strong>
+                                    </small>
+                                </div>
+                            }
+                        }
+                        else
+                        {
+                            <div class="text-center py-4">
+                                <i class="bi bi-folder2-open text-muted" style="font-size: 2rem;"></i>
+                                <p class="text-muted mt-2 mb-0">No UNS namespace structure available</p>
+                                <small class="text-muted">Create namespaces in the UNS tab first</small>
+                            </div>
+                        }
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" @onclick="CloseNamespaceModal">Cancel</button>
+                        <button type="button" class="btn btn-primary" @onclick="SaveNamespaceAssignment" 
+                                disabled="@string.IsNullOrEmpty(_tempNamespacePath)">
+                            @(_isEditingNamespace ? "Update" : "Add") Assignment
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    }
 }
 
 @code {
     [Parameter] public TopicInfo? SelectedTopic { get; set; }
-    [Parameter] public EventCallback OnTopicVerified { get; set; }
     [Parameter] public EventCallback OnTopicUpdated { get; set; }
 
     private TopicConfiguration? TopicConfiguration { get; set; }
@@ -206,15 +201,15 @@
     private bool _hasChanges = false;
     private bool _isSaving = false;
     private string _saveAction = "";
-    private List<string>? hierarchyLevels;
-    private List<NamespaceConfiguration>? availableNamespaces;
     private List<NSTreeNode>? availableNSNodes;
     private string? _lastLoadedTopic;
+    private bool _showNamespaceModal = false;
+    private bool _isEditingNamespace = false;
+    private string _tempNamespacePath = string.Empty;
+    private string _editingNamespacePath = string.Empty;
 
     protected override async Task OnInitializedAsync()
     {
-        hierarchyLevels = await HierarchyService.GetHierarchyLevelsAsync();
-        await LoadAvailableNamespaces();
         await LoadNSTreeStructure();
     }
     
@@ -253,7 +248,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading topic configuration: {ex.Message}");
+            Logger.LogError(ex, "Error loading topic configuration");
         }
     }
 
@@ -265,15 +260,8 @@
             Topic = config.Topic,
             Path = new HierarchicalPath
             {
-                Enterprise = config.Path.Enterprise,
-                Site = config.Path.Site,
-                Area = config.Path.Area,
-                WorkCenter = config.Path.WorkCenter,
-                WorkUnit = config.Path.WorkUnit,
-                Property = config.Path.Property,
                 Values = new Dictionary<string, string>(config.Path.Values)
             },
-            IsVerified = config.IsVerified,
             IsActive = config.IsActive,
             SourceType = config.SourceType,
             Description = config.Description,
@@ -281,15 +269,11 @@
             ModifiedAt = config.ModifiedAt,
             CreatedBy = config.CreatedBy,
             Metadata = new Dictionary<string, object>(config.Metadata),
-            NamespaceConfigurationId = config.NamespaceConfigurationId
+            NSPath = config.NSPath,
+            UNSName = config.UNSName
         };
     }
     
-    private void UpdatePathValue(string levelName, string value)
-    {
-        _editConfiguration.Path.SetValue(levelName, value);
-        OnFieldChanged();
-    }
 
     private void LoadMetadataItems()
     {
@@ -329,35 +313,53 @@
         StateHasChanged();
     }
 
-    private async Task VerifyTopic()
+    private void ShowAddNamespaceModal()
     {
-        if (_isSaving) return;
-
-        // Show loading state immediately
-        _isSaving = true;
-        _saveAction = "verify";
+        _isEditingNamespace = false;
+        _tempNamespacePath = string.Empty;
+        _editingNamespacePath = string.Empty;
+        _showNamespaceModal = true;
         StateHasChanged();
-        
-        // Force multiple render cycles to ensure immediate visual feedback
-        await Task.Delay(1); // Minimal delay to ensure UI updates
-        await InvokeAsync(StateHasChanged); // Second state change
+    }
 
-        try
+    private void EditNamespaceAssignment(string namespacePath)
+    {
+        _isEditingNamespace = true;
+        _tempNamespacePath = namespacePath;
+        _editingNamespacePath = namespacePath;
+        _showNamespaceModal = true;
+        StateHasChanged();
+    }
+
+    private void RemoveNamespaceAssignment(string namespacePath)
+    {
+        _editConfiguration.NSPath = string.Empty;
+        OnFieldChanged();
+        StateHasChanged();
+    }
+
+    private void CloseNamespaceModal()
+    {
+        _showNamespaceModal = false;
+        _tempNamespacePath = string.Empty;
+        _editingNamespacePath = string.Empty;
+        _isEditingNamespace = false;
+        StateHasChanged();
+    }
+
+    private void OnTempNamespaceSelected(string namespacePath)
+    {
+        _tempNamespacePath = namespacePath;
+        StateHasChanged();
+    }
+
+    private void SaveNamespaceAssignment()
+    {
+        if (!string.IsNullOrEmpty(_tempNamespacePath))
         {
-            await TopicBrowserService.VerifyTopicAsync(SelectedTopic!.Topic, "User");
-            TopicConfiguration!.IsVerified = true;
-            _editConfiguration.IsVerified = true;
-            await OnTopicVerified.InvokeAsync();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error verifying topic: {ex.Message}");
-        }
-        finally
-        {
-            _isSaving = false;
-            _saveAction = "";
-            StateHasChanged();
+            _editConfiguration.NSPath = _tempNamespacePath;
+            OnFieldChanged();
+            CloseNamespaceModal();
         }
     }
 
@@ -376,6 +378,12 @@
 
         try
         {
+            // Check if UNS name or namespace path changed for notification
+            var originalUNSName = TopicConfiguration?.UNSName ?? string.Empty;
+            var originalNSPath = TopicConfiguration?.NSPath ?? string.Empty;
+            var unsNameChanged = !string.Equals(originalUNSName, _editConfiguration.UNSName, StringComparison.Ordinal);
+            var nsPathChanged = !string.Equals(originalNSPath, _editConfiguration.NSPath, StringComparison.Ordinal);
+
             // Update metadata from items
             var systemMetadata = _editConfiguration.Metadata
                 .Where(kvp => kvp.Key == "AutoDiscovered" || kvp.Key == "DiscoveredAt")
@@ -390,11 +398,26 @@
             await TopicBrowserService.UpdateTopicConfigurationAsync(_editConfiguration);
             TopicConfiguration = CloneConfiguration(_editConfiguration);
             _hasChanges = false;
+            
+            // Notify other components of the change
+            if (unsNameChanged)
+            {
+                await NotificationService.NotifyTopicConfigurationChangedAsync(_editConfiguration.Topic, TopicConfigurationChangeType.UNSNameChanged);
+            }
+            else if (nsPathChanged)
+            {
+                await NotificationService.NotifyTopicConfigurationChangedAsync(_editConfiguration.Topic, TopicConfigurationChangeType.NamespaceAssignmentChanged);
+            }
+            else
+            {
+                await NotificationService.NotifyTopicConfigurationChangedAsync(_editConfiguration.Topic, TopicConfigurationChangeType.Updated);
+            }
+            
             await OnTopicUpdated.InvokeAsync();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error saving topic configuration: {ex.Message}");
+            Logger.LogError(ex, "Error saving topic configuration");
         }
         finally
         {
@@ -404,19 +427,6 @@
         }
     }
 
-    private async Task LoadAvailableNamespaces()
-    {
-        try
-        {
-            var namespaces = await NamespaceRepository.GetAllNamespaceConfigurationsAsync(activeOnly: true);
-            availableNamespaces = namespaces.ToList();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading namespaces: {ex.Message}");
-            availableNamespaces = new List<NamespaceConfiguration>();
-        }
-    }
 
     private async Task LoadNSTreeStructure()
     {
@@ -427,28 +437,11 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading NS tree structure: {ex.Message}");
+            Logger.LogError(ex, "Error loading NS tree structure");
             availableNSNodes = new List<NSTreeNode>();
         }
     }
 
-    private void OnNamespaceSelected(string namespacePath)
-    {
-        _editConfiguration.NSPath = namespacePath;
-        OnFieldChanged();
-        StateHasChanged();
-    }
-
-    private bool CanVerifyTopic => !string.IsNullOrEmpty(_editConfiguration.NamespaceConfigurationId) || !string.IsNullOrEmpty(_editConfiguration.NSPath);
-
-    private string GetVerifyTooltip()
-    {
-        if (string.IsNullOrEmpty(_editConfiguration.NamespaceConfigurationId) && string.IsNullOrEmpty(_editConfiguration.NSPath))
-        {
-            return "Please select a namespace from the UNS structure or repository before verifying the topic";
-        }
-        return "Verify this topic configuration";
-    }
 
     private class MetadataItem
     {

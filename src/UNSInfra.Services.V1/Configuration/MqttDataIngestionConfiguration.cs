@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using UNSInfra.Core.Configuration;
+using UNSInfra.Services.AutoMapping;
 
 namespace UNSInfra.Services.V1.Configuration;
 
@@ -87,6 +88,11 @@ public class MqttDataIngestionConfiguration : IDataIngestionConfiguration
     public bool LastWillRetain { get; set; } = true;
     public int LastWillDelayInterval { get; set; } = 0;
 
+    /// <summary>
+    /// Auto topic mapper configuration for this MQTT service.
+    /// </summary>
+    public AutoTopicMapperConfiguration? AutoMapperConfiguration { get; set; }
+
     public List<string> Validate()
     {
         var errors = new List<string>();
@@ -131,6 +137,20 @@ public class MqttDataIngestionConfiguration : IDataIngestionConfiguration
     {
         var json = JsonSerializer.Serialize(this);
         var clone = JsonSerializer.Deserialize<MqttDataIngestionConfiguration>(json)!;
+        return clone;
+    }
+
+    /// <summary>
+    /// Creates a copy of this configuration with a new ID for duplication purposes.
+    /// </summary>
+    public IDataIngestionConfiguration CloneAsNew()
+    {
+        var json = JsonSerializer.Serialize(this);
+        var clone = JsonSerializer.Deserialize<MqttDataIngestionConfiguration>(json)!;
+        clone.Id = Guid.NewGuid().ToString(); // Generate new ID for new configuration
+        clone.Name = $"{clone.Name} - Copy";
+        clone.CreatedAt = DateTime.UtcNow;
+        clone.ModifiedAt = DateTime.UtcNow;
         return clone;
     }
 

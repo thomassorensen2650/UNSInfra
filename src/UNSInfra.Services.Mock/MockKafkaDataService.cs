@@ -1,4 +1,5 @@
 using UNSInfra.Services.TopicDiscovery;
+using Microsoft.Extensions.Logging;
 
 namespace UNSInfra.Services.DataIngestion.Mock;
 
@@ -13,6 +14,7 @@ public class MockKafkaDataService : IKafkaDataService
 {
     private readonly Dictionary<string, HierarchicalPath> _subscriptions = new();
     private readonly ITopicDiscoveryService _topicDiscoveryService;
+    private readonly ILogger<MockKafkaDataService> _logger;
     private bool _isRunning;
 
     /// <summary>
@@ -24,9 +26,11 @@ public class MockKafkaDataService : IKafkaDataService
     /// Initializes a new instance of the EnhancedMockKafkaDataService.
     /// </summary>
     /// <param name="topicDiscoveryService">Service for discovering and mapping unknown topics</param>
-    public MockKafkaDataService(ITopicDiscoveryService topicDiscoveryService)
+    /// <param name="logger">Logger for the service</param>
+    public MockKafkaDataService(ITopicDiscoveryService topicDiscoveryService, ILogger<MockKafkaDataService> logger)
     {
         _topicDiscoveryService = topicDiscoveryService;
+        _logger = logger;
     }
 
     /// <summary>
@@ -80,6 +84,8 @@ public class MockKafkaDataService : IKafkaDataService
     /// <param name="payload">The data payload to simulate</param>
     public async void SimulateDataReceived(string topic, object payload)
     {
+        if (!_isRunning) return;
+        
         HierarchicalPath? path = null;
 
         // Check if we have explicit subscription

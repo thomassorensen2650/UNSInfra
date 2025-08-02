@@ -1,6 +1,7 @@
 @using UNSInfra.Models.Hierarchy
 @using UNSInfra.Repositories
 @inject IHierarchyConfigurationRepository HierarchyRepository
+@inject ILogger<HierarchyEditor> Logger
 
 <div class="card">
     <div class="card-header d-flex justify-content-between align-items-center">
@@ -208,7 +209,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading configurations: {ex.Message}");
+            Logger.LogError(ex, "Error loading configurations");
         }
     }
 

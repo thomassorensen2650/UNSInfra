@@ -73,4 +73,10 @@ namespace UNSInfra.Models.Hierarchy;
         /// For example, if namespace is "Enterprise1/KPIs", NSPath might be "Dashboard1/data".
         /// </summary>
         public string NSPath { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Gets or sets the display name for this topic when used in UNS.
+        /// This is the user-friendly name that will be shown in the namespace structure.
+        /// </summary>
+        public string UNSName { get; set; } = string.Empty;
     }

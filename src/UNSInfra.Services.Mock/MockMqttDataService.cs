@@ -80,6 +80,8 @@ using UNSInfra.Models.Hierarchy;
         /// <param name="payload">The data payload to simulate</param>
         public async void SimulateDataReceived(string topic, object payload)
         {
+            if (!_isRunning) return;
+            
             HierarchicalPath? path = null;
 
             // Check if we have explicit subscription

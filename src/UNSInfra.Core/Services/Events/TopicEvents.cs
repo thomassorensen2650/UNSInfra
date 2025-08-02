@@ -9,13 +9,11 @@ namespace UNSInfra.Services.Events;
 /// <param name="Topic">The topic name</param>
 /// <param name="Path">The hierarchical path</param>
 /// <param name="SourceType">The source type (MQTT, SocketIO, etc.)</param>
-/// <param name="IsVerified">Whether the topic is verified</param>
 /// <param name="CreatedAt">When the topic was created</param>
 public record TopicAddedEvent(
     string Topic,
     HierarchicalPath Path,
     string SourceType,
-    bool IsVerified,
     DateTime CreatedAt
 ) : BaseEvent;
 
@@ -63,6 +61,6 @@ public record TopicConfigurationUpdatedEvent(
 /// <param name="Topics">List of topics that were added</param>
 /// <param name="SourceType">The source type</param>
 public record BulkTopicsAddedEvent(
-    IReadOnlyList<(string Topic, HierarchicalPath Path, bool IsVerified, DateTime CreatedAt)> Topics,
+    IReadOnlyList<(string Topic, HierarchicalPath Path, DateTime CreatedAt)> Topics,
     string SourceType
 ) : BaseEvent;

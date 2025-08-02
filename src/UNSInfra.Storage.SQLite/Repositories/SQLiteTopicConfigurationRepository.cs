@@ -37,10 +37,7 @@ public class SQLiteTopicConfigurationRepository : ITopicConfigurationRepository
         using var context = await _contextFactory.CreateDbContextAsync();
         var query = context.TopicConfigurations.AsQueryable();
         
-        if (verifiedOnly)
-        {
-            query = query.Where(tc => tc.IsVerified);
-        }
+        // Note: verifiedOnly parameter is ignored since verification functionality was removed
         
         var entities = await query
             .OrderBy(tc => tc.Topic)
@@ -54,8 +51,8 @@ public class SQLiteTopicConfigurationRepository : ITopicConfigurationRepository
     public async Task<IEnumerable<TopicConfiguration>> GetUnverifiedTopicConfigurationsAsync()
     {
         using var context = await _contextFactory.CreateDbContextAsync();
+        // Note: Returns all topics since verification functionality was removed
         var entities = await context.TopicConfigurations
-            .Where(tc => !tc.IsVerified)
             .OrderBy(tc => tc.CreatedAt)
             .ToListAsync();
 
@@ -77,7 +74,6 @@ public class SQLiteTopicConfigurationRepository : ITopicConfigurationRepository
             {
                 // Update existing configuration
                 existingEntity.PathValuesJson = System.Text.Json.JsonSerializer.Serialize(configuration.Path.Values);
-                existingEntity.IsVerified = configuration.IsVerified;
                 existingEntity.IsActive = configuration.IsActive;
                 existingEntity.SourceType = configuration.SourceType;
                 existingEntity.Description = configuration.Description;
@@ -85,6 +81,7 @@ public class SQLiteTopicConfigurationRepository : ITopicConfigurationRepository
                 existingEntity.CreatedBy = configuration.CreatedBy;
                 existingEntity.MetadataJson = System.Text.Json.JsonSerializer.Serialize(configuration.Metadata);
                 existingEntity.NSPath = configuration.NSPath;
+                existingEntity.UNSName = configuration.UNSName;
                 existingEntity.NamespaceConfigurationId = configuration.NamespaceConfigurationId;
             }
             else
@@ -120,7 +117,6 @@ public class SQLiteTopicConfigurationRepository : ITopicConfigurationRepository
                 if (entityToUpdate != null)
                 {
                     entityToUpdate.PathValuesJson = System.Text.Json.JsonSerializer.Serialize(configuration.Path.Values);
-                    entityToUpdate.IsVerified = configuration.IsVerified;
                     entityToUpdate.IsActive = configuration.IsActive;
                     entityToUpdate.SourceType = configuration.SourceType;
                     entityToUpdate.Description = configuration.Description;
@@ -128,6 +124,7 @@ public class SQLiteTopicConfigurationRepository : ITopicConfigurationRepository
                     entityToUpdate.CreatedBy = configuration.CreatedBy;
                     entityToUpdate.MetadataJson = System.Text.Json.JsonSerializer.Serialize(configuration.Metadata);
                     entityToUpdate.NSPath = configuration.NSPath;
+                    entityToUpdate.UNSName = configuration.UNSName;
                     entityToUpdate.NamespaceConfigurationId = configuration.NamespaceConfigurationId;
                     
                     await updateContext.SaveChangesAsync();
@@ -176,10 +173,8 @@ public class SQLiteTopicConfigurationRepository : ITopicConfigurationRepository
             
         if (entity != null)
         {
-            entity.IsVerified = true;
+            // Note: Verification functionality was removed - this method is now a no-op
             entity.ModifiedAt = DateTime.UtcNow;
-            // Note: CreatedBy field could be repurposed to store verifiedBy, 
-            // or we could add a separate VerifiedBy field to the entity
             await context.SaveChangesAsync();
         }
     }

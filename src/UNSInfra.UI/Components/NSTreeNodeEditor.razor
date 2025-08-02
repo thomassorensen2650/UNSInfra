@@ -4,7 +4,9 @@
 @using UNSInfra.Services.TopicBrowser
 @inject INamespaceStructureService NamespaceStructureService
 @inject ITopicBrowserService TopicBrowserService
+@inject ITopicConfigurationNotificationService NotificationService
 @inject IJSRuntime JSRuntime
+@inject ILogger<NSTreeNodeEditor> Logger
 @implements IDisposable
 
 @if (Node != null)
@@ -125,7 +127,7 @@
                             <div class="node-content">
                                 <span class="expand-spacer me-1"></span>
                                 <i class="bi bi-file-earmark-check text-success me-2"></i>
-                                <span class="topic-name">@GetTopicDisplayName(topic.Topic)</span>
+                                <span class="topic-name">@GetTopicDisplayName(topic)</span>
                                 <small class="text-muted ms-2">(Topic - @topic.SourceType)</small>
                                 @if (!string.IsNullOrEmpty(topic.Description))
                                 {
@@ -234,7 +236,6 @@
     private bool showQuickAddMenu = false;
     private bool showAddHierarchyModal = false;
     private bool showAddNamespaceModal = false;
-    private bool showEditModal = false;
     private bool isExpanded = false;
     
     private List<TopicInfo>? assignedTopics = null;
@@ -254,8 +255,31 @@
         _cancellationTokenSource = new CancellationTokenSource();
     }
     
+    private async void OnTopicConfigurationChanged(object? sender, TopicConfigurationChangedEventArgs e)
+    {
+        if (Node?.NodeType == NSNodeType.Namespace && !string.IsNullOrEmpty(Node.FullPath))
+        {
+            try
+            {
+                // Only refresh if this change might affect our assigned topics
+                if (e.ChangeType == TopicConfigurationChangeType.UNSNameChanged ||
+                    e.ChangeType == TopicConfigurationChangeType.NamespaceAssignmentChanged ||
+                    e.ChangeType == TopicConfigurationChangeType.Updated)
+                {
+                    await RefreshAssignedTopics();
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error refreshing assigned topics");
+            }
+        }
+    }
+    
     public void Dispose()
     {
+        // Unsubscribe from events before disposing
+        NotificationService.TopicConfigurationChanged -= OnTopicConfigurationChanged;
         _cancellationTokenSource?.Cancel();
         _cancellationTokenSource?.Dispose();
     }
@@ -352,7 +376,7 @@
     private void ShowEditModal()
     {
         showContextMenu = false;
-        showEditModal = true;
+        // TODO: Implement edit modal functionality
         StateHasChanged();
     }
 
@@ -469,7 +493,7 @@
             await NamespaceStructureService.CreateNamespaceAsync(parentPath, namespaceConfig);
             
             // Add some debugging
-            await JSRuntime.InvokeVoidAsync("console.log", $"Created namespace: {namespaceConfig.Name} with hierarchical path: {hierarchicalPath.Enterprise}/{hierarchicalPath.Site}/{hierarchicalPath.Area}");
+            Logger.LogDebug("Created namespace: {NamespaceName} with hierarchical path: {HierarchicalPath}", namespaceConfig.Name, hierarchicalPath.GetFullPath());
             
             HideAddNamespaceModal();
             await OnNodeChanged.InvokeAsync();
@@ -506,12 +530,28 @@
         // Propagate the event up
         await OnNodeChanged.InvokeAsync();
     }
+
+    /// <summary>
+    /// Public method to refresh assigned topics - can be called when topic configurations change
+    /// </summary>
+    public async Task RefreshAssignedTopics()
+    {
+        if (Node?.NodeType == NSNodeType.Namespace)
+        {
+            await LoadAssignedTopics();
+            StateHasChanged();
+        }
+    }
     
     protected override async Task OnParametersSetAsync()
     {
         if (Node?.NodeType == NSNodeType.Namespace)
         {
             await LoadAssignedTopics();
+            
+            // Subscribe to topic configuration changes for namespace nodes
+            NotificationService.TopicConfigurationChanged -= OnTopicConfigurationChanged; // Remove existing subscription
+            NotificationService.TopicConfigurationChanged += OnTopicConfigurationChanged; // Add new subscription
         }
         
         // Initialize expansion state - hierarchy nodes start expanded, namespaces start collapsed
@@ -534,20 +574,20 @@
             // Get all topics and filter for those assigned to this namespace path
             var allTopics = await TopicBrowserService.GetLatestTopicStructureAsync();
             assignedTopics = allTopics
-                .Where(t => t.IsVerified && !string.IsNullOrEmpty(t.NSPath) && 
-                           t.NSPath.StartsWith(Node.FullPath, StringComparison.OrdinalIgnoreCase))
+                .Where(t => !string.IsNullOrEmpty(t.NSPath) && 
+                           t.NSPath.Equals(Node.FullPath, StringComparison.OrdinalIgnoreCase))
                 .ToList();
                 
-            Console.WriteLine($"Loading topics for namespace: {Node.FullPath}");
-            Console.WriteLine($"Found {assignedTopics.Count} assigned topics");
+            Logger.LogDebug("Loading topics for namespace: {NamespacePath}", Node.FullPath);
+            Logger.LogDebug("Found {TopicCount} assigned topics", assignedTopics.Count);
             foreach (var topic in assignedTopics)
             {
-                Console.WriteLine($"  - {topic.Topic} (NSPath: {topic.NSPath})");
+                Logger.LogDebug("Topic: {Topic} (NSPath: {NSPath}, UNSName: {UNSName})", topic.Topic, topic.NSPath, topic.UNSName);
             }
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading assigned topics for namespace {Node.FullPath}: {ex.Message}");
+            Logger.LogError(ex, "Error loading assigned topics for namespace {NamespacePath}", Node.FullPath);
             assignedTopics = new List<TopicInfo>();
         }
     }
@@ -581,13 +621,19 @@
         await OnTopicSelected.InvokeAsync(topic);
     }
 
-    private string GetTopicDisplayName(string fullTopicName)
+    private string GetTopicDisplayName(TopicInfo topic)
     {
+        // Use UNS Display Name if available, otherwise extract the last part after the final '/'
+        if (!string.IsNullOrEmpty(topic.UNSName))
+        {
+            return topic.UNSName;
+        }
+        
         // Extract the last part after the final '/'
-        var lastSlashIndex = fullTopicName.LastIndexOf('/');
-        return lastSlashIndex >= 0 && lastSlashIndex < fullTopicName.Length - 1 
-            ? fullTopicName.Substring(lastSlashIndex + 1) 
-            : fullTopicName;
+        var lastSlashIndex = topic.Topic.LastIndexOf('/');
+        return lastSlashIndex >= 0 && lastSlashIndex < topic.Topic.Length - 1 
+            ? topic.Topic.Substring(lastSlashIndex + 1) 
+            : topic.Topic;
     }
 }
 

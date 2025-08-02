@@ -21,27 +21,6 @@ public class HierarchicalPath
         return string.Join("/", Values.Values.Where(v => !string.IsNullOrEmpty(v)));
     }
 
-    /// <summary>
-    /// Creates a HierarchicalPath instance from a path string.
-    /// Uses default ISA-S95 hierarchy levels for parsing.
-    /// </summary>
-    /// <param name="path">The path string to parse</param>
-    /// <returns>A new HierarchicalPath instance</returns>
-    public static HierarchicalPath FromPath(string path)
-    {
-        var parts = path.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var hierarchicalPath = new HierarchicalPath();
-        
-        // Default ISA-S95 hierarchy levels
-        var levelNames = new[] { "Enterprise", "Site", "Area", "WorkCenter", "WorkUnit", "Property" };
-        
-        for (int i = 0; i < Math.Min(parts.Length, levelNames.Length); i++)
-        {
-            hierarchicalPath.Values[levelNames[i]] = parts[i];
-        }
-
-        return hierarchicalPath;
-    }
 
     /// <summary>
     /// Gets the value for a specific hierarchy level.
@@ -72,40 +51,4 @@ public class HierarchicalPath
         return Values.Where(kvp => !string.IsNullOrEmpty(kvp.Value)).ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
     }
 
-    // Legacy property accessors for existing code that hasn't been updated yet
-    public string Enterprise
-    {
-        get => GetValue("Enterprise");
-        set => SetValue("Enterprise", value);
-    }
-
-    public string Site
-    {
-        get => GetValue("Site");
-        set => SetValue("Site", value);
-    }
-
-    public string Area
-    {
-        get => GetValue("Area");
-        set => SetValue("Area", value);
-    }
-
-    public string WorkCenter
-    {
-        get => GetValue("WorkCenter");
-        set => SetValue("WorkCenter", value);
-    }
-
-    public string WorkUnit
-    {
-        get => GetValue("WorkUnit");
-        set => SetValue("WorkUnit", value);
-    }
-
-    public string Property
-    {
-        get => GetValue("Property");
-        set => SetValue("Property", value);
-    }
 }

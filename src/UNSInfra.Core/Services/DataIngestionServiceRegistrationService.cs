@@ -369,15 +369,11 @@ public class DataIngestionServiceRegistrationService : BackgroundService
                 if (mqttService != null)
                 {
                     // Subscribe to wildcard topic to receive all MQTT messages
-                    var wildcardPath = new HierarchicalPath 
-                    { 
-                        Enterprise = "mqtt", 
-                        Site = "broker", 
-                        Area = "all", 
-                        WorkCenter = "topics", 
-                        WorkUnit = "", 
-                        Property = "" 
-                    };
+                    var wildcardPath = new HierarchicalPath();
+                    wildcardPath.SetValue("Enterprise", "mqtt");
+                    wildcardPath.SetValue("Site", "broker");
+                    wildcardPath.SetValue("Area", "all");
+                    wildcardPath.SetValue("WorkCenter", "topics");
 
                     await mqttService.SubscribeToTopicAsync("#", wildcardPath);
                     _logger.LogInformation("Subscribed MQTT service to wildcard topic '#' for all messages");

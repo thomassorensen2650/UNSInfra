@@ -67,4 +67,10 @@ public interface IDataIngestionConfiguration
     /// </summary>
     /// <returns>A new instance with the same values</returns>
     IDataIngestionConfiguration Clone();
+    
+    /// <summary>
+    /// Creates a copy of this configuration with a new ID for duplication purposes.
+    /// </summary>
+    /// <returns>A cloned configuration with a new ID and modified name</returns>
+    IDataIngestionConfiguration CloneAsNew();
 }

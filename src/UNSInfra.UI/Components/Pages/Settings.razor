@@ -20,11 +20,11 @@
                         <dt class="col-sm-6">Total Topics:</dt>
                         <dd class="col-sm-6">@TopicStatss.TotalTopics</dd>
                         
-                        <dt class="col-sm-6">Verified Topics:</dt>
-                        <dd class="col-sm-6">@TopicStatss.VerifiedTopics</dd>
+                        <dt class="col-sm-6">UNS Assigned Topics:</dt>
+                        <dd class="col-sm-6">@TopicStatss.UNSAssignedTopics</dd>
                         
-                        <dt class="col-sm-6">Unverified Topics:</dt>
-                        <dd class="col-sm-6">@TopicStatss.UnverifiedTopics</dd>
+                        <dt class="col-sm-6">Unassigned Topics:</dt>
+                        <dd class="col-sm-6">@TopicStatss.UnassignedTopics</dd>
                         
                         <dt class="col-sm-6">Active Topics:</dt>
                         <dd class="col-sm-6">@TopicStatss.ActiveTopics</dd>
@@ -64,6 +64,10 @@
 </div>
 
 <div class="mt-4">
+    <HistoricalStorageConfigurationEditor />
+</div>
+
+<div class="mt-4">
     <HierarchyEditor />
 </div>
 
@@ -86,8 +90,8 @@
             TopicStatss = new TopicStats
             {
                 TotalTopics = topicList.Count,
-                VerifiedTopics = topicList.Count(t => t.IsVerified),
-                UnverifiedTopics = topicList.Count(t => !t.IsVerified),
+                UNSAssignedTopics = topicList.Count(t => !string.IsNullOrEmpty(t.NSPath)),
+                UnassignedTopics = topicList.Count(t => string.IsNullOrEmpty(t.NSPath)),
                 ActiveTopics = topicList.Count(t => t.IsActive)
             };
             
@@ -103,8 +107,8 @@
     public class TopicStats
     {
         public int TotalTopics { get; set; }
-        public int VerifiedTopics { get; set; }
-        public int UnverifiedTopics { get; set; }
+        public int UNSAssignedTopics { get; set; }
+        public int UnassignedTopics { get; set; }
         public int ActiveTopics { get; set; }
     }
 } 

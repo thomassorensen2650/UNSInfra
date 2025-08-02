@@ -1,7 +1,6 @@
 @using UNSInfra.Services.TopicBrowser
 @using UNSInfra.Models.Hierarchy
-@using UNSInfra.Services
-@inject IHierarchyService HierarchyService
+@inject ILogger<TopicTree> Logger
 
 <style>
 .topic-tree {
@@ -9,66 +8,112 @@
     padding-left: 1em;
 }
 
-.tab-content {
-    max-height: 600px; /* Set a reasonable maximum height */
+/* Full height TopicTree component */
+.topic-tree-wrapper {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+.topic-tree-content {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.topic-tree-content .tab-pane.show.active {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+.topic-tree-content .tab-pane:not(.show) {
+    display: none;
+}
+
+.uns-container,
+.data-browser-container {
+    flex: 1;
+    overflow-y: auto;
+    min-height: 0;
 }
 
 .nav-tabs .nav-link {
-    font-size: 0.875rem;
+    font-size: 0.9rem;
     padding: 0.5rem 1rem;
+    border: none;
+    color: #6c757d;
+    transition: all 0.15s ease-in-out;
+}
+
+.nav-tabs .nav-link:hover {
+    color: #495057;
+    background-color: #f8f9fa;
 }
 
 .nav-tabs .nav-link.active {
+    color: #495057;
     background-color: #fff;
     border-color: #dee2e6 #dee2e6 #fff;
+    font-weight: 500;
 }
 
-.tab-pane {
-    max-height: 560px; /* Subtract tab height from max height */
-    overflow-y: auto;
+.nav-tabs {
+    border-bottom: 1px solid #dee2e6;
+    margin-bottom: 0;
 }
 </style>
 
-<!-- Tab Navigation -->
-<ul class="nav nav-tabs" id="topicTabs" role="tablist">
-    <li class="nav-item" role="presentation">
-        <button class="nav-link @(activeTab == "ns" ? "active" : "")" id="ns-tab" type="button" role="tab" 
-                @onclick="@(() => SetActiveTab("ns"))">
-            🏗️ UNS
-        </button>
-    </li>
-    <li class="nav-item" role="presentation">
-        <button class="nav-link @(activeTab == "unverified" ? "active" : "")" id="unverified-tab" type="button" role="tab"
-                @onclick="@(() => SetActiveTab("unverified"))">
-            📊 Data Browser
-        </button>
-    </li>
-</ul>
+<div class="topic-tree-wrapper">
+    <!-- Tab Navigation -->
+    <ul class="nav nav-tabs" id="topicTabs" role="tablist">
+        <li class="nav-item" role="presentation">
+            <button class="nav-link @(activeTab == "ns" ? "active" : "")" id="ns-tab" type="button" role="tab" 
+                    @onclick="@(() => SetActiveTab("ns"))">
+                <i class="bi bi-diagram-3 me-1"></i> UNS
+            </button>
+        </li>
+        <li class="nav-item" role="presentation">
+            <button class="nav-link @(activeTab == "dataBrowser" ? "active" : "")" id="dataBrowser-tab" type="button" role="tab"
+                    @onclick="@(() => SetActiveTab("dataBrowser"))">
+                <i class="bi bi-database me-1"></i> Data Browser
+            </button>
+        </li>
+    </ul>
 
-<!-- Tab Content -->
-<div class="tab-content">
-    <div class="tab-pane @(activeTab == "ns" ? "show active" : "")" id="ns-pane" role="tabpanel">
-        <NSTreeEditor OnAddDataToNamespace="HandleAddDataToNamespace" OnTopicSelected="HandleTopicSelected" />
-    </div>
-    
-    <div class="tab-pane @(activeTab == "unverified" ? "show active" : "")" id="unverified-pane" role="tabpanel">
-        @if (UnverifiedNodes.Any())
-        {
-            <ul class="topic-tree">
-                @foreach (var node in UnverifiedNodes)
-                {
-                    <TopicTreeNodeWithNS Node="node" HighlightedPaths="HighlightedPaths" SelectedNodePath="@SelectedNodePath" OnTopicSelected="HandleTopicSelected" OnToggleExpanded="ToggleExpansion" />
-                }
-            </ul>
-        }
-        else
-        {
-            <div class="text-center py-4">
-                <i class="bi bi-database text-muted" style="font-size: 2rem;"></i>
-                <p class="text-muted mt-2">No data found</p>
-                <small class="text-muted">Data will appear here when received from data sources</small>
+    <!-- Tab Content -->
+    <div class="tab-content topic-tree-content">
+        <!-- UNS Tab -->
+        <div class="tab-pane @(activeTab == "ns" ? "show active" : "")" id="ns-pane" role="tabpanel">
+            <div class="uns-container">
+                <NSTreeEditor OnAddDataToNamespace="HandleAddDataToNamespace" OnTopicSelected="HandleTopicSelected" />
             </div>
-        }
+        </div>
+        
+        <!-- Data Browser Tab -->
+        <div class="tab-pane @(activeTab == "dataBrowser" ? "show active" : "")" id="dataBrowser-pane" role="tabpanel">
+            <div class="data-browser-container">
+                @if (DataBrowserNodes.Any())
+                {
+                    <ul class="topic-tree">
+                        @foreach (var node in DataBrowserNodes)
+                        {
+                            <TopicTreeNodeWithNS Node="node" HighlightedPaths="HighlightedPaths" SelectedNodePath="@SelectedNodePath" OnTopicSelected="HandleTopicSelected" OnToggleExpanded="ToggleExpansion" />
+                        }
+                    </ul>
+                }
+                else
+                {
+                    <div class="text-center py-4">
+                        <i class="bi bi-database text-muted" style="font-size: 2rem;"></i>
+                        <p class="text-muted mt-2">No data found</p>
+                        <small class="text-muted">Data will appear here when received from data sources</small>
+                    </div>
+                }
+            </div>
+        </div>
     </div>
 </div>
 
@@ -84,7 +129,7 @@
     private string activeTab = "ns"; // Default to NS Structure tab
 
     private List<TopicTreeNodeModel> RootNodes = new();
-    private List<TopicTreeNodeModel> UnverifiedNodes = new();
+    private List<TopicTreeNodeModel> DataBrowserNodes = new();
     private Dictionary<string, TopicTreeNodeModel> NodeLookup = new();
     private Dictionary<string, List<TopicInfo>> TopicsByPath = new();
     private Dictionary<string, List<string>> ChildrenLookup = new(); // Parent path -> immediate child names (ordered)
@@ -107,7 +152,7 @@
             if (isJustAddingTopics)
             {
                 // Incremental update - just add new topics without full rebuild
-                await AddNewTopicsIncrementally();
+                AddNewTopicsIncrementally();
             }
             else
             {
@@ -115,7 +160,7 @@
                 var expansionState = SaveExpansionState();
                 var selectedPath = SelectedNodePath;
                 
-                await BuildTreeStructure(Topics ?? new List<TopicInfo>());
+                BuildTreeStructure(Topics ?? new List<TopicInfo>());
                 
                 RestoreExpansionState(expansionState);
                 SelectedNodePath = selectedPath;
@@ -136,76 +181,44 @@
         {
             hash = hash * 31 + topic.Topic.GetHashCode();
             hash = hash * 31 + topic.Path.GetFullPath().GetHashCode();
-            hash = hash * 31 + topic.IsVerified.GetHashCode();
             hash = hash * 31 + topic.SourceType.GetHashCode();
         }
         return hash;
     }
     
-    private async Task AddNewTopicsIncrementally()
+    private void AddNewTopicsIncrementally()
     {
         // Get the new topics (assuming they're at the end of the list)
         var newTopics = Topics.Skip(_lastTopicsCount).ToList();
-        var newVerifiedTopics = newTopics.Where(t => t.IsVerified).ToList();
-        var newUnverifiedTopics = newTopics.Where(t => !t.IsVerified).ToList();
         
-        // Add new verified topics using hierarchical structure
-        foreach (var topic in newVerifiedTopics)
+        // Add new topics using folder structure grouped by source type
+        if (newTopics.Count > 0)
         {
-            var pathParts = await GetPathPartsAsync(topic.Path);
-            string currentPath = "";
+            const string dataBrowserSectionName = "📊 Data Browser";
             
-            // Build the hierarchical path structure and store topic data at the final level
-            for (int i = 0; i < pathParts.Length; i++)
-            {
-                if (string.IsNullOrEmpty(pathParts[i])) break;
-                
-                var parentPath = currentPath;
-                currentPath = string.IsNullOrEmpty(currentPath) ? pathParts[i] : $"{currentPath}/{pathParts[i]}";
-                
-                if (!TopicsByPath.ContainsKey(currentPath))
-                    TopicsByPath[currentPath] = new List<TopicInfo>();
-                
-                // Build children lookup for fast expansion (maintain order)
-                if (!ChildrenLookup.ContainsKey(parentPath))
-                    ChildrenLookup[parentPath] = new List<string>();
-                if (!ChildrenLookup[parentPath].Contains(pathParts[i]))
-                    ChildrenLookup[parentPath].Add(pathParts[i]);
-            }
-            
-            // Store the topic data directly at the hierarchical path level
-            // The property name (like "value") is already part of the topic name
-            TopicsByPath[currentPath].Add(topic);
-        }
-        
-        // Add new unverified topics using folder structure grouped by source type
-        if (newUnverifiedTopics.Count > 0)
-        {
-            const string unverifiedSectionName = "🔍 Unverified Topics";
-            
-            // Ensure unverified section exists
+            // Ensure data browser section exists
             if (!ChildrenLookup.ContainsKey(""))
                 ChildrenLookup[""] = new List<string>();
-            if (!ChildrenLookup[""].Contains(unverifiedSectionName))
-                ChildrenLookup[""].Add(unverifiedSectionName);
+            if (!ChildrenLookup[""].Contains(dataBrowserSectionName))
+                ChildrenLookup[""].Add(dataBrowserSectionName);
             
-            if (!ChildrenLookup.ContainsKey(unverifiedSectionName))
-                ChildrenLookup[unverifiedSectionName] = new List<string>();
-            if (!TopicsByPath.ContainsKey(unverifiedSectionName))
-                TopicsByPath[unverifiedSectionName] = new List<TopicInfo>();
+            if (!ChildrenLookup.ContainsKey(dataBrowserSectionName))
+                ChildrenLookup[dataBrowserSectionName] = new List<string>();
+            if (!TopicsByPath.ContainsKey(dataBrowserSectionName))
+                TopicsByPath[dataBrowserSectionName] = new List<TopicInfo>();
             
-            // Group unverified topics by source type, then build folder structure
-            var topicsBySourceType = newUnverifiedTopics.GroupBy(t => t.SourceType).ToList();
+            // Group topics by source type, then build folder structure
+            var topicsBySourceType = newTopics.GroupBy(t => t.SourceType).ToList();
             
             foreach (var sourceGroup in topicsBySourceType)
             {
                 var sourceType = sourceGroup.Key;
-                var sourcePath = $"{unverifiedSectionName}/{sourceType}";
+                var sourcePath = $"{dataBrowserSectionName}/{sourceType}";
                 
                 // Ensure source type folder exists
-                if (!ChildrenLookup[unverifiedSectionName].Contains(sourceType))
+                if (!ChildrenLookup[dataBrowserSectionName].Contains(sourceType))
                 {
-                    ChildrenLookup[unverifiedSectionName].Add(sourceType);
+                    ChildrenLookup[dataBrowserSectionName].Add(sourceType);
                 }
                 if (!ChildrenLookup.ContainsKey(sourcePath))
                     ChildrenLookup[sourcePath] = new List<string>();
@@ -303,51 +316,19 @@
         await OnAddDataToNamespace.InvokeAsync((namespacePath, availableTopics));
     }
 
-    private async Task BuildTreeStructure(List<TopicInfo> topics)
+    private void BuildTreeStructure(List<TopicInfo> topics)
     {
         NodeLookup.Clear();
         TopicsByPath.Clear();
         ChildrenLookup.Clear();
         
         // Clear all node collections
-        UnverifiedNodes.Clear();
+        DataBrowserNodes.Clear();
 
-        // Separate topics for different display strategies
-        // For Data Browser: show topics that are NOT assigned to namespaces (regardless of verified status)
-        var unverifiedTopics = topics.Where(t => string.IsNullOrEmpty(t.NSPath)).OrderBy(t => t.CreatedAt).ToList();
-        
-        // For hierarchical tree display: show topics that are verified but NOT assigned to namespaces
-        var verifiedTopics = topics.Where(t => t.IsVerified && string.IsNullOrEmpty(t.NSPath)).OrderBy(t => t.CreatedAt).ToList();
+        // Show all topics from data sources in Data Browser
+        var allTopics = topics.OrderBy(t => t.CreatedAt).ToList();
         
 
-        // Process verified topics using hierarchical structure
-        foreach (var topic in verifiedTopics)
-        {
-            var pathParts = await GetPathPartsAsync(topic.Path);
-            string currentPath = "";
-            
-            // Build the hierarchical path structure and store topic data at the final level
-            for (int i = 0; i < pathParts.Length; i++)
-            {
-                if (string.IsNullOrEmpty(pathParts[i])) break;
-                
-                var parentPath = currentPath;
-                currentPath = string.IsNullOrEmpty(currentPath) ? pathParts[i] : $"{currentPath}/{pathParts[i]}";
-                
-                if (!TopicsByPath.ContainsKey(currentPath))
-                    TopicsByPath[currentPath] = new List<TopicInfo>();
-                
-                // Build children lookup for fast expansion (maintain order)
-                if (!ChildrenLookup.ContainsKey(parentPath))
-                    ChildrenLookup[parentPath] = new List<string>();
-                if (!ChildrenLookup[parentPath].Contains(pathParts[i]))
-                    ChildrenLookup[parentPath].Add(pathParts[i]);
-            }
-            
-            // Store the topic data directly at the hierarchical path level
-            // The property name (like "value") is already part of the topic name
-            TopicsByPath[currentPath].Add(topic);
-        }
 
         // Add NS (Namespace Structure) section - but don't populate it here
         // The NS section will be handled by the NSTreeEditor component
@@ -363,37 +344,37 @@
         if (!TopicsByPath.ContainsKey(nsSectionName))
             TopicsByPath[nsSectionName] = new List<TopicInfo>();
 
-        // Always create unverified topics section, even if empty initially
-        const string unverifiedSectionName = "🔍 Unverified Topics";
+        // Always create data browser section, even if empty initially
+        const string dataBrowserSectionName = "📊 Data Browser";
         
-        // Add unverified section to root
+        // Add data browser section to root
         if (!ChildrenLookup.ContainsKey(""))
             ChildrenLookup[""] = new List<string>();
-        if (!ChildrenLookup[""].Contains(unverifiedSectionName))
-            ChildrenLookup[""].Add(unverifiedSectionName);
+        if (!ChildrenLookup[""].Contains(dataBrowserSectionName))
+            ChildrenLookup[""].Add(dataBrowserSectionName);
         
-        // Initialize unverified section
-        if (!ChildrenLookup.ContainsKey(unverifiedSectionName))
-            ChildrenLookup[unverifiedSectionName] = new List<string>();
-        if (!TopicsByPath.ContainsKey(unverifiedSectionName))
-            TopicsByPath[unverifiedSectionName] = new List<TopicInfo>();
+        // Initialize data browser section
+        if (!ChildrenLookup.ContainsKey(dataBrowserSectionName))
+            ChildrenLookup[dataBrowserSectionName] = new List<string>();
+        if (!TopicsByPath.ContainsKey(dataBrowserSectionName))
+            TopicsByPath[dataBrowserSectionName] = new List<TopicInfo>();
 
-        // Process unverified topics using folder structure grouped by source type
-        if (unverifiedTopics.Count > 0)
+        // Process all topics using folder structure grouped by source type
+        if (allTopics.Count > 0)
         {
             
-            // Group unverified topics by source type, then build folder structure
-            var topicsBySourceType = unverifiedTopics.GroupBy(t => t.SourceType).ToList();
+            // Group all topics by source type, then build folder structure
+            var topicsBySourceType = allTopics.GroupBy(t => t.SourceType).ToList();
             
             foreach (var sourceGroup in topicsBySourceType)
             {
                 var sourceType = sourceGroup.Key;
-                var sourcePath = $"{unverifiedSectionName}/{sourceType}";
+                var sourcePath = $"{dataBrowserSectionName}/{sourceType}";
                 
                 // Ensure source type folder exists
-                if (!ChildrenLookup[unverifiedSectionName].Contains(sourceType))
+                if (!ChildrenLookup[dataBrowserSectionName].Contains(sourceType))
                 {
-                    ChildrenLookup[unverifiedSectionName].Add(sourceType);
+                    ChildrenLookup[dataBrowserSectionName].Add(sourceType);
                 }
                 if (!ChildrenLookup.ContainsKey(sourcePath))
                     ChildrenLookup[sourcePath] = new List<string>();
@@ -449,7 +430,7 @@
         }
 
         // Build separate node collections for tabs
-        BuildUnverifiedTreeStructure(unverifiedTopics);
+        BuildDataBrowserTreeStructure(allTopics);
 
         // Keep the original root nodes for compatibility
         var rootChildNames = ChildrenLookup.GetValueOrDefault("", new List<string>());
@@ -474,8 +455,8 @@
             hasChildren = true;
         }
         
-        // Special case: Unverified Topics folder should always be expandable 
-        if (name == "🔍 Unverified Topics")
+        // Special case: Data Browser folder should always be expandable 
+        if (name == "📊 Data Browser")
         {
             hasChildren = true;
         }
@@ -493,27 +474,6 @@
     }
 
 
-    private async Task<string[]> GetPathPartsAsync(HierarchicalPath path)
-    {
-        var hierarchyLevels = await HierarchyService.GetHierarchyLevelsAsync();
-        var parts = new List<string>();
-        
-        foreach (var level in hierarchyLevels)
-        {
-            var value = path.GetValue(level);
-            parts.Add(value);
-        }
-        
-        return parts.ToArray();
-    }
-    
-    private string ExtractPropertyName(string topicName)
-    {
-        // Extract the property name from the topic
-        // For topics like "virtualfactory/update/Enterprise/Dallas/BU/value", extract "value"
-        var parts = topicName.Split('/');
-        return parts.Length > 0 ? parts[parts.Length - 1] : "";
-    }
 
 
     public async Task ToggleExpansion(TopicTreeNodeModel node)
@@ -593,69 +553,28 @@
         node.ChildrenLoaded = true;
     }
 
-    public async Task BlinkNode(string path)
+    public void BlinkNode(string path)
     {
         // Start blinking all nodes in the path hierarchy from root to leaf
-        await BlinkNodeHierarchy(path);
+        BlinkNodeHierarchy(path);
     }
     
-    private async Task BlinkNodeHierarchy(string fullPath)
+    private void BlinkNodeHierarchy(string fullPath)
     {
+        // Blinking functionality disabled for performance reasons
         return;
-        // Get all parent paths including the target path
-        var paths = GetAllPathLevels(fullPath);
-        
-        // Blink nodes from root to leaf
-        foreach (var path in paths)
-        {
-            if (NodeLookup.TryGetValue(path, out var node))
-            {
-                // Start blinking animation
-                node.IsBlinking = true;
-                await InvokeAsync(StateHasChanged);
-                
-                // Small delay to create cascade effect
-                await Task.Delay(100);
-            }
-        }
-        
-        // Wait for the full animation duration
-        await Task.Delay(500);
-        
-        // Stop blinking all nodes
-        foreach (var path in paths)
-        {
-            if (NodeLookup.TryGetValue(path, out var node))
-            {
-                node.IsBlinking = false;
-            }
-        }
-        
-        await InvokeAsync(StateHasChanged);
     }
     
-    private List<string> GetAllPathLevels(string fullPath)
+
+
+    private void BuildDataBrowserTreeStructure(List<TopicInfo> topics)
     {
-        var parts = fullPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
-        var paths = new List<string>();
-        var currentPath = "";
+        if (!topics.Any()) return;
+
+        const string dataBrowserSectionName = "📊 Data Browser";
         
-        foreach (var part in parts)
-        {
-            currentPath = string.IsNullOrEmpty(currentPath) ? part : $"{currentPath}/{part}";
-            paths.Add(currentPath);
-        }
-        
-        return paths;
-    }
-
-
-    private void BuildUnverifiedTreeStructure(List<TopicInfo> unverifiedTopics)
-    {
-        if (!unverifiedTopics.Any()) return;
-
-        // Group unverified topics by source type
-        var topicsBySourceType = unverifiedTopics.GroupBy(t => t.SourceType).ToList();
+        // Group topics by source type
+        var topicsBySourceType = topics.GroupBy(t => t.SourceType).ToList();
 
         foreach (var sourceGroup in topicsBySourceType)
         {
@@ -663,7 +582,7 @@
             var sourceNode = new TopicTreeNodeModel
             {
                 Name = sourceType,
-                FullPath = sourceType,
+                FullPath = $"{dataBrowserSectionName}/{sourceType}",
                 Children = new List<TopicTreeNodeModel>(),
                 HasChildren = true,
                 ChildrenLoaded = false,
@@ -676,7 +595,7 @@
                 var topicNode = new TopicTreeNodeModel
                 {
                     Name = topic.Topic,
-                    FullPath = $"{sourceType}/{topic.Topic}",
+                    FullPath = $"{dataBrowserSectionName}/{sourceType}/{topic.Topic}",
                     Topic = topic,
                     HasChildren = false,
                     ChildrenLoaded = true,
@@ -685,7 +604,7 @@
                 sourceNode.Children.Add(topicNode);
             }
 
-            UnverifiedNodes.Add(sourceNode);
+            DataBrowserNodes.Add(sourceNode);
         }
     }
 
@@ -702,20 +621,9 @@
     {
         try
         {
-            // Handle selection differently for verified vs unverified topics
-            if (topic.IsVerified)
-            {
-                // For verified topics, use hierarchical path structure
-                var pathParts = await GetPathPartsAsync(topic.Path);
-                var parts = pathParts.Where(p => !string.IsNullOrEmpty(p)).ToArray();
-                SelectedNodePath = string.Join("/", parts);
-            }
-            else
-            {
-                // For unverified topics, use the topic path under the source type folder
-                const string unverifiedSectionName = "🔍 Unverified Topics";
-                SelectedNodePath = $"{unverifiedSectionName}/{topic.SourceType}/{topic.Topic}";
-            }
+            // Use the topic path under the source type folder in Data Browser
+            const string dataBrowserSectionName = "📊 Data Browser";
+            SelectedNodePath = $"{dataBrowserSectionName}/{topic.SourceType}/{topic.Topic}";
             
             // First invoke the callback to update the parent component
             await OnTopicSelected.InvokeAsync(topic);
@@ -726,7 +634,7 @@
         catch (Exception ex)
         {
             // Log error but don't crash the UI
-            Console.WriteLine($"Error in HandleTopicSelected: {ex.Message}");
+            Logger.LogError(ex, "Error in HandleTopicSelected");
         }
     }
     

@@ -1,5 +1,7 @@
     using System.Text.Json;
     using Microsoft.Extensions.Logging;
+    using Microsoft.Extensions.Options;
+    using UNSInfra.Configuration;
     using UNSInfra.Models.Hierarchy;
     using UNSInfra.Models.Schema;
     using UNSInfra.Repositories;
@@ -19,7 +21,22 @@
         
         // Setup dependencies
         var realtimeStorage = new InMemoryRealtimeStorage();
-        var historicalStorage = new InMemoryHistoricalStorage();
+        
+        // Create default configuration for historical storage
+        var historicalStorageConfig = new HistoricalStorageConfiguration
+        {
+            Enabled = true,
+            StorageType = HistoricalStorageType.InMemory,
+            InMemory = new InMemoryHistoricalStorageOptions
+            {
+                MaxValuesPerDataPoint = 1000,
+                MaxTotalValues = 10000,
+                AutoCleanup = true
+            }
+        };
+        var options = Options.Create(historicalStorageConfig);
+        var historicalStorage = new InMemoryHistoricalStorage(options);
+        
         var validator = new JsonSchemaValidator();
         var schemaRepository = new InMemorySchemaRepository();
         
@@ -33,7 +50,8 @@
         
         // Setup data services
         var mqttService = new MockMqttDataService(topicDiscovery);
-        var kafkaService = new MockKafkaDataService(topicDiscovery);
+        var kafkaLogger = loggerFactory.CreateLogger<MockKafkaDataService>();
+        var kafkaService = new MockKafkaDataService(topicDiscovery, kafkaLogger);
 
         // Define hierarchy path using dynamic hierarchy service
         var robotPath = await hierarchyService.CreatePathFromStringAsync("enterprise/factoryA/assemblyLine1/robot123/temperature");

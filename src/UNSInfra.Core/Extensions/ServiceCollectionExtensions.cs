@@ -3,6 +3,7 @@ using Microsoft.Extensions.Hosting;
 using UNSInfra.Core.Configuration;
 using UNSInfra.Core.Repositories;
 using UNSInfra.Core.Services;
+using UNSInfra.Services.AutoMapping;
 
 namespace UNSInfra.Core.Extensions;
 
@@ -27,6 +28,9 @@ public static class ServiceCollectionExtensions
         // Register the background service for managing service descriptors
         services.AddHostedService<DataIngestionServiceRegistrationService>();
         
+        // Register auto topic mapping services
+        services.AddAutoTopicMapping();
+        
         return services;
     }
 
@@ -41,6 +45,17 @@ public static class ServiceCollectionExtensions
     {
         services.AddTransient<T>();
         services.AddTransient<IDataIngestionServiceDescriptor>(provider => provider.GetRequiredService<T>());
+        return services;
+    }
+
+    /// <summary>
+    /// Adds auto topic mapping services to the dependency injection container.
+    /// </summary>
+    /// <param name="services">The service collection</param>
+    /// <returns>The service collection for chaining</returns>
+    public static IServiceCollection AddAutoTopicMapping(this IServiceCollection services)
+    {
+        services.AddScoped<IAutoTopicMapper, AutoTopicMapperService>();
         return services;
     }
 }

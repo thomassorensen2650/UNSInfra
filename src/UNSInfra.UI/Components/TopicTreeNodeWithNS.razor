@@ -12,20 +12,15 @@
             <span class="expand-spacer"></span>
         }
         
-        @if (Node.Name == "📁 NS")
-        {
-            <i class="bi bi-folder-fill text-primary"></i>
-            <span class="ms-2">NS Structure</span>
-        }
-        else if (Node.Topic != null)
+        @if (Node.Topic != null)
         {
             <i class="bi @GetTopicIcon() @GetTopicColor()"></i>
             <span class="ms-2 @GetTopicTextClass()" @onclick="() => SelectTopic()" @onclick:stopPropagation="true">
                 @Node.Name
             </span>
-            @if (Node.Topic.IsVerified)
+            @if (!string.IsNullOrEmpty(Node.Topic.NSPath))
             {
-                <i class="bi bi-check-circle-fill text-success ms-1" title="Verified"></i>
+                <i class="bi bi-link-45deg text-primary ms-1" title="Assigned to UNS"></i>
             }
         }
         else
@@ -92,16 +87,8 @@
 
     private async Task ToggleExpanded()
     {
-        if (Node.Name == "📁 NS")
-        {
-            // Special handling for NS section - just toggle expansion
-            Node.IsExpanded = !Node.IsExpanded;
-            StateHasChanged();
-        }
-        else
-        {
-            await OnToggleExpanded.InvokeAsync(Node);
-        }
+        await OnToggleExpanded.InvokeAsync(Node);
+        
     }
 
     private async Task SelectTopic()
@@ -147,7 +134,7 @@
 
     private string GetTopicIcon()
     {
-        if (Node.Topic?.IsVerified == true)
+        if (!string.IsNullOrEmpty(Node.Topic?.NSPath))
         {
             return "bi-file-earmark-check";
         }
@@ -156,18 +143,18 @@
 
     private string GetTopicColor()
     {
-        if (Node.Topic?.IsVerified == true)
+        if (!string.IsNullOrEmpty(Node.Topic?.NSPath))
         {
-            return "text-success";
+            return "text-primary";
         }
         return "text-muted";
     }
 
     private string GetTopicTextClass()
     {
-        if (Node.Topic?.IsVerified == true)
+        if (!string.IsNullOrEmpty(Node.Topic?.NSPath))
         {
-            return "fw-medium";
+            return "fw-medium text-primary";
         }
         return "";
     }

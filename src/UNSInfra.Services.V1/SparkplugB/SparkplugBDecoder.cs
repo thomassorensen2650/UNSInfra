@@ -135,15 +135,14 @@ public class SparkplugBDecoder
     /// </summary>
     private HierarchicalPath CreateHierarchicalPath(SparkplugTopicParts topicParts, string metricName)
     {
-        return new HierarchicalPath
-        {
-            Enterprise = topicParts.GroupId,
-            Site = topicParts.EdgeNodeId,
-            Area = topicParts.DeviceId ?? "Node",
-            WorkCenter = metricName,
-            WorkUnit = string.Empty,
-            Property = string.Empty
-        };
+        var path = new HierarchicalPath();
+        path.SetValue("Enterprise", topicParts.GroupId);
+        path.SetValue("Site", topicParts.EdgeNodeId);
+        path.SetValue("Area", topicParts.DeviceId ?? "Node");
+        path.SetValue("WorkCenter", metricName);
+        path.SetValue("WorkUnit", string.Empty);
+        path.SetValue("Property", string.Empty);
+        return path;
     }
 
     /// <summary>

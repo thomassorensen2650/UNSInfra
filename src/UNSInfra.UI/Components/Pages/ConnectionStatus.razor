@@ -4,6 +4,7 @@
 @using UNSInfra.Core.Repositories
 @inject IDataIngestionServiceManager ServiceManager
 @inject IDataIngestionConfigurationRepository ConfigurationRepository
+@inject ILogger<ConnectionStatus> Logger
 @rendermode InteractiveServer
 
 <PageTitle>Connection Status</PageTitle>
@@ -345,7 +346,7 @@
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to start service {config.Name}: {ex.Message}");
+                Logger.LogError(ex, "Failed to start service {ServiceName}", config.Name);
             }
         }
     }
@@ -361,7 +362,7 @@
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"Failed to restart service {serviceId}: {ex.Message}");
+                Logger.LogError(ex, "Failed to restart service {ServiceId}", serviceId);
             }
         }
     }

@@ -97,6 +97,9 @@ builder.Services.AddScoped<IHierarchyService, HierarchyService>();
 // Register namespace structure service
 builder.Services.AddScoped<INamespaceStructureService, NamespaceStructureService>();
 
+// Register topic configuration notification service
+builder.Services.AddSingleton<ITopicConfigurationNotificationService, TopicConfigurationNotificationService>();
+
 // Add new dynamic configuration system
 builder.Services.AddUNSInfrastructureCore();
 

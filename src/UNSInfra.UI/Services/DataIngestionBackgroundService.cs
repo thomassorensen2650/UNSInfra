@@ -105,15 +105,13 @@ public class DataIngestionBackgroundService : BackgroundService
             {
                 // Subscribe to all topics using the wildcard "#"
                 // This will receive all messages published to the broker
-                var wildcardPath = new HierarchicalPath 
-                { 
-                    Enterprise = "mqtt", 
-                    Site = "broker", 
-                    Area = "all", 
-                    WorkCenter = "topics", 
-                    WorkUnit = "", 
-                    Property = "" 
-                };
+                var wildcardPath = new HierarchicalPath();
+                wildcardPath.SetValue("Enterprise", "mqtt");
+                wildcardPath.SetValue("Site", "broker");
+                wildcardPath.SetValue("Area", "all");
+                wildcardPath.SetValue("WorkCenter", "topics");
+                wildcardPath.SetValue("WorkUnit", "");
+                wildcardPath.SetValue("Property", "");
 
                 await mqttService.SubscribeToTopicAsync("test", wildcardPath);
                 _logger.LogInformation("Subscribed to MQTT topics using wildcard");
@@ -258,7 +256,6 @@ public class DataIngestionBackgroundService : BackgroundService
                             {
                                 Topic = topicConfig.Topic,
                                 Path = topicConfig.Path,
-                                IsVerified = topicConfig.IsVerified,
                                 IsActive = topicConfig.IsActive,
                                 SourceType = topicConfig.SourceType,
                                 CreatedAt = topicConfig.CreatedAt,

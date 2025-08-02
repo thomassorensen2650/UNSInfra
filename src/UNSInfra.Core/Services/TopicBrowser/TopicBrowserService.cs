@@ -38,14 +38,14 @@ public class TopicBrowserService : ITopicBrowserService
         {
             Topic = config.Topic,
             Path = config.Path,
-            IsVerified = config.IsVerified,
             IsActive = config.IsActive,
             SourceType = config.SourceType,
             CreatedAt = config.CreatedAt,
             ModifiedAt = config.ModifiedAt,
             Description = config.Description,
             Metadata = config.Metadata,
-            NSPath = config.NSPath
+            NSPath = config.NSPath,
+            UNSName = config.UNSName
             // LastDataTimestamp will be updated by data update events for performance
         }).ToList();
 
@@ -69,14 +69,14 @@ public class TopicBrowserService : ITopicBrowserService
             {
                 Topic = config.Topic,
                 Path = config.Path,
-                IsVerified = config.IsVerified,
                 IsActive = config.IsActive,
                 SourceType = config.SourceType,
                 CreatedAt = config.CreatedAt,
                 ModifiedAt = config.ModifiedAt,
                 Description = config.Description,
                 Metadata = config.Metadata,
-                NSPath = config.NSPath
+                NSPath = config.NSPath,
+                UNSName = config.UNSName
             };
 
             topicInfos.Add(topicInfo);

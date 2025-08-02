@@ -1,6 +1,7 @@
 using UNSInfra.Core.Configuration;
 using UNSInfra.Services.SocketIO.Configuration;
 using UNSInfra.Services.DataIngestion.Mock;
+using UNSInfra.Services.AutoMapping;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace UNSInfra.Services.SocketIO.Descriptors;
@@ -194,6 +195,49 @@ public class SocketIOServiceDescriptor : IDataIngestionServiceDescriptor
                 FieldType = FieldType.TextArea,
                 Group = "Headers",
                 Order = 1
+            },
+
+            // Auto Topic Mapper Group
+            new ConfigurationField
+            {
+                PropertyName = "AutoMapperEnabled",
+                DisplayName = "Enable Auto Topic Mapping",
+                Description = "Automatically map incoming topics to existing UNS tree structures",
+                FieldType = FieldType.Boolean,
+                Group = "Auto Mapping",
+                Order = 1,
+                DefaultValue = false
+            },
+            new ConfigurationField
+            {
+                PropertyName = "AutoMapperMinConfidence",
+                DisplayName = "Minimum Confidence Level",
+                Description = "Minimum confidence level required for auto mapping (0.0 to 1.0)",
+                FieldType = FieldType.Range,
+                Group = "Auto Mapping",
+                Order = 2,
+                DefaultValue = 0.8,
+                ValidationAttributes = new Dictionary<string, object> { { "min", 0.0 }, { "max", 1.0 }, { "step", 0.1 } }
+            },
+            new ConfigurationField
+            {
+                PropertyName = "AutoMapperStripPrefixes",
+                DisplayName = "Strip Prefixes",
+                Description = "Topic prefixes to remove before mapping (comma-separated)",
+                FieldType = FieldType.Text,
+                Group = "Auto Mapping",
+                Order = 3,
+                DefaultValue = "socketio/,socketio/update/"
+            },
+            new ConfigurationField
+            {
+                PropertyName = "AutoMapperCaseSensitive",
+                DisplayName = "Case Sensitive Matching",
+                Description = "Whether topic matching should be case sensitive",
+                FieldType = FieldType.Boolean,
+                Group = "Auto Mapping",
+                Order = 4,
+                DefaultValue = false
             }
         };
     }
@@ -206,7 +250,14 @@ public class SocketIOServiceDescriptor : IDataIngestionServiceDescriptor
             Description = "Socket.IO server connection for real-time data streaming",
             ServerUrl = "https://localhost:3000",
             BaseTopicPath = "socketio",
-            EventNames = Array.Empty<string>()
+            EventNames = Array.Empty<string>(),
+            AutoMapperConfiguration = new AutoTopicMapperConfiguration
+            {
+                Enabled = false,
+                MinimumConfidence = 0.8,
+                StripPrefixes = new List<string> { "socketio/", "socketio/update/" },
+                CaseSensitive = false
+            }
         };
     }
 
@@ -240,5 +291,68 @@ public class SocketIOServiceDescriptor : IDataIngestionServiceDescriptor
             return new List<string> { "Configuration must be of type SocketIODataIngestionConfiguration" };
 
         return socketIOConfig.Validate();
+    }
+
+    /// <summary>
+    /// Updates the auto mapper configuration based on form field values.
+    /// This is called after the form is submitted to map flat form fields to the nested configuration.
+    /// </summary>
+    /// <param name="configuration">The configuration to update</param>
+    /// <param name="fieldValues">Dictionary of field values from the form</param>
+    public void UpdateAutoMapperFromFormFields(SocketIODataIngestionConfiguration configuration, Dictionary<string, object?> fieldValues)
+    {
+        if (configuration.AutoMapperConfiguration == null)
+        {
+            configuration.AutoMapperConfiguration = new AutoTopicMapperConfiguration();
+        }
+
+        var autoMapper = configuration.AutoMapperConfiguration;
+
+        // Map form fields to auto mapper configuration
+        if (fieldValues.TryGetValue("AutoMapperEnabled", out var enabled) && enabled is bool enabledBool)
+            autoMapper.Enabled = enabledBool;
+
+        if (fieldValues.TryGetValue("AutoMapperMinConfidence", out var confidence) && confidence != null)
+            autoMapper.MinimumConfidence = Convert.ToDouble(confidence);
+
+
+        if (fieldValues.TryGetValue("AutoMapperCaseSensitive", out var caseSensitive) && caseSensitive is bool caseSensitiveBool)
+            autoMapper.CaseSensitive = caseSensitiveBool;
+
+        if (fieldValues.TryGetValue("AutoMapperStripPrefixes", out var prefixes) && prefixes is string prefixesStr)
+        {
+            autoMapper.StripPrefixes = string.IsNullOrWhiteSpace(prefixesStr) 
+                ? new List<string>()
+                : prefixesStr.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
+        }
+
+    }
+
+    /// <summary>
+    /// Gets the current auto mapper field values for populating the form.
+    /// </summary>
+    /// <param name="configuration">The configuration to extract values from</param>
+    /// <returns>Dictionary of field values for the form</returns>
+    public Dictionary<string, object?> GetAutoMapperFormFieldValues(SocketIODataIngestionConfiguration configuration)
+    {
+        var autoMapper = configuration.AutoMapperConfiguration;
+        if (autoMapper == null)
+        {
+            return new Dictionary<string, object?>
+            {
+                { "AutoMapperEnabled", false },
+                { "AutoMapperMinConfidence", 0.8 },
+                { "AutoMapperCaseSensitive", false },
+                { "AutoMapperStripPrefixes", "socketio/,socketio/update/" }
+            };
+        }
+
+        return new Dictionary<string, object?>
+        {
+            { "AutoMapperEnabled", autoMapper.Enabled },
+            { "AutoMapperMinConfidence", autoMapper.MinimumConfidence },
+            { "AutoMapperCaseSensitive", autoMapper.CaseSensitive },
+            { "AutoMapperStripPrefixes", string.Join(", ", autoMapper.StripPrefixes) }
+        };
     }
 }
