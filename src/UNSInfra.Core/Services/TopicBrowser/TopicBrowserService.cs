@@ -86,6 +86,36 @@ public class TopicBrowserService : ITopicBrowserService
     }
 
     /// <summary>
+    /// Gets topics assigned to a specific namespace path.
+    /// </summary>
+    /// <param name="namespacePath">The namespace path to filter by</param>
+    /// <returns>A collection of topics assigned to the specified namespace</returns>
+    public async Task<IEnumerable<TopicInfo>> GetTopicsForNamespaceAsync(string namespacePath)
+    {
+        var configurations = await _topicRepository.GetAllTopicConfigurationsAsync();
+        
+        var filteredConfigurations = configurations.Where(c => 
+            !string.IsNullOrEmpty(c.NSPath) && 
+            c.NSPath.Equals(namespacePath, StringComparison.OrdinalIgnoreCase));
+        
+        var topicInfos = filteredConfigurations.Select(config => new TopicInfo
+        {
+            Topic = config.Topic,
+            Path = config.Path,
+            IsActive = config.IsActive,
+            SourceType = config.SourceType,
+            CreatedAt = config.CreatedAt,
+            ModifiedAt = config.ModifiedAt,
+            Description = config.Description,
+            Metadata = config.Metadata,
+            NSPath = config.NSPath,
+            UNSName = config.UNSName
+        }).ToList();
+
+        return topicInfos;
+    }
+
+    /// <summary>
     /// Gets the latest data payload for a specific topic.
     /// </summary>
     /// <param name="topic">The topic name</param>

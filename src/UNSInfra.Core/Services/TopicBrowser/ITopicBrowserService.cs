@@ -23,6 +23,13 @@ public interface ITopicBrowserService
     Task<IEnumerable<TopicInfo>> GetNewTopicsAsync(DateTime lastCheckTime);
 
     /// <summary>
+    /// Gets topics assigned to a specific namespace path.
+    /// </summary>
+    /// <param name="namespacePath">The namespace path to filter by</param>
+    /// <returns>A collection of topics assigned to the specified namespace</returns>
+    Task<IEnumerable<TopicInfo>> GetTopicsForNamespaceAsync(string namespacePath);
+
+    /// <summary>
     /// Gets the latest data payload for a specific topic.
     /// </summary>
     /// <param name="topic">The topic name</param>

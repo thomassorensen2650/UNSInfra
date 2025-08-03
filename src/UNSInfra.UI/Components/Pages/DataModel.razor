@@ -1,7 +1,4 @@
 @page "/data-model"
-@using UNSInfra.Services.TopicBrowser
-@using UNSInfra.Models.Hierarchy
-@using UNSInfra.Models.Data
 @using UNSInfra.Storage.Abstractions
 @inject ITopicBrowserService TopicBrowserService
 @inject IHistoricalStorage HistoricalStorage
@@ -36,11 +33,10 @@
             }
             else
             {
-                <TopicTree @ref="TopicTreeComponent" Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" OnAddDataToNamespace="OnAddDataToNamespace" />
+                <TopicTree @ref="TopicTreeComponent" Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" OnAddDataToNamespace="OnAddDataToNamespace"/>
             }
         </div>
     </div>
-    
     <!-- Payload section now on the left -->
     <div class="payload-section">
         @if (SelectedTopic != null)

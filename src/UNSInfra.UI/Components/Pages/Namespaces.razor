@@ -355,8 +355,8 @@
                     };
                 }
                 
-                // Save the configuration
-                await TopicConfigurationRepository.SaveTopicConfigurationAsync(config);
+                // Save the configuration via TopicBrowserService to trigger events
+                await TopicBrowserService.UpdateTopicConfigurationAsync(config);
                 
                 // Update the in-memory topic as well
                 topic.NSPath = selectedNamespacePath;

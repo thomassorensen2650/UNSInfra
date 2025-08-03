@@ -64,6 +64,16 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
     }
 
     /// <inheritdoc />
+    public async Task<IEnumerable<TopicInfo>> GetTopicsForNamespaceAsync(string namespacePath)
+    {
+        await EnsureInitializedAsync();
+        return _topicCache.Values
+            .Where(t => !string.IsNullOrEmpty(t.NSPath) && 
+                       t.NSPath.Equals(namespacePath, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    /// <inheritdoc />
     public async Task<DataPoint?> GetDataForTopicAsync(string topic)
     {
         await EnsureInitializedAsync();
@@ -132,23 +142,23 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
         // Save to database first
         await repository.SaveTopicConfigurationAsync(configuration);
         
-        // Update the cache with the new configuration
+        // Update or add the cache with the new configuration
+        var updatedTopic = new TopicInfo
+        {
+            Topic = configuration.Topic,
+            Path = configuration.Path,
+            IsActive = configuration.IsActive,
+            SourceType = configuration.SourceType,
+            CreatedAt = configuration.CreatedAt,
+            ModifiedAt = configuration.ModifiedAt,
+            Description = configuration.Description,
+            Metadata = configuration.Metadata,
+            NSPath = configuration.NSPath,
+            UNSName = configuration.UNSName
+        };
+        
         if (_topicCache.TryGetValue(configuration.Topic, out var existingTopic))
         {
-            var updatedTopic = new TopicInfo
-            {
-                Topic = configuration.Topic,
-                Path = configuration.Path,
-                IsActive = configuration.IsActive,
-                SourceType = configuration.SourceType,
-                CreatedAt = configuration.CreatedAt,
-                ModifiedAt = configuration.ModifiedAt,
-                Description = configuration.Description,
-                Metadata = configuration.Metadata,
-                NSPath = configuration.NSPath,
-                UNSName = configuration.UNSName
-            };
-            
             _topicCache.TryUpdate(configuration.Topic, updatedTopic, existingTopic);
             
             // Publish event for other subscribers
@@ -157,6 +167,19 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
                 existingTopic.Path,
                 configuration.Path,
                 "user"
+            ));
+        }
+        else
+        {
+            // Topic doesn't exist in cache yet, add it
+            _topicCache.TryAdd(configuration.Topic, updatedTopic);
+            
+            // Publish topic added event
+            await _eventBus.PublishAsync(new TopicAddedEvent(
+                configuration.Topic,
+                configuration.Path,
+                configuration.SourceType,
+                configuration.CreatedAt
             ));
         }
     }
@@ -205,7 +228,9 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
             CreatedAt = eventData.CreatedAt,
             ModifiedAt = eventData.CreatedAt,
             Description = "",
-            Metadata = new Dictionary<string, object>()
+            Metadata = new Dictionary<string, object>(),
+            NSPath = "", // Initialize NSPath - this was missing!
+            UNSName = "" // Initialize UNSName - this was missing!
         };
 
         _topicCache.TryAdd(eventData.Topic, topicInfo);
@@ -239,7 +264,9 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
                 CreatedAt = topicInfo.CreatedAt,
                 ModifiedAt = eventData.VerifiedAt,
                 Description = topicInfo.Description,
-                Metadata = topicInfo.Metadata
+                Metadata = topicInfo.Metadata,
+                NSPath = topicInfo.NSPath,
+                UNSName = topicInfo.UNSName
             };
             _topicCache.TryUpdate(eventData.Topic, updatedTopic, topicInfo);
         }
@@ -258,7 +285,9 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
                 CreatedAt = topicInfo.CreatedAt,
                 ModifiedAt = eventData.Timestamp,
                 Description = topicInfo.Description,
-                Metadata = topicInfo.Metadata
+                Metadata = topicInfo.Metadata,
+                NSPath = topicInfo.NSPath,
+                UNSName = topicInfo.UNSName
             };
             _topicCache.TryUpdate(eventData.Topic, updatedTopic, topicInfo);
         }
@@ -279,7 +308,9 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
                 CreatedAt = createdAt,
                 ModifiedAt = createdAt,
                 Description = "",
-                Metadata = new Dictionary<string, object>()
+                Metadata = new Dictionary<string, object>(),
+                NSPath = "",
+                UNSName = ""
             };
 
             if (_topicCache.TryAdd(topic, topicInfo))

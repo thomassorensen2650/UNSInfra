@@ -245,14 +245,14 @@ public class SQLiteDataIngestionConfigurationRepository : IDataIngestionConfigur
     /// </summary>
     private DataIngestionConfigurationEntity SerializeToEntity(IDataIngestionConfiguration configuration)
     {
-        var configJson = JsonSerializer.Serialize(configuration, new JsonSerializerOptions
+        var configJson = JsonSerializer.Serialize((object)configuration, new JsonSerializerOptions
         {
             WriteIndented = false,
             PropertyNamingPolicy = JsonNamingPolicy.CamelCase
         });
 
         var metadataJson = configuration.Metadata.Any() 
-            ? JsonSerializer.Serialize(configuration.Metadata)
+            ? JsonSerializer.Serialize((object)configuration.Metadata)
             : null;
 
         return new DataIngestionConfigurationEntity
