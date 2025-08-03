@@ -11,6 +11,36 @@
 <PageTitle>Data Model</PageTitle>
 
 <div class="liveview-container">
+    <!-- Topics section now on the right -->
+    <div class="topics-section">
+        @if (_isLoadingTopics)
+        {
+            <div class="d-flex justify-content-end align-items-center mb-2">
+                <div class="d-flex align-items-center">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <small class="text-muted">Updating...</small>
+                </div>
+            </div>
+        }
+        <div class="tree-container">
+            @if (_isInitialLoad && Topics.Count == 0)
+            {
+                <div class="d-flex align-items-center justify-content-center py-4">
+                    <div class="spinner-border spinner-border-sm me-2" role="status">
+                        <span class="visually-hidden">Loading...</span>
+                    </div>
+                    <span class="text-muted">Loading topics...</span>
+                </div>
+            }
+            else
+            {
+                <TopicTree @ref="TopicTreeComponent" Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" OnAddDataToNamespace="OnAddDataToNamespace" />
+            }
+        </div>
+    </div>
+    
     <!-- Payload section now on the left -->
     <div class="payload-section">
         @if (SelectedTopic != null)
@@ -25,7 +55,7 @@
                         </button>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <button class="nav-link @(activeDetailTab == "data" ? "active" : "")" id="data-tab" type="button" role="tab" 
+                        <button class="nav-link @(activeDetailTab == "data" ? "active" : "")" id="data-tab" type="button" role="tab"
                                 @onclick="@(() => SetActiveDetailTab("data"))">
                             <i class="bi bi-code-square me-1"></i> Data
                         </button>
@@ -46,7 +76,7 @@
                     <!-- Meta Tab -->
                     <div class="tab-pane @(activeDetailTab == "meta" ? "show active" : "")" id="meta-pane" role="tabpanel">
                         <div class="metadata-container">
-                            <TopicMetadataEditor SelectedTopic="SelectedTopic" OnTopicUpdated="OnTopicUpdated" />
+                            <TopicMetadataEditor SelectedTopic="SelectedTopic" OnTopicUpdated="OnTopicUpdated"/>
                         </div>
                     </div>
 
@@ -55,7 +85,7 @@
                         <div class="payload-container">
                             @if (SelectedPayload != null)
                             {
-                                <pre class="payload-content">@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true})</pre>
+                                <pre class="payload-content">@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })</pre>
                             }
                             else
                             {
@@ -87,18 +117,18 @@
                                         {
                                             <div class="col-md-3">
                                                 <label class="form-label small">Start Date</label>
-                                                <input type="datetime-local" class="form-control form-control-sm" @bind="historyStartDate" />
+                                                <input type="datetime-local" class="form-control form-control-sm" @bind="historyStartDate"/>
                                             </div>
                                             <div class="col-md-3">
                                                 <label class="form-label small">End Date</label>
-                                                <input type="datetime-local" class="form-control form-control-sm" @bind="historyEndDate" />
+                                                <input type="datetime-local" class="form-control form-control-sm" @bind="historyEndDate"/>
                                             </div>
                                         }
                                         else
                                         {
                                             <div class="col-md-3">
                                                 <label class="form-label small">Number of Values</label>
-                                                <input type="number" class="form-control form-control-sm" @bind="historyValueCount" min="1" max="1000" placeholder="100" />
+                                                <input type="number" class="form-control form-control-sm" @bind="historyValueCount" min="1" max="1000" placeholder="100"/>
                                             </div>
                                         }
                                         <div class="col-md-3 d-flex align-items-end">
@@ -134,25 +164,25 @@
                                         <div class="table-responsive">
                                             <table class="table table-sm table-striped">
                                                 <thead>
-                                                    <tr>
-                                                        <th>Timestamp</th>
-                                                        <th>Value</th>
-                                                        <th>Source</th>
-                                                    </tr>
+                                                <tr>
+                                                    <th>Timestamp</th>
+                                                    <th>Value</th>
+                                                    <th>Source</th>
+                                                </tr>
                                                 </thead>
                                                 <tbody>
-                                                    @foreach (var dataPoint in historicalData.OrderByDescending(d => d.Timestamp))
-                                                    {
-                                                        <tr>
-                                                            <td>@dataPoint.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
-                                                            <td>
-                                                                <code class="small">@System.Text.Json.JsonSerializer.Serialize(dataPoint.Value, new System.Text.Json.JsonSerializerOptions { WriteIndented = false })</code>
-                                                            </td>
-                                                            <td>
-                                                                <span class="badge bg-info">@dataPoint.Source</span>
-                                                            </td>
-                                                        </tr>
-                                                    }
+                                                @foreach (var dataPoint in historicalData.OrderByDescending(d => d.Timestamp))
+                                                {
+                                                    <tr>
+                                                        <td>@dataPoint.Timestamp.ToString("yyyy-MM-dd HH:mm:ss")</td>
+                                                        <td>
+                                                            <code class="small">@System.Text.Json.JsonSerializer.Serialize(dataPoint.Value, new System.Text.Json.JsonSerializerOptions { WriteIndented = false })</code>
+                                                        </td>
+                                                        <td>
+                                                            <span class="badge bg-info">@dataPoint.Source</span>
+                                                        </td>
+                                                    </tr>
+                                                }
                                                 </tbody>
                                             </table>
                                         </div>
@@ -198,36 +228,6 @@
                 </div>
             </div>
         }
-    </div>
-    
-    <!-- Topics section now on the right -->
-    <div class="topics-section">
-        @if (_isLoadingTopics)
-        {
-            <div class="d-flex justify-content-end align-items-center mb-2">
-                <div class="d-flex align-items-center">
-                    <div class="spinner-border spinner-border-sm me-2" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <small class="text-muted">Updating...</small>
-                </div>
-            </div>
-        }
-        <div class="tree-container">
-            @if (_isInitialLoad && Topics.Count == 0)
-            {
-                <div class="d-flex align-items-center justify-content-center py-4">
-                    <div class="spinner-border spinner-border-sm me-2" role="status">
-                        <span class="visually-hidden">Loading...</span>
-                    </div>
-                    <span class="text-muted">Loading topics...</span>
-                </div>
-            }
-            else
-            {
-                <TopicTree @ref="TopicTreeComponent" Topics="Topics" HighlightedPaths="HighlightedPaths" OnTopicSelected="OnTopicSelected" OnAddDataToNamespace="OnAddDataToNamespace" />
-            }
-        </div>
     </div>
 </div>
 

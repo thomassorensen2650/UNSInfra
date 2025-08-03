@@ -24,11 +24,13 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Services.SocketIO"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Storage.SQLite", "src\UNSInfra.Storage.SQLite\UNSInfra.Storage.SQLite.csproj", "{46977E40-75BD-4BF4-91CA-CB2AA349E9BD}"
 EndProject
-Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{827E0CD3-B72D-47B6-A68D-7590B98EB39B}"
-EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Core.Tests", "src\UNSInfra.Core.Tests\UNSInfra.Core.Tests.csproj", "{1D58A6DC-A1C0-421F-A767-26D975E72D3E}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Services.V1.Tests", "src\UNSInfra.Services.V1.Tests\UNSInfra.Services.V1.Tests.csproj", "{2F68B7EC-B1C1-4E3F-A8E9-3D4C5B6A7E8F}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{0C88DD14-F956-CE84-757C-A364CCF449FC}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.UI.Tests", "test\UNSInfra.UI.Tests\UNSInfra.UI.Tests.csproj", "{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -154,10 +156,23 @@ Global
 		{2F68B7EC-B1C1-4E3F-A8E9-3D4C5B6A7E8F}.Release|x64.Build.0 = Release|Any CPU
 		{2F68B7EC-B1C1-4E3F-A8E9-3D4C5B6A7E8F}.Release|x86.ActiveCfg = Release|Any CPU
 		{2F68B7EC-B1C1-4E3F-A8E9-3D4C5B6A7E8F}.Release|x86.Build.0 = Release|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Debug|x64.Build.0 = Debug|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Debug|x86.Build.0 = Debug|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Release|Any CPU.Build.0 = Release|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Release|x64.ActiveCfg = Release|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Release|x64.Build.0 = Release|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Release|x86.ActiveCfg = Release|Any CPU
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
 	EndGlobalSection
 	GlobalSection(NestedProjects) = preSolution
+		{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56} = {0C88DD14-F956-CE84-757C-A364CCF449FC}
 	EndGlobalSection
 EndGlobal

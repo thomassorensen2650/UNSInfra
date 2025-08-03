@@ -9,6 +9,7 @@ using UNSInfra.Repositories;
 using UNSInfra.Storage.Abstractions;
 using UNSInfra.Storage.InMemory;
 using UNSInfra.Storage.SQLite.Repositories;
+using UNSInfra.Storage.SQLite.Services;
 using UNSInfra.Storage.SQLite.Storage;
 
 namespace UNSInfra.Storage.SQLite.Extensions;
@@ -32,9 +33,10 @@ public static class ServiceCollectionExtensions
             string finalConnectionString;
             if (string.IsNullOrEmpty(connectionString))
             {
-                // Use SQLite with a file-based database
-                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-                    "UNSInfra", "unsinfra.db");
+                // Use SQLite with a file-based database in user's home directory
+                var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                var dbPath = Path.Combine(userHome, ".unsinfra", "unsinfra.db");
+                Console.WriteLine($"[SQLite] Using database path: {dbPath}");
                 
                 // Ensure directory exists
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
@@ -57,13 +59,13 @@ public static class ServiceCollectionExtensions
             options.EnableDetailedErrors(true);
             
             // Reduce EF Core logging verbosity
-            options.ConfigureWarnings(warnings => warnings.Log(
+            /* options.ConfigureWarnings(warnings => warnings.Log(
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuted, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuting, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandCreated, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandCreating, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.QueryExecutionPlanned, Microsoft.Extensions.Logging.LogLevel.Debug)
-            ));
+            )); */
         });
 
         // Also add regular DbContext for non-concurrent operations (like initialization)
@@ -72,8 +74,8 @@ public static class ServiceCollectionExtensions
             string finalConnectionString;
             if (string.IsNullOrEmpty(connectionString))
             {
-                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-                    "UNSInfra", "unsinfra.db");
+                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
+                    ".unsinfra", "unsinfra.db");
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
                 finalConnectionString = $"Data Source={dbPath};Cache=Shared;Pooling=True;";
             }
@@ -90,13 +92,13 @@ public static class ServiceCollectionExtensions
             options.EnableDetailedErrors(true);
             
             // Reduce EF Core logging verbosity
-            options.ConfigureWarnings(warnings => warnings.Log(
+           /* options.ConfigureWarnings(warnings => warnings.Log(
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuted, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuting, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandCreated, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandCreating, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.QueryExecutionPlanned, Microsoft.Extensions.Logging.LogLevel.Debug)
-            ));
+            )); */
         });
 
         // Add repositories
@@ -105,11 +107,14 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISchemaRepository, SQLiteSchemaRepository>();
         services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
         services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
-        services.AddScoped<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
+        services.AddSingleton<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
 
         // Add storage services - Realtime storage as singleton for in-memory cache, Historical as scoped
         services.AddSingleton<IRealtimeStorage, SQLiteRealtimeStorage>();
         services.AddScoped<IHistoricalStorage, SQLiteHistoricalStorage>();
+
+        // Add database health check service
+        services.AddScoped<DatabaseHealthCheckService>();
 
         return services;
     }
@@ -202,9 +207,10 @@ public static class ServiceCollectionExtensions
             string finalConnectionString;
             if (string.IsNullOrEmpty(connectionString))
             {
-                // Use SQLite with a file-based database
-                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-                    "UNSInfra", "unsinfra.db");
+                // Use SQLite with a file-based database in user's home directory
+                var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                var dbPath = Path.Combine(userHome, ".unsinfra", "unsinfra.db");
+                Console.WriteLine($"[SQLite] Using database path: {dbPath}");
                 
                 // Ensure directory exists
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
@@ -242,8 +248,8 @@ public static class ServiceCollectionExtensions
             string finalConnectionString;
             if (string.IsNullOrEmpty(connectionString))
             {
-                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-                    "UNSInfra", "unsinfra.db");
+                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
+                    ".unsinfra", "unsinfra.db");
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
                 finalConnectionString = $"Data Source={dbPath};Cache=Shared;Pooling=True;";
             }
@@ -289,9 +295,10 @@ public static class ServiceCollectionExtensions
             string finalConnectionString;
             if (string.IsNullOrEmpty(connectionString))
             {
-                // Use SQLite with a file-based database
-                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-                    "UNSInfra", "unsinfra.db");
+                // Use SQLite with a file-based database in user's home directory
+                var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+                var dbPath = Path.Combine(userHome, ".unsinfra", "unsinfra.db");
+                Console.WriteLine($"[SQLite] Using database path: {dbPath}");
                 
                 // Ensure directory exists
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
@@ -329,8 +336,8 @@ public static class ServiceCollectionExtensions
             string finalConnectionString;
             if (string.IsNullOrEmpty(connectionString))
             {
-                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-                    "UNSInfra", "unsinfra.db");
+                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
+                    ".unsinfra", "unsinfra.db");
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
                 finalConnectionString = $"Data Source={dbPath};Cache=Shared;Pooling=True;";
             }
@@ -347,13 +354,13 @@ public static class ServiceCollectionExtensions
             options.EnableDetailedErrors(true);
             
             // Reduce EF Core logging verbosity
-            options.ConfigureWarnings(warnings => warnings.Log(
+            /*options.ConfigureWarnings(warnings => warnings.Log(
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuted, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandExecuting, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandCreated, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.RelationalEventId.CommandCreating, Microsoft.Extensions.Logging.LogLevel.Debug),
                 (Microsoft.EntityFrameworkCore.Diagnostics.CoreEventId.QueryExecutionPlanned, Microsoft.Extensions.Logging.LogLevel.Debug)
-            ));
+            ));*/
         });
 
         // Add repositories
@@ -362,7 +369,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISchemaRepository, SQLiteSchemaRepository>();
         services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
         services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
-        services.AddScoped<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
+        services.AddSingleton<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
 
         return services;
     }
@@ -391,8 +398,8 @@ public static class ServiceCollectionExtensions
                 // Use SQLite with a file-based database
                 var dbPath = !string.IsNullOrEmpty(historicalStorageConfig.SQLite.DatabasePath)
                     ? historicalStorageConfig.SQLite.DatabasePath
-                    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-                        "UNSInfra", "historical-data.db");
+                    : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
+                        ".unsinfra", "historical-data.db");
                 
                 // Ensure directory exists
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
@@ -430,8 +437,8 @@ public static class ServiceCollectionExtensions
             string finalConnectionString;
             if (string.IsNullOrEmpty(connectionString))
             {
-                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), 
-                    "UNSInfra", "unsinfra.db");
+                var dbPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), 
+                    ".unsinfra", "unsinfra.db");
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
                 finalConnectionString = $"Data Source={dbPath};Cache=Shared;Pooling=True;";
             }
@@ -463,7 +470,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISchemaRepository, SQLiteSchemaRepository>();
         services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
         services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
-        services.AddScoped<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
+        services.AddSingleton<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
 
         // Add historical storage as scoped
         services.AddScoped<IHistoricalStorage, SQLiteHistoricalStorage>();

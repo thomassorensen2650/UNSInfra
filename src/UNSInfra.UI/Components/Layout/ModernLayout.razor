@@ -7,49 +7,40 @@
     <nav class="top-navbar">
         <div class="navbar-container">
             <!-- Brand -->
-            <div class="navbar-brand">
+            <a href="/" class="navbar-brand">
                 <i class="bi bi-diagram-3-fill me-2"></i>
                 <span>UNS Infrastructure</span>
-            </div>
+            </a>
 
             <!-- Desktop Navigation -->
             <div class="navbar-nav-desktop">
-                <NavLink class="nav-item" href="" Match="NavLinkMatch.All">
-                    <i class="bi bi-house-door"></i>
-                    <span>Overview</span>
+                <NavLink class="nav-item" href="ingress">
+                    <i class="bi bi-arrow-right-circle"></i>
+                    <span>Ingress</span>
                 </NavLink>
+                
                 <NavLink class="nav-item" href="data-model">
                     <i class="bi bi-diagram-3"></i>
                     <span>Data Model</span>
                 </NavLink>
-                <NavLink class="nav-item" href="ingress">
-                    <i class="bi bi-arrow-down-circle"></i>
-                    <span>Ingress</span>
-                </NavLink>
+
                 <NavLink class="nav-item" href="egress">
-                    <i class="bi bi-arrow-up-circle"></i>
+                    <i class="bi bi-arrow-right-circle"></i>
                     <span>Egress</span>
-                </NavLink>
-                <NavLink class="nav-item" href="connection-status">
-                    <i class="bi bi-activity"></i>
-                    <span>Status</span>
-                </NavLink>
-                <NavLink class="nav-item" href="schema-validation">
-                    <i class="bi bi-shield-check"></i>
-                    <span>Schema</span>
-                </NavLink>
-                <NavLink class="nav-item" href="logs">
-                    <i class="bi bi-journal-text"></i>
-                    <span>Logs</span>
-                </NavLink>
-                <NavLink class="nav-item" href="settings">
-                    <i class="bi bi-gear"></i>
-                    <span>Settings</span>
                 </NavLink>
             </div>
 
-            <!-- Theme Toggle & Mobile Menu -->
+            <!-- Icon Navigation & Actions -->
             <div class="navbar-actions">
+                <a href="/connection-status" class="nav-icon" title="Connection Status">
+                    <i class="bi bi-activity"></i>
+                </a>
+                <a href="/logs" class="nav-icon" title="Logs">
+                    <i class="bi bi-journal-text"></i>
+                </a>
+                <a href="/settings" class="nav-icon" title="Settings">
+                    <i class="bi bi-gear"></i>
+                </a>
                 <button class="theme-toggle" @onclick="ToggleTheme" title="Toggle theme">
                     <i class="bi @(currentTheme == "dark" ? "bi-sun" : "bi-moon")"></i>
                 </button>
@@ -69,20 +60,16 @@
     <!-- Mobile Sidebar -->
     <div class="mobile-sidebar @(isMobileMenuOpen ? "open" : "")">
         <div class="mobile-sidebar-header">
-            <div class="navbar-brand">
+            <a href="/" class="navbar-brand" @onclick="CloseMobileMenu">
                 <i class="bi bi-diagram-3-fill me-2"></i>
                 <span>UNS Infrastructure</span>
-            </div>
+            </a>
             <button class="close-sidebar" @onclick="CloseMobileMenu">
                 <i class="bi bi-x"></i>
             </button>
         </div>
         
         <nav class="mobile-nav">
-            <NavLink class="mobile-nav-item" href="" Match="NavLinkMatch.All" @onclick="CloseMobileMenu">
-                <i class="bi bi-house-door"></i>
-                <span>Overview</span>
-            </NavLink>
             <NavLink class="mobile-nav-item" href="data-model" @onclick="CloseMobileMenu">
                 <i class="bi bi-diagram-3"></i>
                 <span>Data Model</span>
@@ -98,10 +85,6 @@
             <NavLink class="mobile-nav-item" href="connection-status" @onclick="CloseMobileMenu">
                 <i class="bi bi-activity"></i>
                 <span>Status</span>
-            </NavLink>
-            <NavLink class="mobile-nav-item" href="schema-validation" @onclick="CloseMobileMenu">
-                <i class="bi bi-shield-check"></i>
-                <span>Schema</span>
             </NavLink>
             <NavLink class="mobile-nav-item" href="logs" @onclick="CloseMobileMenu">
                 <i class="bi bi-journal-text"></i>

@@ -1,0 +1,375 @@
+/* Settings Page Styles */
+.settings-page {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0;
+}
+
+.settings-header {
+    margin-bottom: 2rem;
+}
+
+.settings-header h3 {
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.settings-header p {
+    margin-bottom: 0;
+    font-size: 1.1rem;
+}
+
+/* Settings Tabs */
+.settings-tabs {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: var(--shadow);
+}
+
+.settings-tabs .nav-tabs {
+    background-color: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+    padding: 0 1rem;
+    margin: 0;
+}
+
+.settings-tabs .nav-tabs .nav-link {
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    padding: 1rem 1.5rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    border-radius: 0;
+}
+
+.settings-tabs .nav-tabs .nav-link:hover {
+    background-color: var(--bg-accent);
+    color: var(--text-primary);
+    border-color: transparent;
+}
+
+.settings-tabs .nav-tabs .nav-link.active {
+    background-color: var(--card-bg);
+    color: var(--primary-color);
+    border-color: var(--border-color) var(--border-color) var(--card-bg);
+    position: relative;
+}
+
+.settings-tabs .nav-tabs .nav-link.active::after {
+    content: '';
+    position: absolute;
+    bottom: -1px;
+    left: 0;
+    right: 0;
+    height: 2px;
+    background-color: var(--primary-color);
+}
+
+.settings-tabs .nav-tabs .nav-link i {
+    font-size: 1rem;
+}
+
+/* Settings Content */
+.settings-content {
+    padding: 0;
+}
+
+.tab-section {
+    padding: 2rem;
+}
+
+.section-header {
+    margin-bottom: 2rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.section-header h5 {
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+    font-weight: 600;
+}
+
+.section-header p {
+    margin-bottom: 0;
+    color: var(--text-secondary);
+}
+
+/* Tab Panes */
+.tab-pane {
+    display: none;
+}
+
+.tab-pane.show.active {
+    display: block;
+}
+
+/* Cards within tabs */
+.tab-section .card {
+    background-color: var(--bg-secondary);
+    border-color: var(--border-color);
+    margin-bottom: 1.5rem;
+}
+
+.tab-section .card-header {
+    background-color: var(--bg-accent);
+    border-bottom-color: var(--border-color);
+}
+
+.tab-section .card-header h6 {
+    color: var(--text-primary);
+}
+
+.tab-section .card-body {
+    color: var(--text-primary);
+}
+
+/* Form Controls */
+.tab-section .form-control,
+.tab-section .form-select {
+    background-color: var(--card-bg);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+.tab-section .form-control:focus,
+.tab-section .form-select:focus {
+    background-color: var(--card-bg);
+    border-color: var(--primary-color);
+    color: var(--text-primary);
+    box-shadow: 0 0 0 0.2rem rgba(13, 122, 244, 0.25);
+}
+
+.tab-section .form-label {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+.tab-section .form-check-label {
+    color: var(--text-primary);
+}
+
+.tab-section .form-check-input:checked {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+/* Alert styling */
+.tab-section .alert {
+    border-color: var(--border-color);
+}
+
+.tab-section .alert-info {
+    background-color: rgba(13, 122, 244, 0.1);
+    border-color: rgba(13, 122, 244, 0.2);
+    color: var(--text-primary);
+}
+
+.tab-section .alert-link {
+    color: var(--primary-color);
+    font-weight: 600;
+}
+
+/* Button styles */
+.tab-section .btn-primary {
+    background-color: var(--primary-color);
+    border-color: var(--primary-color);
+}
+
+.tab-section .btn-primary:hover {
+    background-color: var(--primary-hover);
+    border-color: var(--primary-hover);
+}
+
+.tab-section .btn-outline-secondary {
+    color: var(--text-secondary);
+    border-color: var(--border-color);
+}
+
+.tab-section .btn-outline-secondary:hover {
+    background-color: var(--bg-accent);
+    border-color: var(--border-color);
+    color: var(--text-primary);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .settings-tabs .nav-tabs {
+        flex-direction: column;
+        padding: 0;
+    }
+    
+    .settings-tabs .nav-tabs .nav-link {
+        text-align: left;
+        border-bottom: 1px solid var(--border-color);
+        border-radius: 0;
+    }
+    
+    .settings-tabs .nav-tabs .nav-link:last-child {
+        border-bottom: none;
+    }
+    
+    .settings-tabs .nav-tabs .nav-link.active::after {
+        display: none;
+    }
+    
+    .tab-section {
+        padding: 1.5rem 1rem;
+    }
+    
+    .section-header {
+        margin-bottom: 1.5rem;
+    }
+}
+
+/* Schema validation specific styles */
+.schema-content-tab {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    min-height: 400px;
+}
+
+.schema-list {
+    padding: 1rem;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.schema-card {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+    overflow: hidden;
+    transition: all 0.2s ease;
+}
+
+.schema-card:hover {
+    border-color: var(--primary-color);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+}
+
+.schema-card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.schema-info {
+    flex: 1;
+}
+
+.schema-title {
+    margin: 0 0 0.25rem 0;
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.schema-topic {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    display: flex;
+    align-items: center;
+}
+
+.schema-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.schema-actions .btn {
+    font-size: 0.75rem;
+    padding: 0.25rem 0.5rem;
+}
+
+.schema-details {
+    padding: 1rem;
+}
+
+.detail-section h6 {
+    margin-bottom: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.property-types,
+.validation-rules {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.property-type,
+.validation-rule {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.25rem 0;
+}
+
+.property-type code {
+    background: var(--bg-accent);
+    padding: 0.125rem 0.375rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+}
+
+.type-badge {
+    background: var(--primary-color);
+    color: white;
+    padding: 0.125rem 0.375rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.rule-property {
+    font-weight: 500;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+}
+
+.rule-type {
+    font-size: 0.75rem;
+}
+
+.rule-value {
+    font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+.empty-schemas-state {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 300px;
+    flex-direction: column;
+    gap: 1rem;
+    color: var(--text-muted);
+    padding: 2rem;
+}
+
+.empty-schemas-state i {
+    font-size: 3rem;
+    opacity: 0.5;
+}
+
+/* Smooth transitions */
+.settings-tabs,
+.settings-tabs *,
+.tab-section .card,
+.tab-section .form-control,
+.tab-section .form-select,
+.schema-card {
+    transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+}

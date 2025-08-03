@@ -2,6 +2,8 @@
 @using UNSInfra.Core.Configuration
 @using UNSInfra.Core.Services
 @using UNSInfra.Core.Repositories
+@using UNSInfra.Services.SocketIO.Configuration
+@using UNSInfra.Services.V1.Configuration
 @inject IDataIngestionServiceManager ServiceManager
 @inject IDataIngestionConfigurationRepository ConfigurationRepository
 @inject ILogger<ConnectionStatus> Logger
@@ -163,6 +165,12 @@
                             <div class="d-flex justify-content-between">
                                 <span class="text-muted">Active Connections:</span>
                                 <span class="fw-bold">@(serviceStatuses?.Count ?? 0)</span>
+                            </div>
+                        </div>
+                        <div class="col-12">
+                            <div class="d-flex justify-content-between">
+                                <span class="text-muted">Auto Mapper Enabled:</span>
+                                <span class="fw-bold">@GetAutoMapperEnabledCount()</span>
                             </div>
                         </div>
                     </div>
@@ -381,6 +389,34 @@
     {
         connectionHistory.Clear();
         StateHasChanged();
+    }
+
+    private string GetAutoMapperEnabledCount()
+    {
+        if (configurations == null || !configurations.Any())
+            return "0/0";
+
+        var totalWithAutoMapper = 0;
+        var enabledCount = 0;
+
+        foreach (var config in configurations)
+        {
+            switch (config)
+            {
+                case SocketIODataIngestionConfiguration socketConfig when socketConfig.AutoMapperConfiguration != null:
+                    totalWithAutoMapper++;
+                    if (socketConfig.AutoMapperConfiguration.Enabled)
+                        enabledCount++;
+                    break;
+                case MqttDataIngestionConfiguration mqttConfig when mqttConfig.AutoMapperConfiguration != null:
+                    totalWithAutoMapper++;
+                    if (mqttConfig.AutoMapperConfiguration.Enabled)
+                        enabledCount++;
+                    break;
+            }
+        }
+
+        return $"{enabledCount}/{totalWithAutoMapper}";
     }
 
     public void Dispose()

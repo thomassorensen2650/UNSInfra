@@ -1,114 +1,717 @@
 @page "/settings"
-@using UNSInfra.Services.TopicBrowser
 @using UNSInfra.UI.Components
+@using UNSInfra.Models.Schema
+@using UNSInfra.Repositories
+@using UNSInfra.Validation
+@using UNSInfra.Services.TopicBrowser
+@using UNSInfra.Models.Data
+@using System.Text.Json
+@inject ISchemaRepository SchemaRepository
+@inject ISchemaValidator SchemaValidator
 @inject ITopicBrowserService TopicBrowserService
+@inject ILogger<Settings> Logger
+@implements IDisposable
 
 <PageTitle>Settings</PageTitle>
 
-<h3>Settings</h3>
+<div class="settings-page">
+    <div class="settings-header">
+        <h3>
+            <i class="bi bi-gear me-2"></i>
+            Settings
+        </h3>
+        <p class="text-muted">Configure your UNS Infrastructure system</p>
+    </div>
 
-<div class="row">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5>Topic Statistics</h5>
+    <div class="settings-tabs">
+        <ul class="nav nav-tabs" id="settingsTabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "storage" ? "active" : "")" 
+                        type="button" role="tab"
+                        @onclick="@(() => SetActiveTab("storage"))">
+                    <i class="bi bi-database me-2"></i>
+                    Storage
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "hierarchy" ? "active" : "")" 
+                        type="button" role="tab"
+                        @onclick="@(() => SetActiveTab("hierarchy"))">
+                    <i class="bi bi-diagram-3 me-2"></i>
+                    Hierarchy
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "connections" ? "active" : "")" 
+                        type="button" role="tab"
+                        @onclick="@(() => SetActiveTab("connections"))">
+                    <i class="bi bi-link-45deg me-2"></i>
+                    Connections
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "schemas" ? "active" : "")" 
+                        type="button" role="tab"
+                        @onclick="@(() => SetActiveTab("schemas"))">
+                    <i class="bi bi-shield-check me-2"></i>
+                    Schemas
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "system" ? "active" : "")" 
+                        type="button" role="tab"
+                        @onclick="@(() => SetActiveTab("system"))">
+                    <i class="bi bi-cpu me-2"></i>
+                    System
+                </button>
+            </li>
+        </ul>
+
+        <div class="tab-content settings-content">
+            <!-- Storage Configuration Tab -->
+            <div class="tab-pane @(activeTab == "storage" ? "show active" : "")" role="tabpanel">
+                <div class="tab-section">
+                    <div class="section-header">
+                        <h5>Storage Configuration</h5>
+                        <p class="text-muted">Configure data storage settings for real-time and historical data</p>
+                    </div>
+                    <HistoricalStorageConfigurationEditor />
+                </div>
             </div>
-            <div class="card-body">
-                @if (TopicStatss != null)
-                {
-                    <dl class="row">
-                        <dt class="col-sm-6">Total Topics:</dt>
-                        <dd class="col-sm-6">@TopicStatss.TotalTopics</dd>
+
+            <!-- Hierarchy Configuration Tab -->
+            <div class="tab-pane @(activeTab == "hierarchy" ? "show active" : "")" role="tabpanel">
+                <div class="tab-section">
+                    <div class="section-header">
+                        <h5>Hierarchy Configuration</h5>
+                        <p class="text-muted">Define and manage ISA-S95 hierarchical structures</p>
+                    </div>
+                    <HierarchyEditor />
+                </div>
+            </div>
+
+            <!-- Connections Configuration Tab -->
+            <div class="tab-pane @(activeTab == "connections" ? "show active" : "")" role="tabpanel">
+                <div class="tab-section">
+                    <div class="section-header">
+                        <h5>Data Connections</h5>
+                        <p class="text-muted">Configure MQTT, Socket.IO, and other data source connections</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="d-flex align-items-center justify-content-between mb-3">
+                                <h6 class="mb-0">Active Connections</h6>
+                                <button class="btn btn-primary btn-sm">
+                                    <i class="bi bi-plus me-1"></i>
+                                    Add Connection
+                                </button>
+                            </div>
+                            <div class="alert alert-info">
+                                <i class="bi bi-info-circle me-2"></i>
+                                Connection management is available in the <a href="/ingress" class="alert-link">Ingress</a> section.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Schema Validation Tab -->
+            <div class="tab-pane @(activeTab == "schemas" ? "show active" : "")" role="tabpanel">
+                <div class="tab-section">
+                    <div class="section-header">
+                        <h5>Data Schema Validation</h5>
+                        <p class="text-muted">Create and manage JSON schemas for topic data validation</p>
+                    </div>
+                    
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <div class="row g-3 flex-grow-1">
+                            <div class="col-md-6">
+                                <div class="input-group">
+                                    <span class="input-group-text">
+                                        <i class="bi bi-search"></i>
+                                    </span>
+                                    <input type="text" class="form-control" placeholder="Search schemas..." 
+                                           @bind="searchTerm" @oninput="OnSearchChanged" />
+                                </div>
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" @bind="selectedTopic" @bind:after="OnTopicFilterChanged">
+                                    <option value="">All Topics</option>
+                                    @foreach (var topic in availableTopics)
+                                    {
+                                        <option value="@topic">@topic</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-outline-secondary w-100" @onclick="RefreshSchemas">
+                                    <i class="bi bi-arrow-clockwise me-1"></i>
+                                    Refresh
+                                </button>
+                            </div>
+                        </div>
+                        <div class="ms-3">
+                            <button class="btn btn-primary" @onclick="ShowCreateSchemaModal">
+                                <i class="bi bi-plus-circle me-1"></i>
+                                Create Schema
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="schema-content-tab">
+                        @if (isLoading)
+                        {
+                            <div class="text-center py-4">
+                                <div class="spinner-border spinner-border-sm me-2" role="status">
+                                    <span class="visually-hidden">Loading...</span>
+                                </div>
+                                Loading schemas...
+                            </div>
+                        }
+                        else if (!displayedSchemas.Any())
+                        {
+                            <div class="empty-schemas-state">
+                                <i class="bi bi-shield-exclamation"></i>
+                                <div class="text-center">
+                                    <h5>No Schemas Found</h5>
+                                    <p class="mb-3">
+                                        @if (!string.IsNullOrWhiteSpace(searchTerm))
+                                        {
+                                            <span>No schemas match your search criteria. Try adjusting your filters.</span>
+                                        }
+                                        else
+                                        {
+                                            <span>No data schemas have been created yet. Create your first schema to start validating topic data.</span>
+                                        }
+                                    </p>
+                                    <button class="btn btn-primary" @onclick="ShowCreateSchemaModal">
+                                        <i class="bi bi-plus-circle me-1"></i>
+                                        Create First Schema
+                                    </button>
+                                </div>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="schema-list">
+                                @foreach (var schema in displayedSchemas)
+                                {
+                                    <div class="schema-card">
+                                        <div class="schema-card-header">
+                                            <div class="schema-info">
+                                                <h6 class="schema-title">@schema.SchemaId</h6>
+                                                <div class="schema-topic">
+                                                    <i class="bi bi-diagram-3 me-1"></i>
+                                                    @schema.Topic
+                                                </div>
+                                            </div>
+                                            <div class="schema-actions">
+                                                <button class="btn btn-sm btn-outline-primary" @onclick="() => ShowValidationTest(schema)">
+                                                    <i class="bi bi-check-circle"></i>
+                                                    Test
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-secondary" @onclick="() => EditSchema(schema)">
+                                                    <i class="bi bi-pencil"></i>
+                                                    Edit
+                                                </button>
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteSchema(schema)">
+                                                    <i class="bi bi-trash"></i>
+                                                    Delete
+                                                </button>
+                                            </div>
+                                        </div>
+                                        
+                                        <div class="schema-details">
+                                            <div class="row">
+                                                <div class="col-md-6">
+                                                    <div class="detail-section">
+                                                        <h6>Property Types</h6>
+                                                        @if (schema.PropertyTypes.Any())
+                                                        {
+                                                            <div class="property-types">
+                                                                @foreach (var prop in schema.PropertyTypes)
+                                                                {
+                                                                    <div class="property-type">
+                                                                        <code>@prop.Key</code>
+                                                                        <span class="type-badge">@prop.Value.Name</span>
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="text-muted small">No property types defined</div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                                <div class="col-md-6">
+                                                    <div class="detail-section">
+                                                        <h6>Validation Rules</h6>
+                                                        @if (schema.ValidationRules.Any())
+                                                        {
+                                                            <div class="validation-rules">
+                                                                @foreach (var rule in schema.ValidationRules)
+                                                                {
+                                                                    <div class="validation-rule">
+                                                                        <span class="rule-property">@rule.PropertyName</span>
+                                                                        <span class="badge bg-secondary rule-type">@rule.RuleType</span>
+                                                                        <code class="rule-value">@rule.RuleValue</code>
+                                                                    </div>
+                                                                }
+                                                            </div>
+                                                        }
+                                                        else
+                                                        {
+                                                            <div class="text-muted small">No validation rules defined</div>
+                                                        }
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </div>
+                </div>
+            </div>
+
+            <!-- System Configuration Tab -->
+            <div class="tab-pane @(activeTab == "system" ? "show active" : "")" role="tabpanel">
+                <div class="tab-section">
+                    <div class="section-header">
+                        <h5>System Configuration</h5>
+                        <p class="text-muted">General system settings and preferences</p>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-clock me-2"></i>
+                                        Refresh Settings
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Auto-refresh Interval (seconds)</label>
+                                        <select class="form-select">
+                                            <option value="5">5 seconds</option>
+                                            <option value="10" selected>10 seconds</option>
+                                            <option value="30">30 seconds</option>
+                                            <option value="60">1 minute</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="enableAutoRefresh" checked>
+                                        <label class="form-check-label" for="enableAutoRefresh">
+                                            Enable auto-refresh
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
                         
-                        <dt class="col-sm-6">UNS Assigned Topics:</dt>
-                        <dd class="col-sm-6">@TopicStatss.UNSAssignedTopics</dd>
-                        
-                        <dt class="col-sm-6">Unassigned Topics:</dt>
-                        <dd class="col-sm-6">@TopicStatss.UnassignedTopics</dd>
-                        
-                        <dt class="col-sm-6">Active Topics:</dt>
-                        <dd class="col-sm-6">@TopicStatss.ActiveTopics</dd>
-                    </dl>
-                }
-                else
-                {
-                    <p class="text-muted">Loading statistics...</p>
-                }
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-palette me-2"></i>
+                                        Appearance
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="mb-3">
+                                        <label class="form-label">Theme</label>
+                                        <select class="form-select">
+                                            <option value="auto">Auto (System)</option>
+                                            <option value="light" selected>Light</option>
+                                            <option value="dark">Dark</option>
+                                        </select>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" id="compactMode">
+                                        <label class="form-check-label" for="compactMode">
+                                            Compact mode
+                                        </label>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <div class="card">
+                            <div class="card-header">
+                                <h6 class="mb-0">
+                                    <i class="bi bi-shield-check me-2"></i>
+                                    Security & Logging
+                                </h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Log Level</label>
+                                            <select class="form-select">
+                                                <option value="trace">Trace</option>
+                                                <option value="debug">Debug</option>
+                                                <option value="info" selected>Information</option>
+                                                <option value="warning">Warning</option>
+                                                <option value="error">Error</option>
+                                                <option value="critical">Critical</option>
+                                            </select>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6">
+                                        <div class="mb-3">
+                                            <label class="form-label">Log Retention (days)</label>
+                                            <input type="number" class="form-control" value="30" min="1" max="365">
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="form-check">
+                                    <input class="form-check-input" type="checkbox" id="enableAuditLog" checked>
+                                    <label class="form-check-label" for="enableAuditLog">
+                                        Enable audit logging
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4">
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary">
+                                <i class="bi bi-check me-1"></i>
+                                Save Settings
+                            </button>
+                            <button class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-counterclockwise me-1"></i>
+                                Reset to Defaults
+                            </button>
+                        </div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
-    
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5>System Information</h5>
-            </div>
-            <div class="card-body">
-                <dl class="row">
-                    <dt class="col-sm-6">Last Refresh:</dt>
-                    <dd class="col-sm-6">@LastRefresh.ToString("yyyy-MM-dd HH:mm:ss")</dd>
-                    
-                    <dt class="col-sm-6">Service Status:</dt>
-                    <dd class="col-sm-6">
-                        <span class="badge bg-success">Running</span>
-                    </dd>
-                    
-                    <dt class="col-sm-6">VirtualFactory:</dt>
-                    <dd class="col-sm-6">
-                        <span class="badge bg-warning">Disabled</span>
-                    </dd>
-                </dl>
-            </div>
-        </div>
-    </div>
-</div>
-
-<div class="mt-4">
-    <HistoricalStorageConfigurationEditor />
-</div>
-
-<div class="mt-4">
-    <HierarchyEditor />
 </div>
 
 @code {
-    private TopicStats? TopicStatss { get; set; }
-    private DateTime LastRefresh { get; set; } = DateTime.UtcNow;
+    private string activeTab = "storage";
+
+    // Schema validation properties
+    private List<DataSchema> allSchemas = new();
+    private List<DataSchema> displayedSchemas = new();
+    private List<string> availableTopics = new();
+    private string searchTerm = string.Empty;
+    private string selectedTopic = string.Empty;
+    private bool isLoading = false;
+
+    // Modal states
+    private bool showSchemaModal = false;
+    private bool showValidationModal = false;
+    private bool isValidating = false;
+    
+    // Editing state
+    private DataSchema editingSchema = new();
+    private List<PropertyTypeItem> editingPropertyTypes = new();
+    private List<ValidationRule> editingValidationRules = new();
+    private List<string> editingValidationRuleValues = new();
+    
+    // Validation testing
+    private DataSchema? selectedValidationSchema;
+    private string testJsonData = string.Empty;
+    private ValidationResult? validationResult;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadStatistics();
+        await RefreshSchemas();
     }
 
-    private async Task LoadStatistics()
+    private void SetActiveTab(string tabName)
     {
+        activeTab = tabName;
+    }
+
+    // Schema validation methods
+    private async Task RefreshSchemas()
+    {
+        isLoading = true;
+        StateHasChanged();
+
         try
         {
+            allSchemas = (await SchemaRepository.GetAllSchemasAsync()).ToList();
+            FilterSchemas();
+
+            // Update available topics
             var topics = await TopicBrowserService.GetLatestTopicStructureAsync();
-            var topicList = topics.ToList();
-            
-            TopicStatss = new TopicStats
-            {
-                TotalTopics = topicList.Count,
-                UNSAssignedTopics = topicList.Count(t => !string.IsNullOrEmpty(t.NSPath)),
-                UnassignedTopics = topicList.Count(t => string.IsNullOrEmpty(t.NSPath)),
-                ActiveTopics = topicList.Count(t => t.IsActive)
-            };
-            
-            LastRefresh = DateTime.UtcNow;
+            availableTopics = topics.Select(t => t.Topic).Distinct().OrderBy(t => t).ToList();
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading statistics: {ex.Message}");
+            Logger.LogError(ex, "Error loading schemas");
+        }
+        finally
+        {
+            isLoading = false;
+            StateHasChanged();
         }
     }
 
-
-    public class TopicStats
+    private void FilterSchemas()
     {
-        public int TotalTopics { get; set; }
-        public int UNSAssignedTopics { get; set; }
-        public int UnassignedTopics { get; set; }
-        public int ActiveTopics { get; set; }
+        var filtered = allSchemas.AsEnumerable();
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            filtered = filtered.Where(s => 
+                s.SchemaId.Contains(searchTerm, StringComparison.OrdinalIgnoreCase) ||
+                s.Topic.Contains(searchTerm, StringComparison.OrdinalIgnoreCase));
+        }
+
+        if (!string.IsNullOrWhiteSpace(selectedTopic))
+        {
+            filtered = filtered.Where(s => s.Topic == selectedTopic);
+        }
+
+        displayedSchemas = filtered.ToList();
     }
-} 
+
+    private void OnSearchChanged(ChangeEventArgs e)
+    {
+        searchTerm = e.Value?.ToString() ?? string.Empty;
+        FilterSchemas();
+        StateHasChanged();
+    }
+
+    private void OnTopicFilterChanged()
+    {
+        FilterSchemas();
+        StateHasChanged();
+    }
+
+    private void ShowCreateSchemaModal()
+    {
+        editingSchema = new DataSchema
+        {
+            SchemaId = "",
+            Topic = "",
+            JsonSchema = "",
+            PropertyTypes = new Dictionary<string, Type>(),
+            ValidationRules = new List<ValidationRule>()
+        };
+
+        editingPropertyTypes = new List<PropertyTypeItem>();
+        editingValidationRules = new List<ValidationRule>();
+        editingValidationRuleValues = new List<string>();
+
+        showSchemaModal = true;
+        StateHasChanged();
+    }
+
+    private void EditSchema(DataSchema schema)
+    {
+        editingSchema = new DataSchema
+        {
+            SchemaId = schema.SchemaId,
+            Topic = schema.Topic,
+            JsonSchema = schema.JsonSchema,
+            PropertyTypes = new Dictionary<string, Type>(schema.PropertyTypes),
+            ValidationRules = schema.ValidationRules.Select(r => new ValidationRule
+            {
+                PropertyName = r.PropertyName,
+                RuleType = r.RuleType,
+                RuleValue = r.RuleValue
+            }).ToList()
+        };
+
+        editingPropertyTypes = schema.PropertyTypes.Select(pt => new PropertyTypeItem
+        {
+            Key = pt.Key,
+            Value = pt.Value.Name
+        }).ToList();
+
+        editingValidationRules = editingSchema.ValidationRules.ToList();
+        editingValidationRuleValues = editingValidationRules.Select(r => r.RuleValue?.ToString() ?? "").ToList();
+
+        showSchemaModal = true;
+        StateHasChanged();
+    }
+
+    private async Task SaveSchema()
+    {
+        try
+        {
+            // Update property types
+            editingSchema.PropertyTypes.Clear();
+            foreach (var pt in editingPropertyTypes.Where(pt => !string.IsNullOrWhiteSpace(pt.Key)))
+            {
+                var type = pt.Value switch
+                {
+                    "String" => typeof(string),
+                    "Int32" => typeof(int),
+                    "Double" => typeof(double),
+                    "Boolean" => typeof(bool),
+                    _ => typeof(string)
+                };
+                editingSchema.PropertyTypes[pt.Key] = type;
+            }
+
+            // Update validation rules
+            editingSchema.ValidationRules.Clear();
+            for (int i = 0; i < editingValidationRules.Count; i++)
+            {
+                if (!string.IsNullOrWhiteSpace(editingValidationRules[i].PropertyName))
+                {
+                    var rule = editingValidationRules[i];
+                    if (i < editingValidationRuleValues.Count && !string.IsNullOrWhiteSpace(editingValidationRuleValues[i]))
+                    {
+                        rule.RuleValue = ParseRuleValue(rule.RuleType, editingValidationRuleValues[i]);
+                    }
+                    editingSchema.ValidationRules.Add(rule);
+                }
+            }
+
+            await SchemaRepository.SaveSchemaAsync(editingSchema);
+            await RefreshSchemas();
+            HideSchemaModal();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error saving schema");
+        }
+    }
+
+    private object ParseRuleValue(string ruleType, string value)
+    {
+        return ruleType switch
+        {
+            "Range" => value.Split(',').Select(v => double.Parse(v.Trim())).ToArray(),
+            "MinLength" or "MaxLength" => int.Parse(value),
+            _ => value
+        };
+    }
+
+    private async Task DeleteSchema(DataSchema schema)
+    {
+        Logger.LogInformation("Delete functionality not implemented yet for schema: {SchemaId}", schema.SchemaId);
+    }
+
+    private void HideSchemaModal()
+    {
+        showSchemaModal = false;
+        StateHasChanged();
+    }
+
+    private void AddPropertyType()
+    {
+        editingPropertyTypes.Add(new PropertyTypeItem { Key = "", Value = "String" });
+        StateHasChanged();
+    }
+
+    private void RemovePropertyType(int index)
+    {
+        if (index >= 0 && index < editingPropertyTypes.Count)
+        {
+            editingPropertyTypes.RemoveAt(index);
+            StateHasChanged();
+        }
+    }
+
+    private void AddValidationRule()
+    {
+        editingValidationRules.Add(new ValidationRule { PropertyName = "", RuleType = "Required" });
+        editingValidationRuleValues.Add("");
+        StateHasChanged();
+    }
+
+    private void RemoveValidationRule(int index)
+    {
+        if (index >= 0 && index < editingValidationRules.Count)
+        {
+            editingValidationRules.RemoveAt(index);
+            if (index < editingValidationRuleValues.Count)
+            {
+                editingValidationRuleValues.RemoveAt(index);
+            }
+            StateHasChanged();
+        }
+    }
+
+    private void ShowValidationTest(DataSchema schema)
+    {
+        selectedValidationSchema = schema;
+        testJsonData = "{\n  \"example\": \"value\",\n  \"number\": 42\n}";
+        validationResult = null;
+        showValidationModal = true;
+        StateHasChanged();
+    }
+
+    private async Task RunValidationTest()
+    {
+        if (selectedValidationSchema == null || string.IsNullOrWhiteSpace(testJsonData))
+            return;
+
+        isValidating = true;
+        validationResult = null;
+        StateHasChanged();
+
+        try
+        {
+            var jsonElement = JsonSerializer.Deserialize<JsonElement>(testJsonData);
+            var testDataPoint = new DataPoint
+            {
+                Topic = selectedValidationSchema.Topic,
+                Value = jsonElement,
+                Timestamp = DateTime.UtcNow,
+                Source = "ValidationTest"
+            };
+
+            validationResult = await SchemaValidator.ValidateWithDetailsAsync(testDataPoint, selectedValidationSchema);
+        }
+        catch (JsonException ex)
+        {
+            validationResult = new ValidationResult
+            {
+                IsValid = false,
+                Errors = new List<string> { $"Invalid JSON: {ex.Message}" }
+            };
+        }
+        catch (Exception ex)
+        {
+            validationResult = new ValidationResult
+            {
+                IsValid = false,
+                Errors = new List<string> { $"Validation error: {ex.Message}" }
+            };
+            Logger.LogError(ex, "Error during validation test");
+        }
+        finally
+        {
+            isValidating = false;
+            StateHasChanged();
+        }
+    }
+
+    private void HideValidationModal()
+    {
+        showValidationModal = false;
+        selectedValidationSchema = null;
+        StateHasChanged();
+    }
+
+    public void Dispose()
+    {
+        // Cleanup if needed
+    }
+
+    private class PropertyTypeItem
+    {
+        public string Key { get; set; } = string.Empty;
+        public string Value { get; set; } = "String";
+    }
+}

@@ -44,48 +44,6 @@ public class NamespaceStructureService : INamespaceStructureService
                 rootNodes.Add(treeNode);
             }
         }
-        
-        // Build namespace-only tree if no hierarchy instances exist
-        if (!rootNodes.Any() && namespacesList.Any())
-        {
-            // Create hierarchy nodes based on namespace hierarchical paths
-            var uniqueHierarchyPaths = namespacesList
-                .Select(ns => ns.HierarchicalPath)
-                .Where(path => !string.IsNullOrEmpty(GetHierarchyPathKey(path)))
-                .Distinct(new HierarchicalPathComparer())
-                .ToList();
-
-            foreach (var hierarchyPath in uniqueHierarchyPaths)
-            {
-                var hierarchyNode = await BuildHierarchyNodeTreeAsync(hierarchyPath, hierarchyConfig, namespacesList);
-                if (hierarchyNode != null)
-                {
-                    rootNodes.Add(hierarchyNode);
-                }
-            }
-
-            // Handle namespaces without hierarchical paths
-            var namespacesWithoutPath = namespacesList
-                .Where(ns => string.IsNullOrEmpty(GetHierarchyPathKey(ns.HierarchicalPath)) && string.IsNullOrEmpty(ns.ParentNamespaceId))
-                .ToList();
-
-            foreach (var ns in namespacesWithoutPath)
-            {
-                var nsNode = new NSTreeNode
-                {
-                    Name = ns.Name,
-                    FullPath = ns.Name,
-                    NodeType = NSNodeType.Namespace,
-                    Namespace = ns,
-                    CanHaveHierarchyChildren = false,
-                    CanHaveNamespaceChildren = true
-                };
-
-                await AddNestedNamespacesAsync(nsNode, namespacesList);
-                rootNodes.Add(nsNode);
-            }
-        }
-        
         return rootNodes;
     }
 

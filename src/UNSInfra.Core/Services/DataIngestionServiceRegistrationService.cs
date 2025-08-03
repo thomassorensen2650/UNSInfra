@@ -52,6 +52,9 @@ public class DataIngestionServiceRegistrationService : BackgroundService
             // Register all available service descriptors
             await RegisterServiceDescriptors();
 
+            // Perform database health check first
+            await PerformDatabaseHealthCheck();
+
             // Create default configurations if none exist
             await CreateDefaultConfigurationsIfNeeded();
 
@@ -136,6 +139,27 @@ public class DataIngestionServiceRegistrationService : BackgroundService
     }
 
     /// <summary>
+    /// Performs basic database connectivity test to ensure persistence is working.
+    /// </summary>
+    private async Task PerformDatabaseHealthCheck()
+    {
+        try
+        {
+            _logger.LogInformation("Performing basic database connectivity test...");
+            var repository = _serviceProvider.GetRequiredService<IDataIngestionConfigurationRepository>();
+            
+            // Test basic connectivity by trying to get all configurations
+            var testConfigs = await repository.GetAllConfigurationsAsync();
+            _logger.LogInformation("✅ Database connectivity test passed - found {ConfigCount} existing configurations", testConfigs.Count);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "❌ Database connectivity test failed - configuration persistence may not work properly");
+            // Don't throw - let the application continue but warn about potential issues
+        }
+    }
+
+    /// <summary>
     /// Creates default configurations if none exist, based on registered service descriptors.
     /// </summary>
     private async Task CreateDefaultConfigurationsIfNeeded()
@@ -144,6 +168,8 @@ public class DataIngestionServiceRegistrationService : BackgroundService
         {
             var repository = _serviceProvider.GetRequiredService<IDataIngestionConfigurationRepository>();
             var existingConfigurations = await repository.GetAllConfigurationsAsync();
+            
+            _logger.LogInformation("Found {ConfigCount} existing data ingestion configurations in database", existingConfigurations.Count);
             
             // If no configurations exist, create defaults for each registered service type
             if (!existingConfigurations.Any())
@@ -183,13 +209,33 @@ public class DataIngestionServiceRegistrationService : BackgroundService
                             defaultConfig.Description = $"Default configuration for {descriptor.DisplayName} - Edit and enable to use";
                         }
                         
-                        await repository.SaveConfigurationAsync(defaultConfig);
-                        _logger.LogInformation("Created default configuration for {ServiceType}", descriptor.ServiceType);
+                        var savedConfig = await repository.SaveConfigurationAsync(defaultConfig);
+                        _logger.LogInformation("Created default configuration for {ServiceType} with ID {ConfigId}", descriptor.ServiceType, savedConfig.Id);
+                        
+                        // Verify the configuration was actually persisted
+                        var verifyConfig = await repository.GetConfigurationAsync(savedConfig.Id);
+                        if (verifyConfig != null)
+                        {
+                            _logger.LogInformation("Verified configuration {ConfigId} was successfully persisted to database", savedConfig.Id);
+                        }
+                        else
+                        {
+                            _logger.LogError("CRITICAL: Configuration {ConfigId} for {ServiceType} was NOT persisted to database!", savedConfig.Id, descriptor.ServiceType);
+                        }
                     }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Failed to create default configuration for {ServiceType}", descriptor.ServiceType);
                     }
+                }
+                
+                // Final verification - check total count after creation
+                var finalConfigurations = await repository.GetAllConfigurationsAsync();
+                _logger.LogInformation("After default creation: {FinalConfigCount} configurations exist in database", finalConfigurations.Count);
+                
+                if (finalConfigurations.Count == 0)
+                {
+                    _logger.LogCritical("CRITICAL: No configurations found in database after creation process completed!");
                 }
             }
         }

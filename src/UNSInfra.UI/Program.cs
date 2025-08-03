@@ -8,6 +8,7 @@ using UNSInfra.Storage.SQLite.Extensions;
 using UNSInfra.Services.V1.Descriptors;
 using UNSInfra.Services.SocketIO.Descriptors;
 using UNSInfra.Core.Extensions;
+using UNSInfra.Core.Services;
 using UNSInfra.Services;
 using UNSInfra.Extensions;
 using UNSInfra.UI;
@@ -83,7 +84,7 @@ builder.Services.AddSignalR(options =>
 });
 
 // Add SignalR exception filter
-builder.Services.AddSingleton<SignalRExceptionFilter>();
+//builder.Services.AddSingleton<SignalRExceptionFilter>();
 
 
 // Register configurable storage services (IRealtimeStorage is always InMemory, IHistoricalStorage uses appsettings.json)
@@ -142,6 +143,5 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
-
 
 app.Run();

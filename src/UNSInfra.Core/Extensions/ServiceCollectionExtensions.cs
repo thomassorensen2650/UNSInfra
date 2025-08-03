@@ -22,11 +22,13 @@ public static class ServiceCollectionExtensions
         // Register the data ingestion service manager
         services.AddSingleton<IDataIngestionServiceManager, DataIngestionServiceManager>();
         
-        // Register the in-memory configuration repository
-        services.AddSingleton<IDataIngestionConfigurationRepository, InMemoryDataIngestionConfigurationRepository>();
+        // Note: IDataIngestionConfigurationRepository will be registered by the storage layer
+        // Don't register in-memory repository here as it would override SQLite implementation
         
         // Register the background service for managing service descriptors
         services.AddHostedService<DataIngestionServiceRegistrationService>();
+        
+        // Health check service will be registered by SQLite storage layer
         
         // Register auto topic mapping services
         services.AddAutoTopicMapping();

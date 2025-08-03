@@ -13,6 +13,8 @@ public class InMemoryHistoricalStorage : IHistoricalStorage
     private readonly ReaderWriterLockSlim _lock = new();
     private readonly InMemoryHistoricalStorageOptions _options;
     private long _totalDataPointCount = 0;
+    private long _insertionsSinceLastCleanup = 0;
+    private DateTime _lastCleanupTime = DateTime.UtcNow;
 
     public InMemoryHistoricalStorage(IOptions<HistoricalStorageConfiguration> configuration)
     {
@@ -140,7 +142,9 @@ public class InMemoryHistoricalStorage : IHistoricalStorage
 
     private void CleanupIfNeeded(string topic, ConcurrentQueue<DataPoint> queue)
     {
-        // Check per-topic limit
+        Interlocked.Increment(ref _insertionsSinceLastCleanup);
+        
+        // Check per-topic limit - this is efficient since it only affects one queue
         if (_options.MaxValuesPerDataPoint > 0 && queue.Count > _options.MaxValuesPerDataPoint)
         {
             var excessCount = queue.Count - _options.MaxValuesPerDataPoint;
@@ -153,56 +157,98 @@ public class InMemoryHistoricalStorage : IHistoricalStorage
             }
         }
         
-        // Check global limit
-        if (_options.MaxTotalValues > 0 && _totalDataPointCount > _options.MaxTotalValues)
+        // Check global limit with intelligent triggering
+        if (_options.MaxTotalValues > 0 && ShouldTriggerGlobalCleanup())
         {
-            CleanupOldestDataPoints();
+            CleanupOldestDataPointsOptimized();
         }
+    }
+
+    private bool ShouldTriggerGlobalCleanup()
+    {
+        var currentCount = _totalDataPointCount;
+        var maxValues = _options.MaxTotalValues;
+        
+        // Only trigger cleanup if we're significantly over the limit to avoid constant cleanup
+        var cleanupThreshold = maxValues * 1.2; // 20% over limit
+        
+        if (currentCount <= cleanupThreshold)
+            return false;
+            
+        // Also add time-based throttling - don't cleanup too frequently
+        var timeSinceLastCleanup = DateTime.UtcNow - _lastCleanupTime;
+        var minTimeBetweenCleanups = TimeSpan.FromSeconds(10); // At most every 10 seconds
+        
+        if (timeSinceLastCleanup < minTimeBetweenCleanups)
+            return false;
+            
+        // Or insertion-based throttling - only after significant activity
+        var minInsertionsBetweenCleanups = Math.Max(1000, maxValues / 100); // At least 1000 or 1% of max
+        
+        return _insertionsSinceLastCleanup >= minInsertionsBetweenCleanups;
+    }
+
+    private void CleanupOldestDataPointsOptimized()
+    {
+        var currentCount = _totalDataPointCount;
+        var targetCount = _options.MaxTotalValues;
+        var excessCount = currentCount - targetCount;
+        
+        if (excessCount <= 0) return;
+
+        // Console.WriteLine($"Optimized cleanup: removing {excessCount} data points from {currentCount} total");
+        
+        _lastCleanupTime = DateTime.UtcNow;
+        Interlocked.Exchange(ref _insertionsSinceLastCleanup, 0);
+        
+        var removedCount = 0;
+        var topicsToRemoveFrom = new List<(string topic, ConcurrentQueue<DataPoint> queue, int count)>();
+        
+        // Calculate how many items to remove from each topic proportionally
+        foreach (var kvp in _storageByTopic)
+        {
+            var topicCount = kvp.Value.Count;
+            if (topicCount > 0)
+            {
+                topicsToRemoveFrom.Add((kvp.Key, kvp.Value, topicCount));
+            }
+        }
+        
+        if (!topicsToRemoveFrom.Any()) return;
+        
+        // Remove items proportionally from each topic, starting with those that have the most items
+        var totalItems = topicsToRemoveFrom.Sum(t => t.count);
+        var remaining = excessCount;
+        
+        // Sort by count descending to remove from largest topics first
+        topicsToRemoveFrom.Sort((a, b) => b.count.CompareTo(a.count));
+        
+        foreach (var (topic, queue, count) in topicsToRemoveFrom)
+        {
+            if (remaining <= 0) break;
+            
+            // Calculate how many to remove from this topic (proportional to its size)
+            var proportionalRemoval = Math.Min(remaining, (int)Math.Ceiling((double)count * excessCount / totalItems));
+            
+            // But also ensure we don't remove more than half of any topic's data to maintain some history
+            var maxRemovalForTopic = Math.Max(1, count / 2);
+            var actualRemoval = Math.Min(proportionalRemoval, maxRemovalForTopic);
+            
+            // Remove oldest items from this topic
+            for (int i = 0; i < actualRemoval && queue.TryDequeue(out var _); i++)
+            {
+                removedCount++;
+                remaining--;
+            }
+        }
+        
+        Interlocked.Add(ref _totalDataPointCount, -removedCount);
+        // Console.WriteLine($"Optimized cleanup completed: removed {removedCount} data points, {_totalDataPointCount} remaining");
     }
 
     private void CleanupOldestDataPoints()
     {
-        var excessCount = _totalDataPointCount - _options.MaxTotalValues;
-        if (excessCount <= 0) return;
-
-        var removedCount = 0;
-        var allDataPoints = new List<(string topic, DataPoint dataPoint)>();
-        
-        // Collect all data points with their topics
-        foreach (var kvp in _storageByTopic)
-        {
-            var tempList = new List<DataPoint>();
-            while (kvp.Value.TryDequeue(out var dataPoint))
-            {
-                tempList.Add(dataPoint);
-            }
-            
-            foreach (var dp in tempList)
-            {
-                allDataPoints.Add((kvp.Key, dp));
-            }
-        }
-        
-        // Sort by timestamp (oldest first)
-        allDataPoints.Sort((a, b) => a.dataPoint.Timestamp.CompareTo(b.dataPoint.Timestamp));
-        
-        // Remove excess count from the beginning (oldest)
-        var toKeep = allDataPoints.Skip((int)excessCount).ToList();
-        removedCount = (int)excessCount;
-        
-        // Clear all queues
-        foreach (var kvp in _storageByTopic)
-        {
-            while (kvp.Value.TryDequeue(out var _)) { }
-        }
-        
-        // Re-populate with kept data points
-        foreach (var (topic, dataPoint) in toKeep)
-        {
-            var queue = _storageByTopic.GetOrAdd(topic, _ => new ConcurrentQueue<DataPoint>());
-            queue.Enqueue(dataPoint);
-        }
-        
-        Interlocked.Add(ref _totalDataPointCount, -removedCount);
+        // Legacy method kept for compatibility - redirect to optimized version
+        CleanupOldestDataPointsOptimized();
     }
 }

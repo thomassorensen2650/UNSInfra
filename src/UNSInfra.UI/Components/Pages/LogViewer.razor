@@ -176,7 +176,7 @@
     private List<LogEntry> displayedLogs = new();
     private HashSet<LogEntry> expandedLogs = new();
     private string searchTerm = string.Empty;
-    private LogLevel? selectedLogLevel;
+    private LogLevel? selectedLogLevel = LogLevel.Information;
     private DateTime? fromDate;
     private DateTime? toDate;
     private bool autoRefresh = true;
@@ -188,6 +188,11 @@
 
     protected override async Task OnInitializedAsync()
     {
+        // Set default date range to last 5 minutes
+        var now = DateTime.Now;
+        toDate = now;
+        fromDate = now.AddMinutes(-5);
+        
         RefreshLogs();
         LogService.LogAdded += OnLogAdded;
         

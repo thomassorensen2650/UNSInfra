@@ -1,6 +1,9 @@
 @using UNSInfra.Core.Configuration
 @using UNSInfra.Core.Services
 @using UNSInfra.Core.Repositories
+@using UNSInfra.Services.AutoMapping
+@using UNSInfra.Services.SocketIO.Configuration
+@using UNSInfra.Services.V1.Configuration
 @inject IDataIngestionServiceManager ServiceManager
 @inject IDataIngestionConfigurationRepository ConfigurationRepository
 @implements IDisposable
@@ -85,6 +88,42 @@
                                         </div>
                                     </div>
                                 </div>
+
+                                <!-- Auto Mapper Status -->
+                                @{
+                                    var autoMapperInfo = GetAutoMapperInfo(config);
+                                }
+                                @if (autoMapperInfo != null)
+                                {
+                                    <div class="border-top pt-2 mt-2">
+                                        <div class="d-flex justify-content-between align-items-center mb-1">
+                                            <small class="text-muted d-flex align-items-center">
+                                                <i class="bi bi-diagram-3 me-1"></i>
+                                                Auto Mapper:
+                                            </small>
+                                            <span class="badge @(autoMapperInfo.Enabled ? "bg-success" : "bg-secondary") small">
+                                                @(autoMapperInfo.Enabled ? "Enabled" : "Disabled")
+                                            </span>
+                                        </div>
+                                        @if (autoMapperInfo.Enabled)
+                                        {
+                                            <div class="row g-1">
+                                                <div class="col-6">
+                                                    <div class="d-flex justify-content-between">
+                                                        <small class="text-muted">Min Confidence:</small>
+                                                        <small class="fw-bold">@autoMapperInfo.MinConfidence.ToString("P0")</small>
+                                                    </div>
+                                                </div>
+                                                <div class="col-6">
+                                                    <div class="d-flex justify-content-between">
+                                                        <small class="text-muted">Case Sensitive:</small>
+                                                        <small class="fw-bold">@(autoMapperInfo.CaseSensitive ? "Yes" : "No")</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
 
                                 <!-- Connection Progress Bar for Connecting Status -->
                                 @if (status.Status == UNSInfra.Core.Configuration.ConnectionStatus.Connecting)
@@ -325,8 +364,42 @@
         }
     }
 
+    private AutoMapperInfo? GetAutoMapperInfo(IDataIngestionConfiguration? config)
+    {
+        if (config == null) return null;
+
+        return config switch
+        {
+            SocketIODataIngestionConfiguration socketConfig when socketConfig.AutoMapperConfiguration != null => 
+                new AutoMapperInfo
+                {
+                    Enabled = socketConfig.AutoMapperConfiguration.Enabled,
+                    MinConfidence = socketConfig.AutoMapperConfiguration.MinimumConfidence,
+                    CaseSensitive = socketConfig.AutoMapperConfiguration.CaseSensitive,
+                    StripPrefixes = socketConfig.AutoMapperConfiguration.StripPrefixes
+                },
+            MqttDataIngestionConfiguration mqttConfig when mqttConfig.AutoMapperConfiguration != null => 
+                new AutoMapperInfo
+                {
+                    Enabled = mqttConfig.AutoMapperConfiguration.Enabled,
+                    MinConfidence = mqttConfig.AutoMapperConfiguration.MinimumConfidence,
+                    CaseSensitive = mqttConfig.AutoMapperConfiguration.CaseSensitive,
+                    StripPrefixes = mqttConfig.AutoMapperConfiguration.StripPrefixes
+                },
+            _ => null
+        };
+    }
+
     public void Dispose()
     {
         refreshTimer?.Dispose();
+    }
+
+    private class AutoMapperInfo
+    {
+        public bool Enabled { get; set; }
+        public double MinConfidence { get; set; }
+        public bool CaseSensitive { get; set; }
+        public List<string> StripPrefixes { get; set; } = new();
     }
 }
