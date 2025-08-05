@@ -1,6 +1,7 @@
 using UNSInfra.Models.Namespace;
 using UNSInfra.Models.Hierarchy;
 using UNSInfra.Repositories;
+using UNSInfra.Services.Events;
 
 namespace UNSInfra.Services;
 
@@ -12,15 +13,18 @@ public class NamespaceStructureService : INamespaceStructureService
     private readonly IHierarchyConfigurationRepository _hierarchyRepository;
     private readonly INamespaceConfigurationRepository _namespaceRepository;
     private readonly INSTreeInstanceRepository _nsTreeInstanceRepository;
+    private readonly IEventBus _eventBus;
 
     public NamespaceStructureService(
         IHierarchyConfigurationRepository hierarchyRepository,
         INamespaceConfigurationRepository namespaceRepository,
-        INSTreeInstanceRepository nsTreeInstanceRepository)
+        INSTreeInstanceRepository nsTreeInstanceRepository,
+        IEventBus eventBus)
     {
         _hierarchyRepository = hierarchyRepository;
         _namespaceRepository = namespaceRepository;
         _nsTreeInstanceRepository = nsTreeInstanceRepository;
+        _eventBus = eventBus;
     }
 
     public async Task<IEnumerable<NSTreeNode>> GetNamespaceStructureAsync()
@@ -181,6 +185,14 @@ public class NamespaceStructureService : INamespaceStructureService
         
         var fullPath = string.IsNullOrEmpty(parentPath) ? namespaceConfig.Name : $"{parentPath}/{namespaceConfig.Name}";
         
+        // Publish namespace structure changed event for auto-mapper cache refresh
+        var namespaceChangedEvent = new NamespaceStructureChangedEvent(
+            ChangedNamespace: fullPath,
+            ChangeType: "Added",
+            ChangedBy: namespaceConfig.CreatedBy
+        );
+        await _eventBus.PublishAsync(namespaceChangedEvent);
+        
         return new NSTreeNode
         {
             Name = namespaceConfig.Name,
@@ -333,12 +345,35 @@ public class NamespaceStructureService : INamespaceStructureService
         };
 
         await _nsTreeInstanceRepository.SaveInstanceAsync(instance);
+        
+        // Publish namespace structure changed event for auto-mapper cache refresh
+        var namespaceChangedEvent = new NamespaceStructureChangedEvent(
+            ChangedNamespace: name,
+            ChangeType: "Added",
+            ChangedBy: "user"
+        );
+        await _eventBus.PublishAsync(namespaceChangedEvent);
+        
         return instance;
     }
 
     public async Task DeleteInstanceAsync(string instanceId)
     {
+        // Get the instance before deleting to publish the event
+        var instance = await _nsTreeInstanceRepository.GetInstanceByIdAsync(instanceId);
+        
         await _nsTreeInstanceRepository.DeleteInstanceAsync(instanceId);
+        
+        // Publish namespace structure changed event for auto-mapper cache refresh
+        if (instance != null)
+        {
+            var namespaceChangedEvent = new NamespaceStructureChangedEvent(
+                ChangedNamespace: instance.Name,
+                ChangeType: "Deleted",
+                ChangedBy: "user"
+            );
+            await _eventBus.PublishAsync(namespaceChangedEvent);
+        }
     }
 
     public async Task<bool> CanDeleteInstanceAsync(string instanceId)

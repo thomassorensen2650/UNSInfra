@@ -51,35 +51,35 @@
         }
         else if (Node.HasChildren)
         {
-            @if (Node.IsLoadingChildren)
-            {
-                <div class="ms-4 mt-2">
+            <div class="ms-4 mt-2">
+                @if (Node.IsLoadingChildren)
+                {
                     <div class="d-flex align-items-center">
                         <div class="spinner-border spinner-border-sm me-2" role="status">
                             <span class="visually-hidden">Loading...</span>
                         </div>
                         <small class="text-muted">Loading...</small>
                     </div>
-                </div>
-            }
-            else
-            {
-                <ul class="topic-tree">
-                    @{
-                        var validChildren = Node.Children?.Where(c => c != null && !string.IsNullOrEmpty(c.Name)).ToList() ?? new List<TopicTree.TopicTreeNodeModel>();
-                    }
-                    @foreach (var child in validChildren)
-                    {
-                        <TopicTreeNodeWithNS @key="child.FullPath" 
-                                            Node="child" 
-                                            HighlightedPaths="HighlightedPaths" 
-                                            SelectedNodePath="SelectedNodePath"
-                                            OnTopicSelected="OnTopicSelected" 
-                                            OnToggleExpanded="OnToggleExpanded"
-                                            OnAddDataToNamespace="OnAddDataToNamespace" />
-                    }
-                </ul>
-            }
+                }
+                else
+                {
+                    <ul class="topic-tree">
+                        @{
+                            var validChildren = Node.Children?.Where(c => c != null && !string.IsNullOrEmpty(c.Name)).ToList() ?? new List<TopicTree.TopicTreeNodeModel>();
+                        }
+                        @foreach (var child in validChildren)
+                        {
+                            <TopicTreeNodeWithNS @key="child.FullPath" 
+                                                Node="child" 
+                                                HighlightedPaths="HighlightedPaths" 
+                                                SelectedNodePath="SelectedNodePath"
+                                                OnTopicSelected="OnTopicSelected" 
+                                                OnToggleExpanded="OnToggleExpanded"
+                                                OnAddDataToNamespace="OnAddDataToNamespace" />
+                        }
+                    </ul>
+                }
+            </div>
         }
     }
 </li>
