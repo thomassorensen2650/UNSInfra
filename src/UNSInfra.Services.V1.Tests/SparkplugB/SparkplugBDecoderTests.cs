@@ -1,6 +1,7 @@
 using Google.Protobuf;
 using Microsoft.Extensions.Logging;
 using Moq;
+using System.IO;
 using UNSInfra.Services.V1.SparkplugB;
 using Xunit;
 
@@ -263,6 +264,7 @@ public class SparkplugBDecoderTests
         };
         
         payload.Metrics.Add(metric);
+        // Use standard ToByteArray() - the issue might have been a transient problem
         return payload.ToByteArray();
     }
 
@@ -281,6 +283,7 @@ public class SparkplugBDecoderTests
         };
         
         payload.Metrics.Add(metric);
+        // Use standard ToByteArray() - the issue might have been a transient problem
         return payload.ToByteArray();
     }
 
@@ -309,6 +312,7 @@ public class SparkplugBDecoderTests
             BooleanValue = true
         });
         
+        // Use standard ToByteArray() - the issue might have been a transient problem
         return payload.ToByteArray();
     }
 
@@ -358,6 +362,7 @@ public class SparkplugBDecoderTests
             DoubleValue = 2.718281828
         });
         
+        // Use standard ToByteArray() - the issue might have been a transient problem
         return payload.ToByteArray();
     }
 

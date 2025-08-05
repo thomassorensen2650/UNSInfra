@@ -1,7 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using UNSInfra.Core.Configuration;
-using UNSInfra.Services.AutoMapping;
 
 namespace UNSInfra.Services.SocketIO.Configuration;
 
@@ -71,10 +70,6 @@ public class SocketIODataIngestionConfiguration : IDataIngestionConfiguration
     [Range(100, 10000)]
     public int MessageBufferSize { get; set; } = 1000;
 
-    /// <summary>
-    /// Auto topic mapper configuration for this SocketIO service.
-    /// </summary>
-    public AutoTopicMapperConfiguration? AutoMapperConfiguration { get; set; }
 
     public List<string> Validate()
     {

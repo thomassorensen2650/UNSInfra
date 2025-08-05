@@ -58,6 +58,14 @@
                 </button>
             </li>
             <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "automapping" ? "active" : "")" 
+                        type="button" role="tab"
+                        @onclick="@(() => SetActiveTab("automapping"))">
+                    <i class="bi bi-diagram-2 me-2"></i>
+                    Auto Mapping
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
                 <button class="nav-link @(activeTab == "system" ? "active" : "")" 
                         type="button" role="tab"
                         @onclick="@(() => SetActiveTab("system"))">
@@ -109,6 +117,32 @@
                             <div class="alert alert-info">
                                 <i class="bi bi-info-circle me-2"></i>
                                 Connection management is available in the <a href="/ingress" class="alert-link">Ingress</a> section.
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Auto Mapping Configuration Tab -->
+            <div class="tab-pane @(activeTab == "automapping" ? "show active" : "")" role="tabpanel">
+                <div class="tab-section">
+                    <div class="section-header">
+                        <h5>Auto-Mapping Configuration</h5>
+                        <p class="text-muted">Configure automatic topic mapping to UNS namespace paths</p>
+                    </div>
+                    <div class="card">
+                        <div class="card-body">
+                            <div class="text-center py-4">
+                                <i class="bi bi-diagram-2 text-success" style="font-size: 3rem;"></i>
+                                <h5 class="mt-3">Auto-mapping is now handled automatically</h5>
+                                <p class="text-muted">
+                                    The system now uses a global SimplifiedAutoMapperService that automatically processes 
+                                    all incoming topics against existing UNS namespaces. No per-configuration settings are required.
+                                </p>
+                                <div class="alert alert-info">
+                                    <i class="bi bi-info-circle me-2"></i>
+                                    Auto-mapping runs automatically for all data sources and matches topics to existing namespace structures.
+                                </div>
                             </div>
                         </div>
                     </div>

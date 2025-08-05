@@ -1,0 +1,77 @@
+@using UNSInfra.Services.TopicBrowser
+@using UNSInfra.Models.Hierarchy
+
+@{
+    var validNodes = GetValidNodes();
+}
+
+@if (validNodes.Any())
+{
+    <ul class="topic-tree">
+        @foreach (var node in validNodes)
+        {
+            <TopicTreeNodeWithNS @key="@GetNodeKey(node)" 
+                               Node="node" 
+                               HighlightedPaths="HighlightedPaths" 
+                               SelectedNodePath="@SelectedNodePath" 
+                               OnTopicSelected="OnTopicSelected" 
+                               OnToggleExpanded="OnToggleExpanded"
+                               OnAddDataToNamespace="HandleAddDataToNamespace" />
+        }
+    </ul>
+}
+else
+{
+    <div class="text-center py-4">
+        <i class="bi bi-database text-muted" style="font-size: 2rem;"></i>
+        <p class="text-muted mt-2">No data found</p>
+        <small class="text-muted">Data will appear here when received from data sources</small>
+    </div>
+}
+
+@code {
+    [Parameter] public List<TopicTree.TopicTreeNodeModel> DataBrowserNodes { get; set; } = new();
+    [Parameter] public HashSet<string> HighlightedPaths { get; set; } = new();
+    [Parameter] public string? SelectedNodePath { get; set; }
+    [Parameter] public EventCallback<TopicInfo> OnTopicSelected { get; set; }
+    [Parameter] public EventCallback<TopicTree.TopicTreeNodeModel> OnToggleExpanded { get; set; }
+    [Parameter] public EventCallback<string> OnAddDataToNamespace { get; set; }
+
+    private async Task HandleAddDataToNamespace(string namespacePath)
+    {
+        await OnAddDataToNamespace.InvokeAsync(namespacePath);
+    }
+
+    private List<TopicTree.TopicTreeNodeModel> GetValidNodes()
+    {
+        try
+        {
+            if (DataBrowserNodes == null)
+                return new List<TopicTree.TopicTreeNodeModel>();
+
+            return DataBrowserNodes
+                .Where(n => n != null && 
+                           !string.IsNullOrEmpty(n.Name) && 
+                           !string.IsNullOrEmpty(n.FullPath))
+                .ToList();
+        }
+        catch (Exception)
+        {
+            // Return empty list if there's any enumeration issue
+            return new List<TopicTree.TopicTreeNodeModel>();
+        }
+    }
+
+    private string GetNodeKey(TopicTree.TopicTreeNodeModel node)
+    {
+        // Create a stable key that won't change between renders
+        return $"{node.FullPath}_{node.Name}_{node.HasChildren}";
+    }
+}
+
+<style>
+.topic-tree {
+    list-style-type: none;
+    padding-left: 1em;
+}
+</style>

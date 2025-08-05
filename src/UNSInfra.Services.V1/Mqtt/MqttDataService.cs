@@ -52,7 +52,7 @@ public class MqttDataService : IMqttDataService, IDisposable
         SparkplugBDecoder sparkplugBDecoder,
         ILogger<MqttDataService> logger)
     {
-        _config = config.Value ?? throw new ArgumentNullException(nameof(config));
+        _config = (config ?? throw new ArgumentNullException(nameof(config))).Value ?? throw new ArgumentNullException(nameof(config));
         _topicDiscoveryService = topicDiscoveryService;
         _sparkplugBDecoder = sparkplugBDecoder;
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
@@ -69,7 +69,7 @@ public class MqttDataService : IMqttDataService, IDisposable
         IServiceProvider serviceProvider,
         ILogger<MqttDataService> logger)
     {
-        _config = config.Value ?? throw new ArgumentNullException(nameof(config));
+        _config = (config ?? throw new ArgumentNullException(nameof(config))).Value ?? throw new ArgumentNullException(nameof(config));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
     }
@@ -430,7 +430,7 @@ public class MqttDataService : IMqttDataService, IDisposable
     /// </summary>
     private async Task HandleRegularMqttMessage(string topic, byte[] payload)
     {
-        _logger.LogInformation("[MQTT] Processing regular MQTT message for topic: '{Topic}'", topic);
+        _logger.LogDebug("[MQTT] Processing regular MQTT message for topic: '{Topic}'", topic);
         HierarchicalPath? path = null;
 
         // Check if we have explicit subscription
@@ -466,7 +466,7 @@ public class MqttDataService : IMqttDataService, IDisposable
                 
                 if (!configuration.IsVerified)
                 {
-                    _logger.LogWarning("Received data for unverified topic '{Topic}'", topic);
+                    _logger.LogDebug("Received data for unverified topic '{Topic}'", topic);
                 }
             }
             else
@@ -493,7 +493,7 @@ public class MqttDataService : IMqttDataService, IDisposable
                 if (configuration != null)
                 {
                     path = configuration.Path;
-                    _logger.LogInformation("Created unverified configuration for new topic '{Topic}'", topic);
+                    _logger.LogDebug("Created unverified configuration for new topic '{Topic}'", topic);
                 }
                 else
                 {
@@ -535,7 +535,7 @@ public class MqttDataService : IMqttDataService, IDisposable
                 Timestamp = DateTime.UtcNow
             };
 
-            _logger.LogInformation("[MQTT] Firing DataReceived event for topic: '{Topic}' with path: {Path}", topic, path.GetFullPath());
+            _logger.LogTrace("[MQTT] Firing DataReceived event for topic: '{Topic}' with path: {Path}", topic, path.GetFullPath());
             DataReceived?.Invoke(this, dataPoint);
         }
         else

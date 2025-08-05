@@ -4,6 +4,7 @@ using UNSInfra.Core.Configuration;
 using UNSInfra.Core.Repositories;
 using UNSInfra.Models.Data;
 using UNSInfra.Services.DataIngestion.Mock;
+using UNSInfra.Services.Events;
 
 namespace UNSInfra.Core.Services;
 
@@ -16,10 +17,12 @@ public class DataIngestionServiceManager : IDataIngestionServiceManager, IDispos
     private readonly ILogger<DataIngestionServiceManager> _logger;
     private readonly IServiceProvider _serviceProvider;
     private readonly IDataIngestionConfigurationRepository _configurationRepository;
+    private readonly IEventBus _eventBus;
     private readonly Dictionary<string, IDataIngestionServiceDescriptor> _serviceDescriptors = new();
     private readonly Dictionary<string, IDataIngestionService> _runningServices = new();
     private readonly Dictionary<string, ServiceStatus> _serviceStatuses = new();
     private readonly Dictionary<string, ServiceMetrics> _serviceMetrics = new();
+    private readonly HashSet<string> _discoveredTopics = new(); // Track topics we've seen to send TopicAddedEvent only once
     private readonly object _lock = new object();
     private bool _disposed = false;
 
@@ -51,14 +54,17 @@ public class DataIngestionServiceManager : IDataIngestionServiceManager, IDispos
     /// <param name="logger">Logger instance</param>
     /// <param name="serviceProvider">Service provider for dependency injection</param>
     /// <param name="configurationRepository">Repository for configuration persistence</param>
+    /// <param name="eventBus">Event bus for publishing data events</param>
     public DataIngestionServiceManager(
         ILogger<DataIngestionServiceManager> logger,
         IServiceProvider serviceProvider,
-        IDataIngestionConfigurationRepository configurationRepository)
+        IDataIngestionConfigurationRepository configurationRepository,
+        IEventBus eventBus)
     {
         _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         _serviceProvider = serviceProvider ?? throw new ArgumentNullException(nameof(serviceProvider));
         _configurationRepository = configurationRepository ?? throw new ArgumentNullException(nameof(configurationRepository));
+        _eventBus = eventBus ?? throw new ArgumentNullException(nameof(eventBus));
 
         // Subscribe to configuration changes
         _configurationRepository.ConfigurationChanged += OnConfigurationChanged;
@@ -189,11 +195,46 @@ public class DataIngestionServiceManager : IDataIngestionServiceManager, IDispos
             var service = descriptor.CreateService(configuration, _serviceProvider);
             
             // Subscribe to data events
-            service.DataReceived += (sender, dataPoint) =>
+            service.DataReceived += async (sender, dataPoint) =>
             {
                 // Track metrics for this service
                 UpdateServiceMetrics(configuration.Id, dataPoint);
                 
+                // Check if this is a new topic we haven't seen before
+                bool isNewTopic = false;
+                lock (_lock)
+                {
+                    if (!_discoveredTopics.Contains(dataPoint.Topic))
+                    {
+                        _discoveredTopics.Add(dataPoint.Topic);
+                        isNewTopic = true;
+                    }
+                }
+                
+                // Publish TopicAddedEvent for new topics
+                if (isNewTopic)
+                {
+                    var topicAddedEvent = new TopicAddedEvent(
+                        dataPoint.Topic,
+                        dataPoint.Path,
+                        configuration.ServiceType,
+                        DateTime.UtcNow);
+                    
+                    await _eventBus.PublishAsync(topicAddedEvent);
+                    _logger.LogDebug("Published TopicAddedEvent for topic {Topic} from service {ServiceType}", 
+                        dataPoint.Topic, configuration.ServiceType);
+                }
+                
+                // Always publish TopicDataUpdatedEvent for data updates
+                var dataUpdatedEvent = new TopicDataUpdatedEvent(
+                    dataPoint.Topic,
+                    dataPoint,
+                    configuration.ServiceType);
+                
+                await _eventBus.PublishAsync(dataUpdatedEvent);
+                _logger.LogTrace("Published TopicDataUpdatedEvent for topic {Topic}", dataPoint.Topic);
+                
+                // Also fire the traditional event for backward compatibility
                 DataReceived?.Invoke(this, new ServiceDataReceivedEventArgs
                 {
                     ConfigurationId = configuration.Id,

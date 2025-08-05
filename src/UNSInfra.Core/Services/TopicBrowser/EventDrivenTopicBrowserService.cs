@@ -35,6 +35,7 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
         _eventBus.Subscribe<TopicVerifiedEvent>(OnTopicVerified);
         _eventBus.Subscribe<TopicConfigurationUpdatedEvent>(OnTopicConfigurationUpdated);
         _eventBus.Subscribe<BulkTopicsAddedEvent>(OnBulkTopicsAdded);
+        _eventBus.Subscribe<TopicAutoMappedEvent>(OnTopicAutoMapped);
     }
 
     /// <summary>
@@ -46,6 +47,11 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
     /// Event that fires when topic data is updated.
     /// </summary>
     public event EventHandler<TopicDataUpdatedEventArgs>? TopicDataUpdated;
+
+    /// <summary>
+    /// Event that fires when a topic is removed from the system.
+    /// </summary>
+    public event EventHandler<TopicRemovedEventArgs>? TopicRemoved;
 
     /// <inheritdoc />
     public async Task<IEnumerable<TopicInfo>> GetLatestTopicStructureAsync()
@@ -218,7 +224,8 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
 
     private async Task OnTopicAdded(TopicAddedEvent eventData)
     {
-        Console.WriteLine($"[EventDrivenTopicBrowser] Topic added: {eventData.Topic} from {eventData.SourceType}");
+        // Debug: Topic added - can be enabled for debugging if needed
+        // Console.WriteLine($"[EventDrivenTopicBrowser] Topic added: {eventData.Topic} from {eventData.SourceType}");
         var topicInfo = new TopicInfo
         {
             Topic = eventData.Topic,
@@ -326,6 +333,152 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
         }
     }
 
+    private async Task OnTopicAutoMapped(TopicAutoMappedEvent eventData)
+    {
+        // Get a scoped repository to persist the auto-mapping changes
+        using var scope = _serviceScopeFactory.CreateScope();
+        var repository = scope.ServiceProvider.GetRequiredService<ITopicConfigurationRepository>();
+        
+        // Check if topic exists in our cache
+        if (_topicCache.TryGetValue(eventData.Topic, out var existingTopic))
+        {
+            // Create updated topic configuration with the mapped namespace
+            var updatedConfiguration = new TopicConfiguration
+            {
+                Id = $"config_{eventData.Topic}",
+                Topic = eventData.Topic,
+                Path = existingTopic.Path, // Keep existing hierarchical path
+                IsActive = existingTopic.IsActive,
+                SourceType = eventData.SourceType,
+                CreatedAt = existingTopic.CreatedAt,
+                ModifiedAt = DateTime.UtcNow,
+                Description = existingTopic.Description,
+                Metadata = existingTopic.Metadata ?? new Dictionary<string, object>(),
+                NSPath = eventData.MappedNamespace, // Update with auto-mapped namespace
+                UNSName = ExtractUNSNameFromNamespace(eventData.Topic)
+            };
+
+            // Add auto-mapping metadata
+            updatedConfiguration.Metadata["AutoMapped"] = true;
+            updatedConfiguration.Metadata["AutoMappingConfidence"] = eventData.Confidence;
+            updatedConfiguration.Metadata["AutoMappingTimestamp"] = DateTime.UtcNow;
+
+            // Save to repository
+            await repository.SaveTopicConfigurationAsync(updatedConfiguration);
+
+            // Update in-memory cache
+            var updatedTopicInfo = new TopicInfo
+            {
+                Topic = existingTopic.Topic,
+                Path = existingTopic.Path,
+                IsActive = existingTopic.IsActive,
+                SourceType = existingTopic.SourceType,
+                CreatedAt = existingTopic.CreatedAt,
+                ModifiedAt = DateTime.UtcNow,
+                Description = existingTopic.Description,
+                Metadata = updatedConfiguration.Metadata,
+                NSPath = eventData.MappedNamespace,
+                UNSName = updatedConfiguration.UNSName
+            };
+
+            _topicCache.TryUpdate(eventData.Topic, updatedTopicInfo, existingTopic);
+
+            // Publish event to notify other services about the configuration update
+            var oldPath = string.IsNullOrEmpty(existingTopic.NSPath) 
+                ? new HierarchicalPath() 
+                : CreateHierarchicalPathFromNamespace(existingTopic.NSPath);
+            var newPath = CreateHierarchicalPathFromNamespace(eventData.MappedNamespace);
+            
+            await _eventBus.PublishAsync(new TopicConfigurationUpdatedEvent(
+                eventData.Topic,
+                oldPath,
+                newPath,
+                "auto-mapper"
+            ));
+        }
+        else
+        {
+            // Topic doesn't exist in cache - this shouldn't normally happen
+            // but we can handle it by creating a new topic configuration
+            var newConfiguration = new TopicConfiguration
+            {
+                Id = $"config_{eventData.Topic}",
+                Topic = eventData.Topic,
+                Path = new HierarchicalPath(), // Empty path for now
+                IsActive = true,
+                SourceType = eventData.SourceType,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                Description = "Auto-discovered topic",
+                Metadata = new Dictionary<string, object>
+                {
+                    {"AutoMapped", true},
+                    {"AutoMappingConfidence", eventData.Confidence},
+                    {"AutoMappingTimestamp", DateTime.UtcNow}
+                },
+                NSPath = eventData.MappedNamespace,
+                UNSName = ExtractUNSNameFromNamespace(eventData.MappedNamespace)
+            };
+
+            // Save to repository
+            await repository.SaveTopicConfigurationAsync(newConfiguration);
+
+            // Add to cache
+            var newTopicInfo = new TopicInfo
+            {
+                Topic = eventData.Topic,
+                Path = new HierarchicalPath(),
+                IsActive = true,
+                SourceType = eventData.SourceType,
+                CreatedAt = DateTime.UtcNow,
+                ModifiedAt = DateTime.UtcNow,
+                Description = "Auto-discovered topic",
+                Metadata = newConfiguration.Metadata,
+                NSPath = eventData.MappedNamespace,
+                UNSName = newConfiguration.UNSName
+            };
+
+            _topicCache.TryAdd(eventData.Topic, newTopicInfo);
+
+            // Notify UI about the new topic
+            TopicAdded?.Invoke(this, new TopicAddedEventArgs { TopicInfo = newTopicInfo });
+        }
+    }
+
+    /// <summary>
+    /// Extracts a UNS name from a namespace path by taking the last segment
+    /// </summary>
+    private string ExtractUNSNameFromNamespace(string namespacePath)
+    {
+        if (string.IsNullOrEmpty(namespacePath))
+            return "";
+
+        var segments = namespacePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.Length > 0 ? segments[^1] : namespacePath;
+    }
+
+    /// <summary>
+    /// Creates a HierarchicalPath from a namespace string like "Enterprise/Site/Area"
+    /// </summary>
+    private HierarchicalPath CreateHierarchicalPathFromNamespace(string namespacePath)
+    {
+        var hierarchicalPath = new HierarchicalPath();
+        
+        if (string.IsNullOrEmpty(namespacePath))
+            return hierarchicalPath;
+
+        var segments = namespacePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var hierarchyLevels = new[] { "Enterprise", "Site", "Area", "WorkCenter", "WorkUnit" }; // ISA-S95 levels
+        
+        // Map segments to appropriate hierarchy levels
+        for (int i = 0; i < Math.Min(segments.Length, hierarchyLevels.Length); i++)
+        {
+            hierarchicalPath.SetValue(hierarchyLevels[i], segments[i]);
+        }
+        
+        return hierarchicalPath;
+    }
+
     /// <summary>
     /// Notifies the service that a new topic has been added.
     /// This method publishes an event instead of directly modifying state.
@@ -353,6 +506,38 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
         {
             await _eventBus.PublishAsync(new TopicDataUpdatedEvent(topic, dataPoint, "unknown"));
         });
+    }
+
+    /// <summary>
+    /// Removes all topics from a specific data source.
+    /// This is useful when a data source is disabled or disconnected.
+    /// </summary>
+    /// <param name="sourceType">The source type to remove topics for</param>
+    public async Task RemoveTopicsFromSourceAsync(string sourceType)
+    {
+        var removedTopics = new List<TopicInfo>();
+        
+        // Find all topics from the specified source
+        var topicsToRemove = _topicCache.Values
+            .Where(t => t.SourceType == sourceType)
+            .ToList();
+        
+        // Remove topics from cache
+        foreach (var topic in topicsToRemove)
+        {
+            if (_topicCache.TryRemove(topic.Topic, out var removedTopic))
+            {
+                removedTopics.Add(removedTopic);
+            }
+        }
+        
+        // Notify about removed topics
+        foreach (var removedTopic in removedTopics)
+        {
+            TopicRemoved?.Invoke(this, new TopicRemovedEventArgs { TopicInfo = removedTopic });
+        }
+        
+        await Task.CompletedTask;
     }
 
     public void Dispose()

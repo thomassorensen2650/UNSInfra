@@ -4,6 +4,7 @@ using UNSInfra.Core.Configuration;
 using UNSInfra.Core.Repositories;
 using UNSInfra.Core.Services;
 using UNSInfra.Services.AutoMapping;
+using UNSInfra.Core.Extensions;
 
 namespace UNSInfra.Core.Extensions;
 
@@ -51,13 +52,18 @@ public static class ServiceCollectionExtensions
     }
 
     /// <summary>
-    /// Adds auto topic mapping services to the dependency injection container.
+    /// Adds the simplified, high-performance auto topic mapping service to the dependency injection container.
     /// </summary>
     /// <param name="services">The service collection</param>
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddAutoTopicMapping(this IServiceCollection services)
     {
-        services.AddScoped<IAutoTopicMapper, AutoTopicMapperService>();
+        // Add the simplified, high-performance auto-mapper
+        services.AddSingleton<SimplifiedAutoMapperService>();
+        
+        // Add the background service for processing auto-mapping
+        services.AddHostedService<SimplifiedAutoMappingBackgroundService>();
+        
         return services;
     }
 }

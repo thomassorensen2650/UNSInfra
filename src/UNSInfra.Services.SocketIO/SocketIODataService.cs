@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
@@ -318,13 +319,21 @@ public class SocketIODataService : IDataIngestionService
     {
         try
         {
-            switch (element.ValueKind)
+            switch ((element).ValueKind)
             {
                 case JsonValueKind.Object:
-                    foreach (var property in element.EnumerateObject())
+
+                    if (IsValueTimestampPayload(element))
                     {
-                        var newPath = $"{currentPath}/{property.Name}";
-                        await ProcessJsonElement(property.Value, newPath);
+                        await CreateDataPoint(currentPath, element);    
+                    }
+                    else 
+                    {
+                        foreach (var property in element.EnumerateObject())
+                        {
+                            var newPath = $"{currentPath}/{property.Name}";
+                            await ProcessJsonElement(property.Value, newPath);
+                        }
                     }
                     break;
 
@@ -462,9 +471,9 @@ public class SocketIODataService : IDataIngestionService
     {
         if (_disposed)
             return;
-            
+
         _disposed = true;
-        
+
         try
         {
             StopAsync().Wait(5000); // Wait up to 5 seconds for graceful shutdown
@@ -473,5 +482,27 @@ public class SocketIODataService : IDataIngestionService
         {
             _logger.LogError(ex, "Error during SocketIO service disposal");
         }
+    }
+
+    /// <summary>
+    /// Determines if a JSON object represents a value/timestamp payload pattern.
+    /// Returns true if the object has exactly "value" and "timestamp" properties.
+    /// </summary>
+    /// <param name="jsonElement">The JSON object to check</param>
+    /// <returns>True if this is a value/timestamp payload object</returns>
+    private bool IsValueTimestampPayload(JsonElement jsonElement)
+    {
+        if (jsonElement.ValueKind != JsonValueKind.Object)
+            return false;
+
+        var properties = jsonElement.EnumerateObject().ToList();
+        
+        // Must have exactly 2 properties
+        if (properties.Count != 2)
+            return false;
+
+        // Must have "value" and "timestamp" properties (case-insensitive)
+        var propertyNames = properties.Select(p => p.Name.ToLowerInvariant()).ToHashSet();
+        return propertyNames.Contains("value") && propertyNames.Contains("timestamp");
     }
 }

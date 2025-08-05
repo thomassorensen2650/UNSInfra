@@ -1,7 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using UNSInfra.Core.Configuration;
-using UNSInfra.Services.AutoMapping;
 
 namespace UNSInfra.Services.V1.Configuration;
 
@@ -88,10 +87,6 @@ public class MqttDataIngestionConfiguration : IDataIngestionConfiguration
     public bool LastWillRetain { get; set; } = true;
     public int LastWillDelayInterval { get; set; } = 0;
 
-    /// <summary>
-    /// Auto topic mapper configuration for this MQTT service.
-    /// </summary>
-    public AutoTopicMapperConfiguration? AutoMapperConfiguration { get; set; }
 
     public List<string> Validate()
     {

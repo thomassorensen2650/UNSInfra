@@ -95,23 +95,12 @@
         <!-- Data Browser Tab -->
         <div class="tab-pane @(activeTab == "dataBrowser" ? "show active" : "")" id="dataBrowser-pane" role="tabpanel">
             <div class="data-browser-container">
-                @if (DataBrowserNodes.Any())
-                {
-                    <ul class="topic-tree">
-                        @foreach (var node in DataBrowserNodes)
-                        {
-                            <TopicTreeNodeWithNS Node="node" HighlightedPaths="HighlightedPaths" SelectedNodePath="@SelectedNodePath" OnTopicSelected="HandleTopicSelected" OnToggleExpanded="ToggleExpansion" />
-                        }
-                    </ul>
-                }
-                else
-                {
-                    <div class="text-center py-4">
-                        <i class="bi bi-database text-muted" style="font-size: 2rem;"></i>
-                        <p class="text-muted mt-2">No data found</p>
-                        <small class="text-muted">Data will appear here when received from data sources</small>
-                    </div>
-                }
+                <DataBrowserContent DataBrowserNodes="DataBrowserNodes" 
+                                  HighlightedPaths="HighlightedPaths" 
+                                  SelectedNodePath="@SelectedNodePath" 
+                                  OnTopicSelected="HandleTopicSelected" 
+                                  OnToggleExpanded="ToggleExpansion"
+                                  OnAddDataToNamespace="HandleAddDataToNamespace" />
             </div>
         </div>
     </div>
@@ -136,31 +125,86 @@
     private int _lastTopicsHash = 0;
     private readonly Dictionary<string, DateTime> _expansionCooldowns = new(); // Prevent rapid successive clicks
     private int _lastTopicsCount = 0; // Track if we're just adding new topics
+    private readonly object _topicsLock = new object(); // Synchronize access to Topics collection
+    private List<TopicInfo> _cachedTopicsSnapshot = new(); // Cache to avoid repeated snapshots
+    
+    // Track expansion state per tab to avoid conflicts
+    private readonly Dictionary<string, HashSet<string>> _tabExpansionStates = new();
+    private string? _lastSelectedPath; // Track selected path across refreshes
 
     protected override async Task OnParametersSetAsync()
     {
-        // Check if we're just adding new topics or if there are other changes
-        var currentHash = GetTopicsHashCode();
+        // Create a thread-safe snapshot for processing
+        List<TopicInfo> currentTopics;
+        int currentCount;
+        
+        lock (_topicsLock)
+        {
+            if (Topics == null || Topics.Count == 0)
+            {
+                if (_cachedTopicsSnapshot.Count > 0)
+                {
+                    // Topics were cleared, update accordingly
+                    _cachedTopicsSnapshot.Clear();
+                    BuildTreeStructure(_cachedTopicsSnapshot);
+                    _lastTopicsHash = 0;
+                    _lastTopicsCount = 0;
+                }
+                return;
+            }
+            
+            // Only create new snapshot if Topics reference changed or count is significantly different
+            currentCount = Topics.Count;
+            bool needsNewSnapshot = _cachedTopicsSnapshot.Count == 0 || 
+                                   Math.Abs(currentCount - _cachedTopicsSnapshot.Count) > 10;
+            
+            if (needsNewSnapshot)
+            {
+                try
+                {
+                    _cachedTopicsSnapshot = Topics.ToList();
+                }
+                catch (InvalidOperationException)
+                {
+                    // Collection modified during copy, use previous snapshot
+                    currentTopics = _cachedTopicsSnapshot;
+                    currentCount = _cachedTopicsSnapshot.Count;
+                }
+            }
+            
+            currentTopics = _cachedTopicsSnapshot;
+        }
+        
+        // Check if we need to update the tree structure
+        var currentHash = GetTopicsHashCode(currentTopics);
         
         if (currentHash != _lastTopicsHash)
         {
-            var currentCount = Topics?.Count ?? 0;
             bool isJustAddingTopics = currentCount > _lastTopicsCount && 
                                       _lastTopicsCount > 0 && // Not initial load
                                       currentCount - _lastTopicsCount <= 5; // Only a few new topics
             
             if (isJustAddingTopics)
             {
-                // Incremental update - just add new topics without full rebuild
-                AddNewTopicsIncrementally();
+                // Incremental update - preserve Data Browser expansion state
+                var dataBrowserExpansionState = new HashSet<string>();
+                if (DataBrowserNodes.Any())
+                {
+                    CollectExpandedPaths(DataBrowserNodes, dataBrowserExpansionState);
+                }
+                
+                AddNewTopicsIncrementally(currentTopics);
+                
+                // Rebuild Data Browser with preserved expansion state
+                BuildDataBrowserTreeStructure(currentTopics);
             }
             else
             {
-                // Full rebuild needed
+                // Full rebuild needed - preserve expansion state
                 var expansionState = SaveExpansionState();
                 var selectedPath = SelectedNodePath;
                 
-                BuildTreeStructure(Topics ?? new List<TopicInfo>());
+                BuildTreeStructure(currentTopics);
                 
                 RestoreExpansionState(expansionState);
                 SelectedNodePath = selectedPath;
@@ -171,13 +215,13 @@
         }
     }
     
-    private int GetTopicsHashCode()
+    private int GetTopicsHashCode(List<TopicInfo> topics)
     {
-        if (Topics == null || Topics.Count == 0) 
+        if (topics == null || topics.Count == 0) 
             return 0;
             
-        var hash = Topics.Count;
-        foreach (var topic in Topics)
+        var hash = topics.Count;
+        foreach (var topic in topics)
         {
             hash = hash * 31 + topic.Topic.GetHashCode();
             hash = hash * 31 + topic.Path.GetFullPath().GetHashCode();
@@ -186,10 +230,13 @@
         return hash;
     }
     
-    private void AddNewTopicsIncrementally()
+    private void AddNewTopicsIncrementally(List<TopicInfo> topics)
     {
         // Get the new topics (assuming they're at the end of the list)
-        var newTopics = Topics.Skip(_lastTopicsCount).ToList();
+        if (topics == null || topics.Count <= _lastTopicsCount)
+            return;
+            
+        var newTopics = topics.Skip(_lastTopicsCount).ToList();
         
         // Add new topics using folder structure grouped by source type
         if (newTopics.Count > 0)
@@ -305,14 +352,35 @@
 
     private void SetActiveTab(string tabName)
     {
+        // Save current tab's expansion state before switching
+        if (!string.IsNullOrEmpty(activeTab))
+        {
+            _tabExpansionStates[activeTab] = SaveExpansionState();
+        }
+        
+        // Save current selection
+        _lastSelectedPath = SelectedNodePath;
+        
         activeTab = tabName;
+        
+        // Restore expansion state for the new tab
+        if (_tabExpansionStates.TryGetValue(tabName, out var expansionState))
+        {
+            RestoreExpansionState(expansionState);
+        }
+        
         StateHasChanged();
     }
 
     private async Task HandleAddDataToNamespace(string namespacePath)
     {
-        // Get topics that are not yet assigned to namespaces for selection
-        var availableTopics = Topics.Where(t => string.IsNullOrEmpty(t.NSPath)).ToList();
+        // Get topics that are not yet assigned to namespaces for selection - use cached snapshot
+        List<TopicInfo> availableTopics;
+        lock (_topicsLock)
+        {
+            availableTopics = _cachedTopicsSnapshot.Where(t => string.IsNullOrEmpty(t.NSPath)).ToList();
+        }
+        
         await OnAddDataToNamespace.InvokeAsync((namespacePath, availableTopics));
     }
 
@@ -569,43 +637,134 @@
 
     private void BuildDataBrowserTreeStructure(List<TopicInfo> topics)
     {
+        // Save current expansion state before rebuilding
+        var currentExpansionState = new HashSet<string>();
+        if (DataBrowserNodes.Any())
+        {
+            CollectExpandedPaths(DataBrowserNodes, currentExpansionState);
+        }
+        
+        // Clear and rebuild the DataBrowserNodes
+        DataBrowserNodes.Clear();
+        
         if (!topics.Any()) return;
 
         const string dataBrowserSectionName = "📊 Data Browser";
         
-        // Group topics by source type
-        var topicsBySourceType = topics.GroupBy(t => t.SourceType).ToList();
+        // Create temporary structures for building the hierarchy
+        var tempChildrenLookup = new Dictionary<string, List<string>>();
+        var tempTopicsByPath = new Dictionary<string, List<TopicInfo>>();
+        
+        // Group topics by source type and build hierarchical structure
+        var topicsBySourceType = topics.GroupBy(t => t.SourceType).Where(g => !string.IsNullOrEmpty(g.Key)).ToList();
 
         foreach (var sourceGroup in topicsBySourceType)
         {
             var sourceType = sourceGroup.Key;
-            var sourceNode = new TopicTreeNodeModel
-            {
-                Name = sourceType,
-                FullPath = $"{dataBrowserSectionName}/{sourceType}",
-                Children = new List<TopicTreeNodeModel>(),
-                HasChildren = true,
-                ChildrenLoaded = false,
-                IsExpanded = false
-            };
+            var sourcePath = $"{dataBrowserSectionName}/{sourceType}";
+            
+            // Initialize source type folder
+            if (!tempChildrenLookup.ContainsKey(sourcePath))
+                tempChildrenLookup[sourcePath] = new List<string>();
+            if (!tempTopicsByPath.ContainsKey(sourcePath))
+                tempTopicsByPath[sourcePath] = new List<TopicInfo>();
 
-            // Build folder structure for each topic within this source type
-            foreach (var topic in sourceGroup)
+            // Build hierarchical folder structure for each topic within this source type
+            foreach (var topic in sourceGroup.Where(t => !string.IsNullOrEmpty(t.Topic)))
             {
-                var topicNode = new TopicTreeNodeModel
+                var topicParts = topic.Topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                
+                // If topic has no separators (flat topic name), treat it as a single item
+                if (topicParts.Length == 1)
                 {
-                    Name = topic.Topic,
-                    FullPath = $"{dataBrowserSectionName}/{sourceType}/{topic.Topic}",
-                    Topic = topic,
-                    HasChildren = false,
-                    ChildrenLoaded = true,
-                    IsExpanded = false
-                };
-                sourceNode.Children.Add(topicNode);
+                    var topicKey = $"{sourcePath}/{topic.Topic}";
+                    if (!tempChildrenLookup[sourcePath].Contains(topic.Topic))
+                    {
+                        tempChildrenLookup[sourcePath].Add(topic.Topic);
+                        tempTopicsByPath[topicKey] = new List<TopicInfo> { topic };
+                    }
+                }
+                else
+                {
+                    // Build nested folder structure based on topic path segments
+                    string currentPath = sourcePath;
+                    
+                    for (int i = 0; i < topicParts.Length; i++)
+                    {
+                        var part = topicParts[i];
+                        var parentPath = currentPath;
+                        currentPath = $"{currentPath}/{part}";
+                        
+                        // Initialize path structures if they don't exist
+                        if (!tempTopicsByPath.ContainsKey(currentPath))
+                            tempTopicsByPath[currentPath] = new List<TopicInfo>();
+                        
+                        if (!tempChildrenLookup.ContainsKey(parentPath))
+                            tempChildrenLookup[parentPath] = new List<string>();
+                        
+                        // Add this part as a child of the parent path
+                        if (!tempChildrenLookup[parentPath].Contains(part))
+                            tempChildrenLookup[parentPath].Add(part);
+                        
+                        // If this is the final segment, store the actual topic data
+                        if (i == topicParts.Length - 1)
+                        {
+                            tempTopicsByPath[currentPath].Add(topic);
+                        }
+                    }
+                }
             }
-
-            DataBrowserNodes.Add(sourceNode);
         }
+
+        // Now build the actual node structure from the temporary hierarchical data
+        foreach (var sourceGroup in topicsBySourceType)
+        {
+            var sourceType = sourceGroup.Key;
+            var sourcePath = $"{dataBrowserSectionName}/{sourceType}";
+            
+            var sourceNode = BuildDataBrowserNode(sourceType ?? "Unknown", sourcePath, tempChildrenLookup, tempTopicsByPath, currentExpansionState);
+            if (sourceNode != null && (sourceNode.Children.Any() || sourceNode.Topic != null))
+            {
+                DataBrowserNodes.Add(sourceNode);
+            }
+        }
+    }
+    
+    private TopicTreeNodeModel? BuildDataBrowserNode(string name, string fullPath, 
+        Dictionary<string, List<string>> childrenLookup, 
+        Dictionary<string, List<TopicInfo>> topicsByPath,
+        HashSet<string> expansionState)
+    {
+        var hasData = topicsByPath.ContainsKey(fullPath) && topicsByPath[fullPath].Any();
+        var hasChildren = childrenLookup.ContainsKey(fullPath) && childrenLookup[fullPath].Count > 0;
+        
+        var node = new TopicTreeNodeModel
+        {
+            Name = name,
+            FullPath = fullPath,
+            Children = new List<TopicTreeNodeModel>(),
+            Topic = hasData ? topicsByPath[fullPath].FirstOrDefault() : null,
+            HasChildren = hasChildren,
+            ChildrenLoaded = hasChildren, // Load children immediately for Data Browser
+            IsExpanded = expansionState.Contains(fullPath) // Restore expansion state
+        };
+
+        // Build children recursively
+        if (hasChildren)
+        {
+            var childNames = childrenLookup[fullPath];
+            foreach (var childName in childNames)
+            {
+                var childFullPath = $"{fullPath}/{childName}";
+                var childNode = BuildDataBrowserNode(childName, childFullPath, childrenLookup, topicsByPath, expansionState);
+                if (childNode != null)
+                {
+                    node.Children.Add(childNode);
+                }
+            }
+        }
+
+        return node;
     }
 
 
@@ -645,6 +804,13 @@
         {
             CollectExpandedPaths(RootNodes, expandedPaths);
         }
+        
+        // Also save expansion state for Data Browser nodes
+        if (DataBrowserNodes != null && DataBrowserNodes.Count > 0)
+        {
+            CollectExpandedPaths(DataBrowserNodes, expandedPaths);
+        }
+        
         return expandedPaths;
     }
     
@@ -662,6 +828,7 @@
     
     private void RestoreExpansionState(HashSet<string> expandedPaths)
     {
+        // Restore expansion state for regular nodes
         foreach (var path in expandedPaths)
         {
             if (NodeLookup.TryGetValue(path, out var node))
@@ -671,6 +838,26 @@
                 {
                     LoadChildren(node);
                 }
+            }
+        }
+        
+        // Restore expansion state for Data Browser nodes
+        RestoreDataBrowserExpansionState(DataBrowserNodes, expandedPaths);
+    }
+    
+    private void RestoreDataBrowserExpansionState(List<TopicTreeNodeModel> nodes, HashSet<string> expandedPaths)
+    {
+        foreach (var node in nodes)
+        {
+            if (expandedPaths.Contains(node.FullPath))
+            {
+                node.IsExpanded = true;
+                node.ChildrenLoaded = node.Children.Any();
+            }
+            
+            if (node.Children.Any())
+            {
+                RestoreDataBrowserExpansionState(node.Children, expandedPaths);
             }
         }
     }

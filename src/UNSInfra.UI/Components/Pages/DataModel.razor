@@ -81,7 +81,9 @@
                         <div class="payload-container">
                             @if (SelectedPayload != null)
                             {
-                                <pre class="payload-content">@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })</pre>
+                                <!--<pre class="payload-content">@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })</pre> -->
+                                <pre class="payload-content">@SelectedPayload</pre>
+
                             }
                             else
                             {

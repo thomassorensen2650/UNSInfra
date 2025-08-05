@@ -2,6 +2,7 @@
 @using UNSInfra.Models.Hierarchy
 @using UNSInfra.Models.Namespace
 @using UNSInfra.Services.TopicBrowser
+@using System.Linq
 @inject INamespaceStructureService NamespaceStructureService
 @inject ITopicBrowserService TopicBrowserService
 @inject ITopicConfigurationNotificationService NotificationService
@@ -110,16 +111,16 @@
             </div>
         }
 
-        @if (isExpanded && (Node.Children.Any() || (Node.NodeType == NSNodeType.Namespace && assignedTopics?.Any() == true)))
+        @if (isExpanded && (Node?.Children?.Any() == true || (Node?.NodeType == NSNodeType.Namespace && assignedTopics?.Any() == true)))
         {
             <div class="ms-3 mt-1">
-                @foreach (var child in Node.Children)
+                @foreach (var child in Node?.Children ?? Enumerable.Empty<NSTreeNode>())
                 {
                     <NSTreeNodeEditor Node="child" OnNodeChanged="HandleChildNodeChanged" OnAddDataToNamespace="OnAddDataToNamespace" OnTopicSelected="OnTopicSelected" />
                 }
                 
                 @* Show topics assigned to this namespace *@
-                @if (Node.NodeType == NSNodeType.Namespace && assignedTopics?.Any() == true)
+                @if (Node?.NodeType == NSNodeType.Namespace && assignedTopics?.Any() == true)
                 {
                     @foreach (var topic in assignedTopics)
                     {
@@ -127,12 +128,12 @@
                             <div class="node-content">
                                 <span class="expand-spacer me-1"></span>
                                 <i class="bi bi-file-earmark-check text-success me-2"></i>
-                                <span class="topic-name">@GetTopicDisplayName(topic)</span>
-                                <small class="text-muted ms-2">(Topic - @topic.SourceType)</small>
+                               <span class="topic-name">@GetTopicDisplayName(topic)</span>
+                                <!--  <small class="text-muted ms-2">(Topic - @topic.SourceType)</small>
                                 @if (!string.IsNullOrEmpty(topic.Description))
                                 {
                                     <small class="text-muted ms-1">- @topic.Description</small>
-                                }
+                                } -->
                             </div>
                         </div>
                     }

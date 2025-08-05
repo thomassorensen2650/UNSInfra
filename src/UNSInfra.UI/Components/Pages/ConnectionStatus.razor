@@ -169,8 +169,8 @@
                         </div>
                         <div class="col-12">
                             <div class="d-flex justify-content-between">
-                                <span class="text-muted">Auto Mapper Enabled:</span>
-                                <span class="fw-bold">@GetAutoMapperEnabledCount()</span>
+                                <span class="text-muted">Auto Mapping:</span>
+                                <span class="fw-bold text-success">@GetAutoMapperEnabledCount()</span>
                             </div>
                         </div>
                     </div>
@@ -394,29 +394,10 @@
     private string GetAutoMapperEnabledCount()
     {
         if (configurations == null || !configurations.Any())
-            return "0/0";
+            return "Auto";
 
-        var totalWithAutoMapper = 0;
-        var enabledCount = 0;
-
-        foreach (var config in configurations)
-        {
-            switch (config)
-            {
-                case SocketIODataIngestionConfiguration socketConfig when socketConfig.AutoMapperConfiguration != null:
-                    totalWithAutoMapper++;
-                    if (socketConfig.AutoMapperConfiguration.Enabled)
-                        enabledCount++;
-                    break;
-                case MqttDataIngestionConfiguration mqttConfig when mqttConfig.AutoMapperConfiguration != null:
-                    totalWithAutoMapper++;
-                    if (mqttConfig.AutoMapperConfiguration.Enabled)
-                        enabledCount++;
-                    break;
-            }
-        }
-
-        return $"{enabledCount}/{totalWithAutoMapper}";
+        // Auto-mapping is now handled globally by SimplifiedAutoMapperService
+        return "Auto";
     }
 
     public void Dispose()

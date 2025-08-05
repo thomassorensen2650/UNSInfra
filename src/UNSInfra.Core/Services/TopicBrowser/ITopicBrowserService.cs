@@ -156,4 +156,15 @@ public class TopicDataUpdatedEventArgs : EventArgs
     /// Gets or sets the updated data point.
     /// </summary>
     public DataPoint DataPoint { get; set; } = new();
+}
+
+/// <summary>
+/// Event arguments for when a topic is removed.
+/// </summary>
+public class TopicRemovedEventArgs : EventArgs
+{
+    /// <summary>
+    /// Gets or sets the information about the removed topic.
+    /// </summary>
+    public TopicInfo TopicInfo { get; set; } = new();
 } 
