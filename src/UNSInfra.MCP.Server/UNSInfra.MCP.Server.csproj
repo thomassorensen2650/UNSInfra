@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>UNSInfra.MCP.Server</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="8.0.0" />
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="6.4.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="../UNSInfra.Core/UNSInfra.Core.csproj" />
+    <ProjectReference Include="../UNSInfra.Storage.InMemory/UNSInfra.Storage.InMemory.csproj" />
+    <ProjectReference Include="../UNSInfra.Storage.SQLite/UNSInfra.Storage.SQLite.csproj" />
+    <ProjectReference Include="../UNSInfra.Services.V1/UNSInfra.Services.V1.csproj" />
+    <ProjectReference Include="../UNSInfra.Services.SocketIO/UNSInfra.Services.SocketIO.csproj" />
+  </ItemGroup>
+
+</Project>

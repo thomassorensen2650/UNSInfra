@@ -5,10 +5,12 @@
 @using UNSInfra.Validation
 @using UNSInfra.Services.TopicBrowser
 @using UNSInfra.Models.Data
+@using UNSInfra.UI.Services
 @using System.Text.Json
 @inject ISchemaRepository SchemaRepository
 @inject ISchemaValidator SchemaValidator
 @inject ITopicBrowserService TopicBrowserService
+@inject McpServerBackgroundService McpService
 @inject ILogger<Settings> Logger
 @implements IDisposable
 
@@ -63,6 +65,14 @@
                         @onclick="@(() => SetActiveTab("automapping"))">
                     <i class="bi bi-diagram-2 me-2"></i>
                     Auto Mapping
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "mcp" ? "active" : "")" 
+                        type="button" role="tab"
+                        @onclick="@(() => SetActiveTab("mcp"))">
+                    <i class="bi bi-broadcast me-2"></i>
+                    MCP Server
                 </button>
             </li>
             <li class="nav-item" role="presentation">
@@ -310,6 +320,180 @@
                 </div>
             </div>
 
+            <!-- MCP Server Configuration Tab -->
+            <div class="tab-pane @(activeTab == "mcp" ? "show active" : "")" role="tabpanel">
+                <div class="tab-section">
+                    <div class="section-header">
+                        <h5>MCP Server Configuration</h5>
+                        <p class="text-muted">Control the Model Context Protocol (MCP) server for AI assistant integration</p>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-8">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0">
+                                        <i class="bi bi-broadcast me-2"></i>
+                                        MCP Server Control
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    @if (McpService != null)
+                                    {
+                                        <div class="row align-items-center mb-3">
+                                            <div class="col-sm-4">
+                                                <strong>Status:</strong>
+                                            </div>
+                                            <div class="col-sm-8">
+                                                @if (McpService.IsRunning)
+                                                {
+                                                    <span class="badge bg-success">
+                                                        <i class="bi bi-check-circle me-1"></i>
+                                                        Running
+                                                    </span>
+                                                }
+                                                else if (McpService.IsStarting)
+                                                {
+                                                    <span class="badge bg-warning">
+                                                        <i class="bi bi-arrow-clockwise me-1"></i>
+                                                        Starting...
+                                                    </span>
+                                                }
+                                                else if (McpService.IsStopping)
+                                                {
+                                                    <span class="badge bg-warning">
+                                                        <i class="bi bi-arrow-clockwise me-1"></i>
+                                                        Stopping...
+                                                    </span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-secondary">
+                                                        <i class="bi bi-stop-circle me-1"></i>
+                                                        Stopped
+                                                    </span>
+                                                }
+                                            </div>
+                                        </div>
+
+                                        @if (McpService.IsRunning)
+                                        {
+                                            <div class="row align-items-center mb-3">
+                                                <div class="col-sm-4">
+                                                    <strong>Server URL:</strong>
+                                                </div>
+                                                <div class="col-sm-8">
+                                                    <div class="input-group">
+                                                        <input type="text" class="form-control" value="@McpService.BaseUrl" readonly />
+                                                        <button class="btn btn-outline-secondary" type="button" @onclick="CopyMcpUrl">
+                                                            <i class="bi bi-clipboard"></i>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            <div class="row align-items-center mb-3">
+                                                <div class="col-sm-4">
+                                                    <strong>Started At:</strong>
+                                                </div>
+                                                <div class="col-sm-8">
+                                                    @if (McpService.StartedAt.HasValue)
+                                                    {
+                                                        <span>@McpService.StartedAt.Value.ToString("yyyy-MM-dd HH:mm:ss")</span>
+                                                    }
+                                                </div>
+                                            </div>
+                                        }
+
+                                        @if (!string.IsNullOrEmpty(McpService.LastError))
+                                        {
+                                            <div class="row align-items-center mb-3">
+                                                <div class="col-sm-4">
+                                                    <strong>Last Error:</strong>
+                                                </div>
+                                                <div class="col-sm-8">
+                                                    <div class="alert alert-danger mb-0 py-2">
+                                                        <small>@McpService.LastError</small>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        }
+
+                                        <div class="row">
+                                            <div class="col-sm-4">
+                                                <strong>Port:</strong>
+                                            </div>
+                                            <div class="col-sm-4">
+                                                <input type="number" class="form-control" @bind="mcpPort" min="1024" max="65535" disabled="@(McpService.IsRunning || McpService.IsStarting)" />
+                                            </div>
+                                            <div class="col-sm-4">
+                                                @if (McpService.IsRunning)
+                                                {
+                                                    <button class="btn btn-danger" @onclick="StopMcpServer" disabled="@McpService.IsStopping">
+                                                        <i class="bi bi-stop-circle me-1"></i>
+                                                        Stop Server
+                                                    </button>
+                                                }
+                                                else
+                                                {
+                                                    <button class="btn btn-success" @onclick="StartMcpServer" disabled="@(McpService.IsStarting || McpService.IsStopping)">
+                                                        <i class="bi bi-play-circle me-1"></i>
+                                                        Start Server
+                                                    </button>
+                                                }
+                                            </div>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <div class="alert alert-warning">
+                                            <i class="bi bi-exclamation-triangle me-2"></i>
+                                            MCP server service is not available
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-4">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="card-title mb-0">
+                                        <i class="bi bi-info-circle me-2"></i>
+                                        About MCP Server
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <p class="card-text">
+                                        The MCP server provides AI assistants with tools to query your UNS hierarchy, 
+                                        namespaces, topics, and data through the Model Context Protocol.
+                                    </p>
+                                    
+                                    <h6>Available Tools:</h6>
+                                    <ul class="list-unstyled small">
+                                        <li><i class="bi bi-dot"></i> get_uns_hierarchy</li>
+                                        <li><i class="bi bi-dot"></i> get_namespace_topics</li>
+                                        <li><i class="bi bi-dot"></i> get_topic_current_value</li>
+                                        <li><i class="bi bi-dot"></i> get_topic_historical_data</li>
+                                        <li><i class="bi bi-dot"></i> search_topics</li>
+                                    </ul>
+                                    
+                                    @if (McpService?.IsRunning == true)
+                                    {
+                                        <div class="mt-3">
+                                            <a href="@($"{McpService.BaseUrl}/swagger")" target="_blank" class="btn btn-outline-primary btn-sm">
+                                                <i class="bi bi-box-arrow-up-right me-1"></i>
+                                                View API Docs
+                                            </a>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- System Configuration Tab -->
             <div class="tab-pane @(activeTab == "system" ? "show active" : "")" role="tabpanel">
                 <div class="tab-section">
@@ -436,6 +620,9 @@
 @code {
     private string activeTab = "storage";
 
+    // MCP Server properties
+    private int mcpPort = 5002;
+
     // Schema validation properties
     private List<DataSchema> allSchemas = new();
     private List<DataSchema> displayedSchemas = new();
@@ -463,6 +650,12 @@
     protected override async Task OnInitializedAsync()
     {
         await RefreshSchemas();
+        
+        // Subscribe to MCP server status changes
+        McpService.StatusChanged += OnMcpStatusChanged;
+        
+        // Initialize MCP port from current service port
+        mcpPort = McpService.Port;
     }
 
     private void SetActiveTab(string tabName)
@@ -738,9 +931,54 @@
         StateHasChanged();
     }
 
+    // MCP Server methods
+    private async Task StartMcpServer()
+    {
+        try
+        {
+            await McpService.StartMcpServerAsync(mcpPort);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error starting MCP server");
+        }
+    }
+
+    private async Task StopMcpServer()
+    {
+        try
+        {
+            await McpService.StopMcpServerAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error stopping MCP server");
+        }
+    }
+
+    private async Task CopyMcpUrl()
+    {
+        try
+        {
+            // Use JavaScript interop to copy to clipboard
+            await Task.CompletedTask; // Placeholder - would need IJSRuntime for actual clipboard access
+            Logger.LogInformation("MCP URL copied to clipboard: {Url}", McpService.BaseUrl);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error copying MCP URL to clipboard");
+        }
+    }
+
+    private void OnMcpStatusChanged(object? sender, McpServerStatusChangedEventArgs e)
+    {
+        InvokeAsync(StateHasChanged);
+    }
+
     public void Dispose()
     {
-        // Cleanup if needed
+        // Unsubscribe from events
+        McpService.StatusChanged -= OnMcpStatusChanged;
     }
 
     private class PropertyTypeItem

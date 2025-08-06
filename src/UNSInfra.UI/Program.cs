@@ -99,6 +99,12 @@ builder.Services.AddEventDrivenServices();
 // Add the event-driven background service for non-blocking data processing
 builder.Services.AddHostedService<UNSInfra.UI.Services.EventDrivenDataIngestionBackgroundService>();
 
+// Add MCP server background service
+builder.Services.AddHostedService<UNSInfra.UI.Services.McpServerBackgroundService>();
+builder.Services.AddSingleton<UNSInfra.UI.Services.McpServerBackgroundService>(provider =>
+    (UNSInfra.UI.Services.McpServerBackgroundService)provider.GetServices<IHostedService>()
+        .First(s => s is UNSInfra.UI.Services.McpServerBackgroundService));
+
 // Register hierarchy service
 builder.Services.AddScoped<IHierarchyService, HierarchyService>();
 

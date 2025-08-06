@@ -1,6 +1,8 @@
 @using UNSInfra.Services.TopicBrowser
 @using UNSInfra.Models.Hierarchy
 
+@if (Node != null)
+{
 <li class="topic-tree-item @GetItemClass()">
     <div class="tree-node-content @GetNodeContentClass()" @onclick="ToggleExpanded">
         @if (Node.HasChildren)
@@ -45,13 +47,13 @@
         @if (Node.Name == "📁 NS")
         {
             <!-- Special case: always render NS tree editor for the NS section -->
-            <div class="ms-4 mt-2">
+            <div class="">
                 <NSTreeEditor OnAddDataToNamespace="OnAddDataToNamespace" OnTopicSelected="OnTopicSelected" />
             </div>
         }
         else if (Node.HasChildren)
         {
-            <div class="ms-4 mt-2">
+            <div class="">
                 @if (Node.IsLoadingChildren)
                 {
                     <div class="d-flex align-items-center">
@@ -83,6 +85,7 @@
         }
     }
 </li>
+}
 
 @code {
     [Parameter] public TopicTree.TopicTreeNodeModel Node { get; set; } = new();
@@ -108,6 +111,8 @@
 
     private string GetItemClass()
     {
+        if (Node == null) return "";
+        
         var classes = new List<string>();
         
         if (Node.IsBlinking)
@@ -115,7 +120,7 @@
             classes.Add("blinking");
         }
         
-        if (HighlightedPaths.Contains(Node.FullPath))
+        if (!string.IsNullOrEmpty(Node.FullPath) && HighlightedPaths.Contains(Node.FullPath))
         {
             classes.Add("highlighted");
         }

@@ -160,12 +160,12 @@ public class SimplifiedAutoMapperService : IDisposable
     /// </summary>
     private List<string> ExtractCandidatePaths(string topic)
     {
-        var parts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries).SkipLast(1).ToArray();
+        var parts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
         var candidates = new List<string>();
         
-        // first is connection type (MQTT), second could be operation (SocketIO updated etc.)
-        // Start from index 1 to skip single-part topics which are unlikely to be namespace matches
-        for (int i = 1; i <= Math.Min(2, parts.Length); i++)
+        // Extract all possible paths starting from different points
+        // Skip the first part (connection type like "socket", "mqtt") and try various combinations
+        for (int i = 1; i < parts.Length; i++)
         {
             var candidatePath = string.Join("/", parts.Skip(i));
             if (!string.IsNullOrEmpty(candidatePath))
@@ -182,11 +182,9 @@ public class SimplifiedAutoMapperService : IDisposable
     /// </summary>
     private void AddNamespaceToCache(NSTreeNode node, string currentPath)
     {
-     
-        if (node.Namespace is not null)
+        // Add this namespace path to cache - all paths are valid potential matches
+        if (!string.IsNullOrEmpty(currentPath))
         {
-            // We only allow data in namespaces
-            // Add this namespace path to cache
             _namespaceCache[currentPath] = currentPath;
         }
         
