@@ -23,3 +23,24 @@
 **/values.dev.yaml
 LICENSE
 README.md
+
+# Additional optimization entries
+**/*.log
+**/*.tmp
+**/TestResults/
+**/coverage/
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+**/*.swp
+**/*.swo
+**/*~
+**/data/
+**/*.db
+**/*.sqlite
+**/*.sqlite3
+**/logs/

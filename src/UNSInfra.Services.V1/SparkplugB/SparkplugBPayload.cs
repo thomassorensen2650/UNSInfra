@@ -1,6 +1,7 @@
 using Google.Protobuf;
 using Google.Protobuf.Collections;
 using Google.Protobuf.Reflection;
+using System.IO;
 
 namespace UNSInfra.Services.V1.SparkplugB;
 
@@ -20,7 +21,19 @@ public sealed partial class SparkplugBPayload : IMessage<SparkplugBPayload>
     
     public RepeatedField<Types.Metric> Metrics => metrics_;
 
-    public MessageDescriptor Descriptor => throw new NotImplementedException("Simplified implementation");
+    public MessageDescriptor Descriptor => throw new NotImplementedException("Simplified implementation - use custom serialization methods");
+
+    /// <summary>
+    /// Custom serialization method for test scenarios
+    /// </summary>
+    public byte[] ToByteArray()
+    {
+        using var stream = new MemoryStream();
+        using var output = new CodedOutputStream(stream);
+        WriteTo(output);
+        output.Flush();
+        return stream.ToArray();
+    }
 
     public int CalculateSize()
     {
@@ -113,9 +126,27 @@ public sealed partial class SparkplugBPayload : IMessage<SparkplugBPayload>
             public bool HasIsTransient => IsTransient;
             public bool HasIsNull => IsNull;
 
-            public MessageDescriptor Descriptor => throw new NotImplementedException("Simplified implementation");
+            public MessageDescriptor Descriptor => throw new NotImplementedException("Simplified implementation - use custom serialization methods");
 
-            public int CalculateSize() => 0;
+            public int CalculateSize()
+            {
+                int size = 0;
+                if (Name.Length != 0) size += 1 + CodedOutputStream.ComputeStringSize(Name);
+                if (Alias != 0) size += 1 + CodedOutputStream.ComputeUInt64Size(Alias);
+                if (Timestamp != 0) size += 1 + CodedOutputStream.ComputeUInt64Size(Timestamp);
+                if (Datatype != 0) size += 1 + CodedOutputStream.ComputeUInt32Size(Datatype);
+                if (IsHistorical) size += 1 + 1;
+                if (IsTransient) size += 1 + 1;
+                if (IsNull) size += 1 + 1;
+                if (IntValue != 0) size += 1 + CodedOutputStream.ComputeUInt64Size(IntValue);
+                if (LongValue != 0) size += 1 + CodedOutputStream.ComputeUInt64Size(LongValue);
+                if (FloatValue != 0F) size += 1 + 4;
+                if (DoubleValue != 0D) size += 1 + 8;
+                if (BooleanValue) size += 1 + 1;
+                if (StringValue.Length != 0) size += 1 + CodedOutputStream.ComputeStringSize(StringValue);
+                if (BytesValue != null) size += 1 + CodedOutputStream.ComputeBytesSize(BytesValue);
+                return size;
+            }
             public Metric Clone() => new Metric(this);
             public Metric() { }
             public Metric(Metric other) : this()
@@ -372,3 +403,4 @@ public sealed partial class SparkplugBPayload : IMessage<SparkplugBPayload>
         }
     }
 }
+
