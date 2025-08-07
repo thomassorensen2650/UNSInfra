@@ -5,6 +5,10 @@ using UNSInfra.Repositories;
 using UNSInfra.Services.TopicBrowser;
 using UNSInfra.UI.Services;
 using UNSInfra.Validation;
+using UNSInfra.Core;
+using UNSInfra.Storage.Abstractions;
+using UNSInfra.Services;
+using UNSInfra.Services.DataIngestion.Mock;
 using Moq;
 
 namespace UNSInfra.UI.Tests;
@@ -45,6 +49,21 @@ public class UITestContext : TestContext
 
         // Add JSRuntime mock
         Services.AddSingleton(JSInterop.JSRuntime);
+
+        // Mock storage services for NSTreeEditor
+        var mockRealtimeStorage = new Mock<IRealtimeStorage>();
+        Services.AddSingleton(mockRealtimeStorage.Object);
+        
+        var mockHistoricalStorage = new Mock<IHistoricalStorage>();
+        Services.AddSingleton(mockHistoricalStorage.Object);
+
+        // Mock data ingestion service
+        var mockDataIngestionService = new Mock<IDataIngestionService>();
+        Services.AddSingleton(mockDataIngestionService.Object);
+
+        // Mock namespace structure service
+        var mockNamespaceStructureService = new Mock<INamespaceStructureService>();
+        Services.AddSingleton(mockNamespaceStructureService.Object);
     }
 }
 
