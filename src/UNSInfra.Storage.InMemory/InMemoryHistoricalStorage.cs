@@ -196,7 +196,6 @@ public class InMemoryHistoricalStorage : IHistoricalStorage
         
         if (excessCount <= 0) return;
 
-        // Console.WriteLine($"Optimized cleanup: removing {excessCount} data points from {currentCount} total");
         
         _lastCleanupTime = DateTime.UtcNow;
         Interlocked.Exchange(ref _insertionsSinceLastCleanup, 0);
@@ -243,7 +242,6 @@ public class InMemoryHistoricalStorage : IHistoricalStorage
         }
         
         Interlocked.Add(ref _totalDataPointCount, -removedCount);
-        // Console.WriteLine($"Optimized cleanup completed: removed {removedCount} data points, {_totalDataPointCount} remaining");
     }
 
     private void CleanupOldestDataPoints()

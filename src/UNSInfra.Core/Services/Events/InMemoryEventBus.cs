@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using Microsoft.Extensions.Logging;
 
 namespace UNSInfra.Services.Events;
 
@@ -9,6 +10,12 @@ public class InMemoryEventBus : IEventBus
 {
     private readonly ConcurrentDictionary<Type, ConcurrentBag<Func<object, Task>>> _handlers = new();
     private readonly SemaphoreSlim _publishSemaphore = new(Environment.ProcessorCount, Environment.ProcessorCount);
+    private readonly ILogger<InMemoryEventBus> _logger;
+
+    public InMemoryEventBus(ILogger<InMemoryEventBus> logger)
+    {
+        _logger = logger;
+    }
 
     /// <inheritdoc />
     public async Task PublishAsync<T>(T eventData) where T : IEvent
@@ -35,7 +42,7 @@ public class InMemoryEventBus : IEventBus
                     catch (Exception ex)
                     {
                         // Log error but don't break other handlers
-                        Console.WriteLine($"Error in event handler for {eventType.Name}: {ex.Message}");
+                        _logger.LogError(ex, "Error in event handler for {EventType}", eventType.Name);
                     }
                 }));
             

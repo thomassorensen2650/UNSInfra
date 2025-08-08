@@ -1,6 +1,7 @@
     using System.Text.Json;
     using Microsoft.Extensions.Logging;
     using Microsoft.Extensions.Options;
+    using ModelContextProtocol.Client;
     using UNSInfra.Configuration;
     using UNSInfra.Models.Hierarchy;
     using UNSInfra.Models.Schema;
@@ -10,14 +11,47 @@
     using UNSInfra.Storage.InMemory;
     using UNSInfra.Validation;
     using UNSInfra.Services;
+    using UNSInfra.Storage.SQLite.Repositories;
 
     public class Program
 {
     public static async Task Main(string[] args)
     {
+
+
         // Setup logging
         using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
         var logger = loggerFactory.CreateLogger<TopicDiscoveryService>();
+
+        
+   
+        var clientTransport = new StdioClientTransport(new StdioClientTransportOptions
+        {
+            Name = "UNS",
+            Command = "/Users/thomassorensen/Documents/UNSInfra/src/UNSInfra.MCP.Server/bin/Debug/net9.0/UNSInfra.MCP.Server",
+            Arguments = [],
+        },loggerFactory);
+
+        var client = await McpClientFactory.CreateAsync(clientTransport);
+
+// Print the list of tools available from the server.
+        foreach (var tool in await client.ListToolsAsync())
+        {
+            Console.WriteLine($"{tool.Name} ({tool.Description})");
+        }
+
+// Execute a tool (this would normally be driven by LLM tool invocations).
+        var result = await client.CallToolAsync(
+            "get_uns_hierarchy");
+
+// echo always returns one and only one text content object
+        Console.WriteLine(result.Content.First(c => c.Type == "text").ToString());
+        
+        
+        
+        // Setup logging
+        //using var loggerFactory = LoggerFactory.Create(builder => builder.AddConsole());
+        //var logger = loggerFactory.CreateLogger<TopicDiscoveryService>();
         
         // Setup dependencies
         var realtimeStorage = new InMemoryRealtimeStorage();
@@ -48,8 +82,13 @@
         var topicDiscovery = new TopicDiscoveryService(new InMemoryTopicConfigurationRepository(), hierarchyService, logger);
         
         
+        
+        //var data = UNSInfra.MCP.Server.UnsMcpTools.GetUnsHierarchyAsync(null, topicConfigurationRepository:new SQLiteTopicConfigurationRepository().);
+
+        
         // Setup data services
-        var mqttService = new MockMqttDataService(topicDiscovery);
+        var mqttLogger = loggerFactory.CreateLogger<MockMqttDataService>();
+        var mqttService = new MockMqttDataService(topicDiscovery, mqttLogger);
         var kafkaLogger = loggerFactory.CreateLogger<MockKafkaDataService>();
         var kafkaService = new MockKafkaDataService(topicDiscovery, kafkaLogger);
 

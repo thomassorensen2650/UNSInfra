@@ -1,6 +1,8 @@
 using FluentAssertions;
 using UNSInfra.Services.Events;
 using Xunit;
+using Microsoft.Extensions.Logging;
+using Moq;
 
 namespace UNSInfra.Core.Tests.Services.Events;
 
@@ -10,7 +12,8 @@ public class InMemoryEventBusTests
 
     public InMemoryEventBusTests()
     {
-        _eventBus = new InMemoryEventBus();
+        var mockLogger = new Mock<ILogger<InMemoryEventBus>>();
+        _eventBus = new InMemoryEventBus(mockLogger.Object);
     }
 
     [Fact]

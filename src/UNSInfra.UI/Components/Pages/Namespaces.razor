@@ -11,6 +11,7 @@
 @inject ITopicConfigurationRepository TopicConfigurationRepository
 @inject ITopicConfigurationNotificationService NotificationService
 @inject IJSRuntime JSRuntime
+@inject ILogger<Namespaces> Logger
 @implements IDisposable
 @rendermode InteractiveServer
 
@@ -271,7 +272,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error loading topics: {ex.Message}");
+            Logger.LogError(ex, "Error loading topics");
             allTopics = new List<TopicInfo>();
         }
     }
@@ -404,7 +405,7 @@
         
         try
         {
-            Console.WriteLine($"Topic configuration changed: {e.TopicName} - {e.ChangeType}");
+            Logger.LogDebug("Topic configuration changed: {TopicName} - {ChangeType}", e.TopicName, e.ChangeType);
             
             // Refresh topics and tree when configurations change
             await LoadTopics();
@@ -418,7 +419,7 @@
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error handling topic configuration change: {ex.Message}");
+            Logger.LogError(ex, "Error handling topic configuration change");
         }
     }
 

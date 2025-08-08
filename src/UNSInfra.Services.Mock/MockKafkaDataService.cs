@@ -104,7 +104,7 @@ public class MockKafkaDataService : IKafkaDataService
                 // If it's unverified, log it for administrator attention
                 if (!configuration.IsVerified)
                 {
-                    Console.WriteLine($"WARNING: Received data for unverified topic '{topic}'. Please review topic configuration.");
+                    _logger.LogWarning("Received data for unverified topic '{Topic}'. Please review topic configuration.", topic);
                 }
             }
             else
@@ -112,7 +112,7 @@ public class MockKafkaDataService : IKafkaDataService
                 // Create unverified configuration for completely unknown topic
                 configuration = await _topicDiscoveryService.CreateUnverifiedTopicAsync(topic, "Kafka");
                 path = configuration.Path;
-                Console.WriteLine($"INFO: Created unverified configuration for new topic '{topic}'");
+                _logger.LogInformation("Created unverified configuration for new topic '{Topic}'", topic);
             }
         }
 

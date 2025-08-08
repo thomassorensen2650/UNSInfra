@@ -8,6 +8,7 @@ using UNSInfra.Configuration;
 using UNSInfra.Repositories;
 using UNSInfra.Storage.Abstractions;
 using UNSInfra.Storage.InMemory;
+using System.Diagnostics;
 using UNSInfra.Storage.SQLite.Repositories;
 using UNSInfra.Storage.SQLite.Services;
 using UNSInfra.Storage.SQLite.Storage;
@@ -36,7 +37,7 @@ public static class ServiceCollectionExtensions
                 // Use SQLite with a file-based database in user's home directory
                 var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 var dbPath = Path.Combine(userHome, ".unsinfra", "unsinfra.db");
-                Console.WriteLine($"[SQLite] Using database path: {dbPath}");
+                Debug.WriteLine($"[SQLite] Using database path: {dbPath}");
                 
                 // Ensure directory exists
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
@@ -210,7 +211,7 @@ public static class ServiceCollectionExtensions
                 // Use SQLite with a file-based database in user's home directory
                 var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 var dbPath = Path.Combine(userHome, ".unsinfra", "unsinfra.db");
-                Console.WriteLine($"[SQLite] Using database path: {dbPath}");
+                Debug.WriteLine($"[SQLite] Using database path: {dbPath}");
                 
                 // Ensure directory exists
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
@@ -298,7 +299,7 @@ public static class ServiceCollectionExtensions
                 // Use SQLite with a file-based database in user's home directory
                 var userHome = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
                 var dbPath = Path.Combine(userHome, ".unsinfra", "unsinfra.db");
-                Console.WriteLine($"[SQLite] Using database path: {dbPath}");
+                Debug.WriteLine($"[SQLite] Using database path: {dbPath}");
                 
                 // Ensure directory exists
                 Directory.CreateDirectory(Path.GetDirectoryName(dbPath)!);
@@ -529,7 +530,7 @@ public static class ServiceCollectionExtensions
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Could not set SQLite PRAGMA settings: {ex.Message}");
+            Debug.WriteLine($"Warning: Could not set SQLite PRAGMA settings: {ex.Message}");
         }
         
         // Initialize default hierarchy configuration
@@ -564,7 +565,7 @@ public static class ServiceCollectionExtensions
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Could not set SQLite PRAGMA settings: {ex.Message}");
+            Debug.WriteLine($"Warning: Could not set SQLite PRAGMA settings: {ex.Message}");
         }
         
         // Initialize default hierarchy configuration

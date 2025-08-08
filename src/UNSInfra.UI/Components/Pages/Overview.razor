@@ -5,6 +5,7 @@
 @inject ITopicBrowserService TopicBrowserService
 @inject IDataIngestionServiceManager ServiceManager
 @inject IDataIngestionConfigurationRepository ConfigurationRepository
+@inject ILogger<Overview> Logger
 
 <PageTitle>System Overview - UNS Infrastructure</PageTitle>
 
@@ -254,7 +255,7 @@
         catch (Exception ex)
         {
             // Handle error silently for now
-            Console.WriteLine($"Error loading statistics: {ex.Message}");
+            Logger.LogError(ex, "Error loading statistics");
         }
     }
 

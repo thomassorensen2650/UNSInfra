@@ -225,7 +225,6 @@ public class EventDrivenTopicBrowserService : ITopicBrowserService, IDisposable
     private async Task OnTopicAdded(TopicAddedEvent eventData)
     {
         // Debug: Topic added - can be enabled for debugging if needed
-        // Console.WriteLine($"[EventDrivenTopicBrowser] Topic added: {eventData.Topic} from {eventData.SourceType}");
         var topicInfo = new TopicInfo
         {
             Topic = eventData.Topic,

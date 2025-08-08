@@ -355,7 +355,7 @@ public class EventDrivenDataIngestionBackgroundService : BackgroundService
                 var path = dataPoint.Path ?? new HierarchicalPath(); // Use the actual path from the data point
                 var sourceType = dataPoint.Source ?? sender?.GetType().Name?.Replace("DataService", "") ?? "Unknown";
                 
-                Console.WriteLine($"[DataIngestionBG] New topic detected: {dataPoint.Topic} from {sourceType} with path: {path.GetFullPath()}");
+                _logger.LogDebug("New topic detected: {Topic} from {SourceType} with path: {Path}", dataPoint.Topic, sourceType, path.GetFullPath());
                 
                 if (!_newTopicChannel.Writer.TryWrite((dataPoint.Topic, path, sourceType)))
                 {

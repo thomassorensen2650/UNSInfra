@@ -1,4 +1,5 @@
 using UNSInfra.Services.TopicDiscovery;
+using Microsoft.Extensions.Logging;
 
 namespace UNSInfra.Services.DataIngestion.Mock;
 
@@ -13,6 +14,7 @@ using UNSInfra.Models.Hierarchy;
     {
         private readonly Dictionary<string, HierarchicalPath> _subscriptions = new();
         private readonly ITopicDiscoveryService _topicDiscoveryService;
+        private readonly ILogger<MockMqttDataService> _logger;
         private bool _isRunning;
 
         /// <summary>
@@ -24,9 +26,11 @@ using UNSInfra.Models.Hierarchy;
         /// Initializes a new instance of the EnhancedMockMqttDataService.
         /// </summary>
         /// <param name="topicDiscoveryService">Service for discovering and mapping unknown topics</param>
-        public MockMqttDataService(ITopicDiscoveryService topicDiscoveryService)
+        /// <param name="logger">Logger for the service</param>
+        public MockMqttDataService(ITopicDiscoveryService topicDiscoveryService, ILogger<MockMqttDataService> logger)
         {
             _topicDiscoveryService = topicDiscoveryService;
+            _logger = logger;
         }
 
         /// <summary>
@@ -100,7 +104,7 @@ using UNSInfra.Models.Hierarchy;
                     // If it's unverified, log it for administrator attention
                     if (!configuration.IsVerified)
                     {
-                        Console.WriteLine($"WARNING: Received data for unverified topic '{topic}'. Please review topic configuration.");
+                        _logger.LogWarning("Received data for unverified topic '{Topic}'. Please review topic configuration.", topic);
                     }
                 }
                 else
@@ -108,7 +112,7 @@ using UNSInfra.Models.Hierarchy;
                     // Create unverified configuration for completely unknown topic
                     configuration = await _topicDiscoveryService.CreateUnverifiedTopicAsync(topic, "MQTT");
                     path = configuration.Path;
-                    Console.WriteLine($"INFO: Created unverified configuration for new topic '{topic}'");
+                    _logger.LogInformation("Created unverified configuration for new topic '{Topic}'", topic);
                 }
             }
 

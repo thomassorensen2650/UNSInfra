@@ -12,7 +12,6 @@
     <ProjectReference Include="..\UNSInfra.Services.SocketIO\UNSInfra.Services.SocketIO.csproj" />
     <ProjectReference Include="..\UNSInfra.Storage.InMemory\UNSInfra.Storage.InMemory.csproj" />
     <ProjectReference Include="..\UNSInfra.Storage.SQLite\UNSInfra.Storage.SQLite.csproj" />
-    <ProjectReference Include="..\UNSInfra.MCP.Server\UNSInfra.MCP.Server.csproj" />
   </ItemGroup>
 
 </Project>
