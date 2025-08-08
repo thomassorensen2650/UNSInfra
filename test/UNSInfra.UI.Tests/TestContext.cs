@@ -9,6 +9,9 @@ using UNSInfra.Core;
 using UNSInfra.Storage.Abstractions;
 using UNSInfra.Services;
 using UNSInfra.Services.DataIngestion.Mock;
+using UNSInfra.Core.Configuration;
+using UNSInfra.Core.Services;
+using UNSInfra.Core.Repositories;
 using Moq;
 
 namespace UNSInfra.UI.Tests;
@@ -43,9 +46,7 @@ public class UITestContext : TestContext
         var mockInMemoryLogService = new Mock<IInMemoryLogService>();
         Services.AddSingleton(mockInMemoryLogService.Object);
 
-        // Mock MCP service - create a simple mock implementation for testing
-        var mockMcpService = new TestMcpServerBackgroundService();
-        Services.AddSingleton<UNSInfra.UI.Services.McpServerBackgroundService>(mockMcpService);
+        // MCP service removed from UI project
 
         // Add JSRuntime mock
         Services.AddSingleton(JSInterop.JSRuntime);
@@ -64,6 +65,20 @@ public class UITestContext : TestContext
         // Mock namespace structure service
         var mockNamespaceStructureService = new Mock<INamespaceStructureService>();
         Services.AddSingleton(mockNamespaceStructureService.Object);
+
+        // Mock data ingestion configuration repository
+        var mockConfigurationRepository = new Mock<IDataIngestionConfigurationRepository>();
+        mockConfigurationRepository.Setup(x => x.GetAllConfigurationsAsync())
+            .ReturnsAsync(new List<IDataIngestionConfiguration>());
+        Services.AddSingleton(mockConfigurationRepository.Object);
+
+        // Mock data ingestion service manager  
+        var mockServiceManager = new Mock<IDataIngestionServiceManager>();
+        mockServiceManager.Setup(x => x.GetServicesStatus())
+            .Returns(new Dictionary<string, ServiceStatus>());
+        mockServiceManager.Setup(x => x.GetAvailableServiceTypes())
+            .Returns(new List<IDataIngestionServiceDescriptor>());
+        Services.AddSingleton(mockServiceManager.Object);
     }
 }
 
@@ -74,14 +89,3 @@ public class MockLogger<T> : ILogger<T>
     public void Log<TState>(LogLevel logLevel, EventId eventId, TState state, Exception? exception, Func<TState, Exception?, string> formatter) { }
 }
 
-public class TestMcpServerBackgroundService : UNSInfra.UI.Services.McpServerBackgroundService
-{
-    public TestMcpServerBackgroundService() 
-        : base(Mock.Of<IServiceProvider>(), Mock.Of<ILogger<UNSInfra.UI.Services.McpServerBackgroundService>>()) 
-    {
-        // Override properties for testing
-    }
-
-    // Override the background service execution to do nothing in tests
-    protected override Task ExecuteAsync(CancellationToken stoppingToken) => Task.CompletedTask;
-}

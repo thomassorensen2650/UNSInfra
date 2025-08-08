@@ -254,8 +254,8 @@ public class SettingsTests : UITestContext
         // Assert
         Assert.Contains("Data Connections", component.Markup);
         Assert.Contains("Configure MQTT, Socket.IO", component.Markup);
-        Assert.Contains("Active Connections", component.Markup);
-        Assert.Contains("Connection management is available", component.Markup);
+        Assert.Contains("Active Configurations", component.Markup);
+        Assert.Contains("No configurations yet", component.Markup);
     }
 
     [Fact]
