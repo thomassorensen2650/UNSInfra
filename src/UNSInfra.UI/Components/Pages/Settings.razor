@@ -9,12 +9,19 @@
 @using UNSInfra.Core.Configuration
 @using UNSInfra.Core.Services
 @using UNSInfra.Core.Repositories
+@using UNSInfra.Services
+@using UNSInfra.Models.Hierarchy
+@using UNSInfra.Models.Namespace
 @using System.Text.Json
 @inject ISchemaRepository SchemaRepository
 @inject ISchemaValidator SchemaValidator
 @inject ITopicBrowserService TopicBrowserService
 @inject IDataIngestionServiceManager ServiceManager
 @inject IDataIngestionConfigurationRepository ConfigurationRepository
+@inject ITopicConfigurationRepository TopicConfigurationRepository
+@inject IHierarchyConfigurationRepository HierarchyConfigurationRepository
+@inject INamespaceConfigurationRepository NamespaceConfigurationRepository
+@inject INamespaceStructureService NamespaceStructureService
 @inject IJSRuntime JSRuntime
 @inject ILogger<Settings> Logger
 @implements IDisposable
@@ -70,6 +77,14 @@
                         @onclick="@(() => SetActiveTab("automapping"))">
                     <i class="bi bi-diagram-2 me-2"></i>
                     Auto Mapping
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button class="nav-link @(activeTab == "import-export" ? "active" : "")" 
+                        type="button" role="tab"
+                        @onclick="@(() => SetActiveTab("import-export"))">
+                    <i class="bi bi-arrow-down-up me-2"></i>
+                    Import/Export
                 </button>
             </li>
             <li class="nav-item" role="presentation">
@@ -496,6 +511,147 @@
             </div>
 
 
+            <!-- Import/Export Configuration Tab -->
+            <div class="tab-pane @(activeTab == "import-export" ? "show active" : "")" role="tabpanel">
+                <div class="tab-section">
+                    <div class="section-header">
+                        <h5>Configuration Import/Export</h5>
+                        <p class="text-muted">Backup, restore, and share your UNS configuration</p>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-download me-2"></i>
+                                        Export Configuration
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <p class="card-text">
+                                        Export your complete UNS configuration including hierarchies, namespaces, and topic mappings to a JSON file.
+                                    </p>
+                                    
+                                    @if (exportStatus.IsExporting)
+                                    {
+                                        <div class="d-flex align-items-center">
+                                            <div class="spinner-border spinner-border-sm me-2" role="status">
+                                                <span class="visually-hidden">Exporting...</span>
+                                            </div>
+                                            <span>Exporting configuration...</span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-success" @onclick="ExportConfiguration">
+                                            <i class="bi bi-download me-1"></i>
+                                            Export Configuration
+                                        </button>
+                                    }
+                                    
+                                    @if (!string.IsNullOrEmpty(exportStatus.LastExportResult))
+                                    {
+                                        <div class="alert alert-info mt-3 mb-0">
+                                            <small>@exportStatus.LastExportResult</small>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div class="col-md-6">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-upload me-2"></i>
+                                        Import Configuration
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <p class="card-text">
+                                        Import a UNS configuration from a previously exported JSON file.
+                                    </p>
+                                    
+                                    <div class="mb-3">
+                                        <label class="form-label">Configuration File</label>
+                                        <InputFile OnChange="HandleFileSelected" accept=".json" class="form-control" />
+                                        @if (!string.IsNullOrEmpty(selectedFileName))
+                                        {
+                                            <small class="text-muted">Selected: @selectedFileName</small>
+                                        }
+                                    </div>
+                                    
+                                    <div class="form-check mb-3">
+                                        <input class="form-check-input" type="checkbox" @bind="overwriteExisting" id="overwriteCheck">
+                                        <label class="form-check-label" for="overwriteCheck">
+                                            Overwrite existing configurations
+                                        </label>
+                                        <small class="form-text text-muted">
+                                            If unchecked, existing configurations will be skipped
+                                        </small>
+                                    </div>
+                                    
+                                    @if (importStatus.IsImporting)
+                                    {
+                                        <div class="d-flex align-items-center mb-3">
+                                            <div class="spinner-border spinner-border-sm me-2" role="status">
+                                                <span class="visually-hidden">Importing...</span>
+                                            </div>
+                                            <span>Importing configuration...</span>
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <button class="btn btn-primary" @onclick="ImportConfiguration" 
+                                                disabled="@(string.IsNullOrEmpty(importFileContent))">
+                                            <i class="bi bi-upload me-1"></i>
+                                            Import Configuration
+                                        </button>
+                                    }
+                                    
+                                    @if (!string.IsNullOrEmpty(importStatus.LastImportResult))
+                                    {
+                                        <div class="alert @(importStatus.LastImportSuccess ? "alert-success" : "alert-danger") mt-3 mb-0">
+                                            <small>@importStatus.LastImportResult</small>
+                                        </div>
+                                    }
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row mt-4">
+                        <div class="col-12">
+                            <div class="card">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-info-circle me-2"></i>
+                                        Import/Export Information
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <h6>What gets exported:</h6>
+                                    <ul class="list-unstyled small">
+                                        <li><i class="bi bi-check text-success me-1"></i> Hierarchy configurations and nodes</li>
+                                        <li><i class="bi bi-check text-success me-1"></i> Namespace configurations</li>
+                                        <li><i class="bi bi-check text-success me-1"></i> Topic configurations and mappings</li>
+                                        <li><i class="bi bi-check text-success me-1"></i> UNS tree structure</li>
+                                        <li><i class="bi bi-check text-success me-1"></i> Verification status and metadata</li>
+                                    </ul>
+                                    
+                                    <h6 class="mt-3">Import modes:</h6>
+                                    <ul class="list-unstyled small">
+                                        <li><i class="bi bi-arrow-right text-primary me-1"></i> <strong>Merge:</strong> Skip existing configurations (safer)</li>
+                                        <li><i class="bi bi-arrow-right text-warning me-1"></i> <strong>Overwrite:</strong> Replace existing configurations (use with caution)</li>
+                                    </ul>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- System Configuration Tab -->
             <div class="tab-pane @(activeTab == "system" ? "show active" : "")" role="tabpanel">
                 <div class="tab-section">
@@ -679,7 +835,14 @@
     // Validation testing
     private DataSchema? selectedValidationSchema;
     private string testJsonData = string.Empty;
-    private ValidationResult? validationResult;
+    private UNSInfra.Validation.ValidationResult? validationResult;
+    
+    // Import/Export properties
+    private (bool IsExporting, string LastExportResult) exportStatus = (false, string.Empty);
+    private (bool IsImporting, string LastImportResult, bool LastImportSuccess) importStatus = (false, string.Empty, false);
+    private string selectedFileName = string.Empty;
+    private string importFileContent = string.Empty;
+    private bool overwriteExisting = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -1089,7 +1252,7 @@
         }
         catch (JsonException ex)
         {
-            validationResult = new ValidationResult
+            validationResult = new UNSInfra.Validation.ValidationResult
             {
                 IsValid = false,
                 Errors = new List<string> { $"Invalid JSON: {ex.Message}" }
@@ -1097,7 +1260,7 @@
         }
         catch (Exception ex)
         {
-            validationResult = new ValidationResult
+            validationResult = new UNSInfra.Validation.ValidationResult
             {
                 IsValid = false,
                 Errors = new List<string> { $"Validation error: {ex.Message}" }
@@ -1115,6 +1278,352 @@
     {
         showValidationModal = false;
         selectedValidationSchema = null;
+        StateHasChanged();
+    }
+
+    // Import/Export Methods
+    private async Task ExportConfiguration()
+    {
+        try
+        {
+            exportStatus = (true, string.Empty);
+            StateHasChanged();
+
+            // Get all configuration data
+            var topicConfigurations = await TopicConfigurationRepository.GetAllTopicConfigurationsAsync();
+            var hierarchyConfigurations = await HierarchyConfigurationRepository.GetAllConfigurationsAsync();
+            var namespaceConfigurations = await NamespaceConfigurationRepository.GetAllNamespaceConfigurationsAsync();
+            var unsTreeStructure = await NamespaceStructureService.GetNamespaceStructureAsync();
+
+            // Create export data structure
+            var exportData = new
+            {
+                exportInfo = new
+                {
+                    exportedAt = DateTime.UtcNow,
+                    version = "1.0.0",
+                    description = "UNS Infrastructure Configuration Export",
+                    exportedBy = "UNS Infrastructure UI"
+                },
+                hierarchyConfigurations = hierarchyConfigurations.Select(h => new
+                {
+                    id = h.Id,
+                    name = h.Name,
+                    description = h.Description,
+                    isActive = h.IsActive,
+                    isSystemDefined = h.IsSystemDefined,
+                    nodes = h.Nodes.Select(n => new
+                    {
+                        id = n.Id,
+                        name = n.Name,
+                        description = n.Description,
+                        order = n.Order,
+                        parentNodeId = n.ParentNodeId,
+                        allowedChildNodeIds = n.AllowedChildNodeIds
+                    }).ToArray(),
+                    createdAt = h.CreatedAt,
+                    modifiedAt = h.ModifiedAt
+                }).ToArray(),
+                namespaceConfigurations = namespaceConfigurations.Select(n => new
+                {
+                    id = n.Id,
+                    name = n.Name,
+                    description = n.Description,
+                    isActive = n.IsActive,
+                    createdAt = n.CreatedAt,
+                    modifiedAt = n.ModifiedAt
+                }).ToArray(),
+                topicConfigurations = topicConfigurations.Select(t => new
+                {
+                    topic = t.Topic,
+                    unsName = t.UNSName,
+                    hierarchicalPath = t.Path?.ToString(),
+                    nsPath = t.NSPath,
+                    sourceType = t.SourceType,
+                    isVerified = t.IsVerified,
+                    createdAt = t.CreatedAt,
+                    modifiedAt = t.ModifiedAt
+                }).ToArray(),
+                summary = new
+                {
+                    totalHierarchyConfigurations = hierarchyConfigurations.Count(),
+                    totalNamespaces = namespaceConfigurations.Count(),
+                    totalTopicConfigurations = topicConfigurations.Count(),
+                    verifiedTopics = topicConfigurations.Count(t => t.IsVerified),
+                    unverifiedTopics = topicConfigurations.Count(t => !t.IsVerified)
+                }
+            };
+
+            var json = JsonSerializer.Serialize(exportData, new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+            });
+
+            // Create filename with timestamp
+            var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+            var fileName = $"UNSConfiguration_Export_{timestamp}.json";
+
+            // Download the file
+            await JSRuntime.InvokeVoidAsync("downloadFileFromString", fileName, json);
+
+            exportStatus = (false, $"Configuration exported successfully to {fileName}");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error exporting configuration");
+            exportStatus = (false, $"Export failed: {ex.Message}");
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task HandleFileSelected(InputFileChangeEventArgs e)
+    {
+        try
+        {
+            var file = e.File;
+            if (file == null) return;
+
+            selectedFileName = file.Name;
+            
+            // Validate file type
+            if (!file.Name.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+            {
+                importStatus = (false, "Please select a JSON file", false);
+                importFileContent = string.Empty;
+                StateHasChanged();
+                return;
+            }
+
+            // Read file content
+            using var stream = file.OpenReadStream(maxAllowedSize: 10 * 1024 * 1024); // 10MB limit
+            using var reader = new StreamReader(stream);
+            importFileContent = await reader.ReadToEndAsync();
+            
+            // Basic JSON validation
+            try
+            {
+                JsonSerializer.Deserialize<JsonElement>(importFileContent);
+                importStatus = (false, "File loaded and validated successfully", true);
+            }
+            catch (JsonException)
+            {
+                importStatus = (false, "Invalid JSON file format", false);
+                importFileContent = string.Empty;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error reading import file");
+            importStatus = (false, $"Error reading file: {ex.Message}", false);
+            importFileContent = string.Empty;
+        }
+        
+        StateHasChanged();
+    }
+
+    private async Task ImportConfiguration()
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(importFileContent))
+            {
+                importStatus = (false, "No file selected", false);
+                StateHasChanged();
+                return;
+            }
+
+            importStatus = (true, "Importing configuration...", false);
+            StateHasChanged();
+
+            // Parse the import data
+            var importData = JsonSerializer.Deserialize<JsonElement>(importFileContent);
+            
+            var importStats = new
+            {
+                hierarchyImported = 0,
+                namespaceImported = 0,
+                topicsImported = 0,
+                hierarchySkipped = 0,
+                namespaceSkipped = 0,
+                topicsSkipped = 0,
+                errors = new List<string>()
+            };
+
+            // Import hierarchy configurations
+            if (importData.TryGetProperty("hierarchyConfigurations", out var hierarchyElement) && hierarchyElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in hierarchyElement.EnumerateArray())
+                {
+                    try
+                    {
+                        if (!item.TryGetProperty("id", out var idProp) || !item.TryGetProperty("name", out var nameProp))
+                            continue;
+
+                        var id = idProp.GetString();
+                        var name = nameProp.GetString();
+                        
+                        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(name))
+                            continue;
+
+                        var existing = await HierarchyConfigurationRepository.GetConfigurationByIdAsync(id);
+                        if (existing != null && !overwriteExisting)
+                        {
+                            importStats = importStats with { hierarchySkipped = importStats.hierarchySkipped + 1 };
+                            continue;
+                        }
+
+                        var config = new HierarchyConfiguration
+                        {
+                            Id = id,
+                            Name = name,
+                            Description = item.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+                            IsActive = item.TryGetProperty("isActive", out var active) ? active.GetBoolean() : true,
+                            IsSystemDefined = item.TryGetProperty("isSystemDefined", out var sysDef) ? sysDef.GetBoolean() : false,
+                            CreatedAt = DateTime.UtcNow,
+                            ModifiedAt = DateTime.UtcNow
+                        };
+
+                        await HierarchyConfigurationRepository.SaveConfigurationAsync(config);
+                        importStats = importStats with { hierarchyImported = importStats.hierarchyImported + 1 };
+                    }
+                    catch (Exception ex)
+                    {
+                        importStats.errors.Add($"Error importing hierarchy item: {ex.Message}");
+                    }
+                }
+            }
+
+            // Import namespace configurations  
+            if (importData.TryGetProperty("namespaceConfigurations", out var namespaceElement) && namespaceElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in namespaceElement.EnumerateArray())
+                {
+                    try
+                    {
+                        if (!item.TryGetProperty("id", out var idProp) || !item.TryGetProperty("name", out var nameProp))
+                            continue;
+
+                        var id = idProp.GetString();
+                        var name = nameProp.GetString();
+                        
+                        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(name))
+                            continue;
+
+                        var existing = await NamespaceConfigurationRepository.GetNamespaceConfigurationAsync(id);
+                        if (existing != null && !overwriteExisting)
+                        {
+                            importStats = importStats with { namespaceSkipped = importStats.namespaceSkipped + 1 };
+                            continue;
+                        }
+
+                        var config = new NamespaceConfiguration
+                        {
+                            Id = id,
+                            Name = name,
+                            Description = item.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+                            IsActive = item.TryGetProperty("isActive", out var active) ? active.GetBoolean() : true,
+                            CreatedAt = DateTime.UtcNow,
+                            ModifiedAt = DateTime.UtcNow
+                        };
+
+                        await NamespaceConfigurationRepository.SaveNamespaceConfigurationAsync(config);
+                        importStats = importStats with { namespaceImported = importStats.namespaceImported + 1 };
+                    }
+                    catch (Exception ex)
+                    {
+                        importStats.errors.Add($"Error importing namespace item: {ex.Message}");
+                    }
+                }
+            }
+
+            // Import topic configurations
+            if (importData.TryGetProperty("topicConfigurations", out var topicsElement) && topicsElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in topicsElement.EnumerateArray())
+                {
+                    try
+                    {
+                        if (!item.TryGetProperty("topic", out var topicProp))
+                            continue;
+
+                        var topic = topicProp.GetString();
+                        if (string.IsNullOrEmpty(topic))
+                            continue;
+
+                        var allTopics = await TopicConfigurationRepository.GetAllTopicConfigurationsAsync();
+                        var existing = allTopics.FirstOrDefault(t => t.Topic.Equals(topic, StringComparison.OrdinalIgnoreCase));
+                            
+                        if (existing != null && !overwriteExisting)
+                        {
+                            importStats = importStats with { topicsSkipped = importStats.topicsSkipped + 1 };
+                            continue;
+                        }
+
+                        var unsName = item.TryGetProperty("unsName", out var unsNameProp) ? unsNameProp.GetString() ?? "" : "";
+                        var hierarchicalPath = item.TryGetProperty("hierarchicalPath", out var pathProp) ? pathProp.GetString() : null;
+                        var nsPath = item.TryGetProperty("nsPath", out var nsPathProp) ? nsPathProp.GetString() : null;
+                        var sourceType = item.TryGetProperty("sourceType", out var sourceProp) ? sourceProp.GetString() ?? "" : "";
+                        var isVerified = item.TryGetProperty("isVerified", out var verifiedProp) ? verifiedProp.GetBoolean() : false;
+
+                        HierarchicalPath? path = null;
+                        if (!string.IsNullOrEmpty(hierarchicalPath))
+                        {
+                            try
+                            {
+                                var pathParts = hierarchicalPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                                path = new HierarchicalPath();
+                                for (int i = 0; i < pathParts.Length; i++)
+                                {
+                                    path.SetValue($"Level{i}", pathParts[i]);
+                                }
+                            }
+                            catch
+                            {
+                                // If path parsing fails, leave as null
+                            }
+                        }
+
+                        var config = new TopicConfiguration
+                        {
+                            Topic = topic,
+                            UNSName = unsName,
+                            Path = path,
+                            NSPath = nsPath,
+                            SourceType = sourceType,
+                            IsVerified = isVerified,
+                            CreatedAt = DateTime.UtcNow,
+                            ModifiedAt = DateTime.UtcNow
+                        };
+
+                        await TopicConfigurationRepository.SaveTopicConfigurationAsync(config);
+                        importStats = importStats with { topicsImported = importStats.topicsImported + 1 };
+                    }
+                    catch (Exception ex)
+                    {
+                        importStats.errors.Add($"Error importing topic item: {ex.Message}");
+                    }
+                }
+            }
+
+            var totalImported = importStats.hierarchyImported + importStats.namespaceImported + importStats.topicsImported;
+            var totalSkipped = importStats.hierarchySkipped + importStats.namespaceSkipped + importStats.topicsSkipped;
+            
+            var resultMessage = $"Import completed: {totalImported} items imported, {totalSkipped} skipped";
+            if (importStats.errors.Any())
+            {
+                resultMessage += $", {importStats.errors.Count} errors";
+            }
+
+            importStatus = (false, resultMessage, importStats.errors.Count == 0);
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error importing configuration");
+            importStatus = (false, $"Import failed: {ex.Message}", false);
+        }
+        
         StateHasChanged();
     }
 

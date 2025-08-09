@@ -7,6 +7,7 @@ using UNSInfra.Repositories;
 using UNSInfra.Services;
 using UNSInfra.Models.Namespace;
 using UNSInfra.Models.Hierarchy;
+using UNSInfra.Core.Repositories;
 
 namespace UNSInfra.MCP.Server;
 
@@ -384,5 +385,377 @@ public static class UnsMcpTools
                 topics = Array.Empty<object>()
             }, _jsonOptions);
         }
+    }
+
+    [McpServerTool]
+    [Description("Export complete UNS configuration to JSON format")]
+    public static async Task<string> ExportConfigurationAsync(
+        IMcpServer? thisServer,
+        ITopicConfigurationRepository topicConfigurationRepository,
+        IHierarchyConfigurationRepository hierarchyConfigurationRepository,
+        INamespaceConfigurationRepository namespaceConfigurationRepository,
+        INamespaceStructureService namespaceStructureService,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            // Get all configuration data
+            var topicConfigurations = await topicConfigurationRepository.GetAllTopicConfigurationsAsync();
+            var hierarchyConfigurations = await hierarchyConfigurationRepository.GetAllConfigurationsAsync();
+            var namespaceConfigurations = await namespaceConfigurationRepository.GetAllNamespaceConfigurationsAsync();
+            var unsTreeStructure = await namespaceStructureService.GetNamespaceStructureAsync();
+
+            // Create export data structure
+            var exportData = new
+            {
+                exportInfo = new
+                {
+                    exportedAt = DateTime.UtcNow,
+                    version = "1.0.0",
+                    description = "UNS Infrastructure Configuration Export"
+                },
+                hierarchyConfigurations = hierarchyConfigurations.Select(h => new
+                {
+                    id = h.Id,
+                    name = h.Name,
+                    description = h.Description,
+                    isActive = h.IsActive,
+                    isSystemDefined = h.IsSystemDefined,
+                    nodes = h.Nodes.Select(n => new
+                    {
+                        id = n.Id,
+                        name = n.Name,
+                        description = n.Description,
+                        order = n.Order,
+                        parentNodeId = n.ParentNodeId,
+                        allowedChildNodeIds = n.AllowedChildNodeIds
+                    }).ToArray(),
+                    createdAt = h.CreatedAt,
+                    modifiedAt = h.ModifiedAt
+                }).ToArray(),
+                namespaceConfigurations = namespaceConfigurations.Select(n => new
+                {
+                    id = n.Id,
+                    name = n.Name,
+                    description = n.Description,
+                    isActive = n.IsActive,
+                    createdAt = n.CreatedAt,
+                    modifiedAt = n.ModifiedAt
+                }).ToArray(),
+                topicConfigurations = topicConfigurations.Select(t => new
+                {
+                    topic = t.Topic,
+                    unsName = t.UNSName,
+                    hierarchicalPath = t.Path?.ToString(),
+                    nsPath = t.NSPath,
+                    sourceType = t.SourceType,
+                    isVerified = t.IsVerified,
+                    createdAt = t.CreatedAt,
+                    modifiedAt = t.ModifiedAt
+                }).ToArray(),
+                unsTreeStructure = BuildHierarchyTree(unsTreeStructure, topicConfigurations.Cast<TopicConfiguration>()),
+                summary = new
+                {
+                    totalHierarchyNodes = hierarchyConfigurations.Count(),
+                    totalNamespaces = namespaceConfigurations.Count(),
+                    totalTopicConfigurations = topicConfigurations.Count(),
+                    verifiedTopics = topicConfigurations.Count(t => t.IsVerified),
+                    unverifiedTopics = topicConfigurations.Count(t => !t.IsVerified)
+                }
+            };
+
+            var result = new
+            {
+                success = true,
+                message = "Configuration exported successfully",
+                exportData = exportData
+            };
+
+            return JsonSerializer.Serialize(result, _jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                success = false,
+                message = $"Error exporting configuration: {ex.Message}",
+                exportData = (object?)null
+            }, _jsonOptions);
+        }
+    }
+
+    [McpServerTool]
+    [Description("Import UNS configuration from JSON format")]
+    public static async Task<string> ImportConfigurationAsync(
+        IMcpServer? thisServer,
+        ITopicConfigurationRepository topicConfigurationRepository,
+        IHierarchyConfigurationRepository hierarchyConfigurationRepository,
+        INamespaceConfigurationRepository namespaceConfigurationRepository,
+        [Description("JSON configuration data to import")] string configurationJson,
+        [Description("Whether to overwrite existing configurations (default: false)")] bool overwriteExisting = false,
+        CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(configurationJson))
+            {
+                return JsonSerializer.Serialize(new
+                {
+                    success = false,
+                    message = "Configuration JSON is required",
+                    importResult = (object?)null
+                }, _jsonOptions);
+            }
+
+            // Parse the import data
+            var importData = JsonSerializer.Deserialize<JsonElement>(configurationJson);
+            
+            var importStats = new
+            {
+                hierarchyImported = 0,
+                namespaceImported = 0,
+                topicsImported = 0,
+                hierarchySkipped = 0,
+                namespaceSkipped = 0,
+                topicsSkipped = 0,
+                errors = new List<string>()
+            };
+
+            // Import hierarchy configurations
+            if (importData.TryGetProperty("hierarchyConfigurations", out var hierarchyElement) && hierarchyElement.ValueKind == JsonValueKind.Array)
+            {
+                var (imported, skipped, errors) = await ImportHierarchyConfigurations(hierarchyConfigurationRepository, hierarchyElement, overwriteExisting);
+                importStats = importStats with { hierarchyImported = imported, hierarchySkipped = skipped };
+                importStats.errors.AddRange(errors);
+            }
+
+            // Import namespace configurations  
+            if (importData.TryGetProperty("namespaceConfigurations", out var namespaceElement) && namespaceElement.ValueKind == JsonValueKind.Array)
+            {
+                var (imported, skipped, errors) = await ImportNamespaceConfigurations(namespaceConfigurationRepository, namespaceElement, overwriteExisting);
+                importStats = importStats with { namespaceImported = imported, namespaceSkipped = skipped };
+                importStats.errors.AddRange(errors);
+            }
+
+            // Import topic configurations
+            if (importData.TryGetProperty("topicConfigurations", out var topicsElement) && topicsElement.ValueKind == JsonValueKind.Array)
+            {
+                var (imported, skipped, errors) = await ImportTopicConfigurations(topicConfigurationRepository, topicsElement, overwriteExisting);
+                importStats = importStats with { topicsImported = imported, topicsSkipped = skipped };
+                importStats.errors.AddRange(errors);
+            }
+
+            var result = new
+            {
+                success = true,
+                message = $"Import completed: {importStats.hierarchyImported + importStats.namespaceImported + importStats.topicsImported} items imported, {importStats.hierarchySkipped + importStats.namespaceSkipped + importStats.topicsSkipped} skipped",
+                importResult = importStats
+            };
+
+            return JsonSerializer.Serialize(result, _jsonOptions);
+        }
+        catch (Exception ex)
+        {
+            return JsonSerializer.Serialize(new
+            {
+                success = false,
+                message = $"Error importing configuration: {ex.Message}",
+                importResult = (object?)null
+            }, _jsonOptions);
+        }
+    }
+
+    private static async Task<(int imported, int skipped, List<string> errors)> ImportHierarchyConfigurations(
+        IHierarchyConfigurationRepository repository, JsonElement hierarchyArray, bool overwrite)
+    {
+        var imported = 0;
+        var skipped = 0;
+        var errors = new List<string>();
+
+        foreach (var item in hierarchyArray.EnumerateArray())
+        {
+            try
+            {
+                if (!item.TryGetProperty("id", out var idProp) || !item.TryGetProperty("name", out var nameProp))
+                {
+                    errors.Add("Hierarchy item missing required id or name");
+                    continue;
+                }
+
+                var id = idProp.GetString();
+                var name = nameProp.GetString();
+                
+                if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(name))
+                {
+                    errors.Add("Hierarchy item has empty id or name");
+                    continue;
+                }
+
+                var existing = await repository.GetConfigurationByIdAsync(id);
+                if (existing != null && !overwrite)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var config = new HierarchyConfiguration
+                {
+                    Id = id,
+                    Name = name,
+                    Description = item.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+                    IsActive = item.TryGetProperty("isActive", out var active) ? active.GetBoolean() : true,
+                    IsSystemDefined = item.TryGetProperty("isSystemDefined", out var sysDef) ? sysDef.GetBoolean() : false,
+                    CreatedAt = DateTime.UtcNow,
+                    ModifiedAt = DateTime.UtcNow
+                };
+
+                await repository.SaveConfigurationAsync(config);
+                imported++;
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Error importing hierarchy item: {ex.Message}");
+            }
+        }
+
+        return (imported, skipped, errors);
+    }
+
+    private static async Task<(int imported, int skipped, List<string> errors)> ImportNamespaceConfigurations(
+        INamespaceConfigurationRepository repository, JsonElement namespaceArray, bool overwrite)
+    {
+        var imported = 0;
+        var skipped = 0;
+        var errors = new List<string>();
+
+        foreach (var item in namespaceArray.EnumerateArray())
+        {
+            try
+            {
+                if (!item.TryGetProperty("id", out var idProp) || !item.TryGetProperty("name", out var nameProp))
+                {
+                    errors.Add("Namespace item missing required id or name");
+                    continue;
+                }
+
+                var id = idProp.GetString();
+                var name = nameProp.GetString();
+                
+                if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(name))
+                {
+                    errors.Add("Namespace item has empty id or name");
+                    continue;
+                }
+
+                var existing = await repository.GetNamespaceConfigurationAsync(id);
+                if (existing != null && !overwrite)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var config = new NamespaceConfiguration
+                {
+                    Id = id,
+                    Name = name,
+                    Description = item.TryGetProperty("description", out var desc) ? desc.GetString() ?? "" : "",
+                    IsActive = item.TryGetProperty("isActive", out var active) ? active.GetBoolean() : true,
+                    CreatedAt = DateTime.UtcNow,
+                    ModifiedAt = DateTime.UtcNow
+                };
+
+                await repository.SaveNamespaceConfigurationAsync(config);
+                imported++;
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Error importing namespace item: {ex.Message}");
+            }
+        }
+
+        return (imported, skipped, errors);
+    }
+
+    private static async Task<(int imported, int skipped, List<string> errors)> ImportTopicConfigurations(
+        ITopicConfigurationRepository repository, JsonElement topicsArray, bool overwrite)
+    {
+        var imported = 0;
+        var skipped = 0;
+        var errors = new List<string>();
+
+        foreach (var item in topicsArray.EnumerateArray())
+        {
+            try
+            {
+                if (!item.TryGetProperty("topic", out var topicProp))
+                {
+                    errors.Add("Topic item missing required topic name");
+                    continue;
+                }
+
+                var topic = topicProp.GetString();
+                
+                if (string.IsNullOrEmpty(topic))
+                {
+                    errors.Add("Topic item has empty topic name");
+                    continue;
+                }
+
+                var existing = (await repository.GetAllTopicConfigurationsAsync())
+                    .FirstOrDefault(t => t.Topic.Equals(topic, StringComparison.OrdinalIgnoreCase));
+                    
+                if (existing != null && !overwrite)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var unsName = item.TryGetProperty("unsName", out var unsNameProp) ? unsNameProp.GetString() ?? "" : "";
+                var hierarchicalPath = item.TryGetProperty("hierarchicalPath", out var pathProp) ? pathProp.GetString() : null;
+                var nsPath = item.TryGetProperty("nsPath", out var nsPathProp) ? nsPathProp.GetString() : null;
+                var sourceType = item.TryGetProperty("sourceType", out var sourceProp) ? sourceProp.GetString() ?? "" : "";
+                var isVerified = item.TryGetProperty("isVerified", out var verifiedProp) ? verifiedProp.GetBoolean() : false;
+
+                HierarchicalPath? path = null;
+                if (!string.IsNullOrEmpty(hierarchicalPath))
+                {
+                    try
+                    {
+                        // Create path by parsing the string format (assuming enterprise/site/area format)
+                        var pathParts = hierarchicalPath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                        path = new HierarchicalPath();
+                        for (int i = 0; i < pathParts.Length; i++)
+                        {
+                            path.SetValue($"Level{i}", pathParts[i]);
+                        }
+                    }
+                    catch
+                    {
+                        // If path parsing fails, leave as null
+                    }
+                }
+
+                var config = new TopicConfiguration
+                {
+                    Topic = topic,
+                    UNSName = unsName,
+                    Path = path,
+                    NSPath = nsPath,
+                    SourceType = sourceType,
+                    IsVerified = isVerified,
+                    CreatedAt = DateTime.UtcNow,
+                    ModifiedAt = DateTime.UtcNow
+                };
+
+                await repository.SaveTopicConfigurationAsync(config);
+                imported++;
+            }
+            catch (Exception ex)
+            {
+                errors.Add($"Error importing topic item: {ex.Message}");
+            }
+        }
+
+        return (imported, skipped, errors);
     }
 }

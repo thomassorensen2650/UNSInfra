@@ -66,6 +66,13 @@ public class UITestContext : TestContext
         var mockNamespaceStructureService = new Mock<INamespaceStructureService>();
         Services.AddSingleton(mockNamespaceStructureService.Object);
 
+        // Mock additional repositories needed for Settings component
+        var mockTopicConfigurationRepository = new Mock<UNSInfra.Repositories.ITopicConfigurationRepository>();
+        Services.AddSingleton(mockTopicConfigurationRepository.Object);
+        
+        var mockNamespaceConfigurationRepository = new Mock<UNSInfra.Repositories.INamespaceConfigurationRepository>();
+        Services.AddSingleton(mockNamespaceConfigurationRepository.Object);
+
         // Mock data ingestion configuration repository
         var mockConfigurationRepository = new Mock<IDataIngestionConfigurationRepository>();
         mockConfigurationRepository.Setup(x => x.GetAllConfigurationsAsync())
