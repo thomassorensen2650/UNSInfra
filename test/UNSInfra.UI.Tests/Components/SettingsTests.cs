@@ -5,8 +5,12 @@ using UNSInfra.Validation;
 using UNSInfra.Models.Schema;
 using UNSInfra.Models.Data;
 using UNSInfra.Models.Hierarchy;
+using UNSInfra.Models.Configuration;
+using UNSInfra.Core.Repositories;
 using Moq;
 using Microsoft.Extensions.Logging;
+using FluentAssertions;
+using AngleSharp.Dom;
 
 namespace UNSInfra.UI.Tests.Components;
 
@@ -16,6 +20,7 @@ public class SettingsTests : UITestContext
     private readonly Mock<ITopicBrowserService> _mockTopicBrowserService;
     private readonly Mock<ISchemaValidator> _mockSchemaValidator;
     private readonly Mock<ILogger<Settings>> _mockLogger;
+    private readonly Mock<IInputOutputConfigurationRepository> _mockInputOutputRepository;
 
     public SettingsTests()
     {
@@ -23,11 +28,13 @@ public class SettingsTests : UITestContext
         _mockTopicBrowserService = new Mock<ITopicBrowserService>();
         _mockSchemaValidator = new Mock<ISchemaValidator>();
         _mockLogger = new Mock<ILogger<Settings>>();
+        _mockInputOutputRepository = new Mock<IInputOutputConfigurationRepository>();
 
         Services.AddSingleton(_mockSchemaRepository.Object);
         Services.AddSingleton(_mockTopicBrowserService.Object);
         Services.AddSingleton(_mockSchemaValidator.Object);
         Services.AddSingleton(_mockLogger.Object);
+        Services.AddSingleton(_mockInputOutputRepository.Object);
     }
 
     [Fact]
@@ -298,6 +305,8 @@ public class SettingsTests : UITestContext
         _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
         _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
             .ReturnsAsync(new List<TopicInfo>());
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, true))
+            .ReturnsAsync(new List<InputOutputConfiguration>());
     }
 
     private void SetupSchemasWithData()
@@ -333,5 +342,425 @@ public class SettingsTests : UITestContext
 
         _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(schemas);
         _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync()).ReturnsAsync(topics);
+    }
+
+    [Fact]
+    public void Settings_ConnectionsTab_DisplaysAddInputButton()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+
+        // Act - Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Assert
+        component.Markup.Should().Contain("Add your first input");
+    }
+
+    [Fact]
+    public void Settings_ConnectionsTab_DisplaysAddOutputButton()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+
+        // Act - Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Assert
+        component.Markup.Should().Contain("Add your first output");
+    }
+
+    [Fact]
+    public void Settings_ConnectionsTab_ShowsExistingConfigurations()
+    {
+        // Arrange
+        var configs = new List<InputOutputConfiguration>
+        {
+            new MqttInputConfiguration
+            {
+                Id = "mqtt-input-1",
+                Name = "MQTT Sensor Input",
+                ConnectionId = "mqtt-conn",
+                IsEnabled = true,
+                TopicFilter = "sensors/+/temperature"
+            },
+            new MqttOutputConfiguration
+            {
+                Id = "mqtt-output-1",
+                Name = "MQTT Data Export",
+                ConnectionId = "mqtt-conn",
+                IsEnabled = true
+            }
+        };
+        
+        _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
+        _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
+            .ReturnsAsync(new List<TopicInfo>());
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, true))
+            .ReturnsAsync(configs);
+
+        var component = RenderComponent<Settings>();
+
+        // Act - Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Assert
+        component.Markup.Should().Contain("MQTT Sensor Input");
+        component.Markup.Should().Contain("MQTT Data Export");
+        component.Markup.Should().Contain("sensors/+/temperature");
+    }
+
+    [Fact]
+    public void Settings_ConnectionsTab_EmptyState_ShowsNoConfigurations()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+
+        // Act - Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Assert
+        component.Markup.Should().Contain("No configurations yet");
+    }
+
+    [Fact]
+    public void Settings_InputOutputModal_DoesNotShowByDefault()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+
+        // Act - Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Assert - Modal should not be visible
+        component.Markup.Should().NotContain("modal fade show");
+        component.Markup.Should().NotContain("Input Configuration");
+        component.Markup.Should().NotContain("Output Configuration");
+    }
+
+    [Fact]
+    public void Settings_AddInputButton_ClickTriggersModal()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+        
+        // Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Act - Click Add Input button
+        var addInputButton = component.Find("button:contains('Add your first input')");
+        addInputButton.Click();
+
+        // Assert - Modal should be visible
+        component.Markup.Should().Contain("modal fade show");
+        component.Markup.Should().Contain("Add Input Configuration");
+    }
+
+    [Fact]
+    public void Settings_AddOutputButton_ClickTriggersModal()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+        
+        // Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Act - Click Add Output button
+        var addOutputButton = component.Find("button:contains('Add your first output')");
+        addOutputButton.Click();
+
+        // Assert - Modal should be visible
+        component.Markup.Should().Contain("modal fade show");
+        component.Markup.Should().Contain("Add Output Configuration");
+    }
+
+    [Fact]
+    public void Settings_InputModal_ShowsMqttAndSocketIOTabs()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+        
+        // Navigate to connections tab and open input modal
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+        var addInputButton = component.Find("button:contains('Add your first input')");
+        addInputButton.Click();
+
+        // Assert - Both MQTT and SocketIO tabs should be present
+        component.Markup.Should().Contain("MQTT Input");
+        component.Markup.Should().Contain("SocketIO Input");
+    }
+
+    [Fact]
+    public void Settings_OutputModal_ShowsMqttTab()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+        
+        // Navigate to connections tab and open output modal
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+        var addOutputButton = component.Find("button:contains('Add your first output')");
+        addOutputButton.Click();
+
+        // Assert - MQTT Output tab should be present
+        component.Markup.Should().Contain("MQTT Output");
+    }
+
+    [Fact]
+    public void Settings_InputModal_MqttTab_ShowsTopicFilterField()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+        
+        // Navigate to connections tab and open input modal
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+        var addInputButton = component.Find("button:contains('Add your first input')");
+        addInputButton.Click();
+
+        // Assert - MQTT Input fields should be present
+        component.Markup.Should().Contain("Topic Filter");
+        component.Markup.Should().Contain("Use Sparkplug B");
+        component.Markup.Should().Contain("Quality of Service");
+    }
+
+    [Fact]
+    public void Settings_InputModal_SocketIOTab_ShowsEventNamesField()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+        
+        // Navigate to connections tab and open input modal
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+        var addInputButton = component.Find("button:contains('Add your first input')");
+        addInputButton.Click();
+
+        // Act - Click SocketIO tab
+        var socketIOTab = component.Find("button:contains('SocketIO Input')");
+        socketIOTab.Click();
+
+        // Assert - SocketIO Input fields should be present
+        component.Markup.Should().Contain("Event Names");
+        component.Markup.Should().Contain("JSON Path Mappings");
+        component.Markup.Should().Contain("Auto Map to UNS");
+    }
+
+    [Fact]
+    public void Settings_OutputModal_MqttTab_ShowsExportOptions()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+        
+        // Navigate to connections tab and open output modal
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+        var addOutputButton = component.Find("button:contains('Add your first output')");
+        addOutputButton.Click();
+
+        // Assert - MQTT Output fields should be present
+        component.Markup.Should().Contain("Export UNS Model");
+        component.Markup.Should().Contain("Export UNS Data");
+        component.Markup.Should().Contain("Quality of Service");
+    }
+
+    [Fact]
+    public void Settings_Modal_ShowsSaveAndCancelButtons()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+        
+        // Navigate to connections tab and open input modal
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+        var addInputButton = component.Find("button:contains('Add your first input')");
+        addInputButton.Click();
+
+        // Assert - Save and Cancel buttons should be present
+        component.Markup.Should().Contain("Save Configuration");
+        component.Markup.Should().Contain("Cancel");
+    }
+
+    [Fact]
+    public void Settings_Modal_CancelButton_ClosesModal()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+        
+        // Navigate to connections tab and open input modal
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+        var addInputButton = component.Find("button:contains('Add your first input')");
+        addInputButton.Click();
+
+        // Act - Click Cancel button
+        var cancelButton = component.Find("button:contains('Cancel')");
+        cancelButton.Click();
+
+        // Assert - Modal should be closed
+        component.Markup.Should().NotContain("modal fade show");
+    }
+
+    [Fact]
+    public void Settings_Modal_SaveButton_CallsRepository()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+        
+        // Navigate to connections tab and open input modal
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+        var addInputButton = component.Find("button:contains('Add your first input')");
+        addInputButton.Click();
+
+        // Act - Fill in required fields and save
+        var nameInput = component.Find("input[placeholder='Enter configuration name']");
+        nameInput.Change("Test Input");
+        
+        var topicFilterInput = component.Find("input[placeholder='e.g., sensors/+/temperature']");
+        topicFilterInput.Change("test/topic");
+        
+        var saveButton = component.Find("button:contains('Save Configuration')");
+        saveButton.Click();
+
+        // Assert - Repository save method should be called
+        _mockInputOutputRepository.Verify(x => x.SaveConfigurationAsync(It.IsAny<InputOutputConfiguration>()), Times.Once);
+    }
+
+    [Fact]
+    public void Settings_ConfigurationCard_ShowsEditButton()
+    {
+        // Arrange
+        var configs = new List<InputOutputConfiguration>
+        {
+            new MqttInputConfiguration
+            {
+                Id = "mqtt-input-1",
+                Name = "Test MQTT Input",
+                ConnectionId = "mqtt-conn",
+                IsEnabled = true,
+                TopicFilter = "test/topic"
+            }
+        };
+        
+        _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
+        _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
+            .ReturnsAsync(new List<TopicInfo>());
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, true))
+            .ReturnsAsync(configs);
+
+        var component = RenderComponent<Settings>();
+
+        // Act - Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Assert
+        component.Markup.Should().Contain("Edit");
+    }
+
+    [Fact]
+    public void Settings_ConfigurationCard_ShowsDeleteButton()
+    {
+        // Arrange
+        var configs = new List<InputOutputConfiguration>
+        {
+            new MqttInputConfiguration
+            {
+                Id = "mqtt-input-1",
+                Name = "Test MQTT Input",
+                ConnectionId = "mqtt-conn",
+                IsEnabled = true,
+                TopicFilter = "test/topic"
+            }
+        };
+        
+        _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
+        _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
+            .ReturnsAsync(new List<TopicInfo>());
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, true))
+            .ReturnsAsync(configs);
+
+        var component = RenderComponent<Settings>();
+
+        // Act - Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Assert
+        component.Markup.Should().Contain("Delete");
+    }
+
+    [Fact]
+    public void Settings_ConfigurationCard_ShowsToggleEnabledButton()
+    {
+        // Arrange
+        var configs = new List<InputOutputConfiguration>
+        {
+            new MqttInputConfiguration
+            {
+                Id = "mqtt-input-1",
+                Name = "Test MQTT Input",
+                ConnectionId = "mqtt-conn",
+                IsEnabled = true,
+                TopicFilter = "test/topic"
+            }
+        };
+        
+        _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
+        _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
+            .ReturnsAsync(new List<TopicInfo>());
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, true))
+            .ReturnsAsync(configs);
+
+        var component = RenderComponent<Settings>();
+
+        // Act - Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Assert
+        component.Markup.Should().Contain("Disable"); // Since config is enabled
+    }
+
+    [Fact] 
+    public void Settings_RefreshButton_InConnectionsTab_CallsRepository()
+    {
+        // Arrange
+        SetupDefaultMocks();
+        var component = RenderComponent<Settings>();
+
+        // Navigate to connections tab
+        var connectionsTab = component.Find("button:contains('Connections')");
+        connectionsTab.Click();
+
+        // Act
+        var refreshButton = component.Find("button:contains('Refresh')");
+        refreshButton.Click();
+
+        // Assert
+        _mockInputOutputRepository.Verify(x => x.GetAllConfigurationsAsync(null, null, true), Times.AtLeastOnce);
     }
 }

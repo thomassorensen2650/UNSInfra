@@ -171,6 +171,19 @@
                     currentTopics = _cachedTopicsSnapshot;
                     currentCount = _cachedTopicsSnapshot.Count;
                 }
+                catch (ArgumentException)
+                {
+                    // Array bounds issue during copy, use previous snapshot
+                    currentTopics = _cachedTopicsSnapshot;
+                    currentCount = _cachedTopicsSnapshot.Count;
+                }
+                catch (Exception ex)
+                {
+                    // Any other exception during collection copy, log and use previous snapshot
+                    Console.WriteLine($"Error copying topics collection: {ex.Message}");
+                    currentTopics = _cachedTopicsSnapshot;
+                    currentCount = _cachedTopicsSnapshot.Count;
+                }
             }
             
             currentTopics = _cachedTopicsSnapshot;

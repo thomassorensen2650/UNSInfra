@@ -5,6 +5,7 @@ using UNSInfra.Services.TopicBrowser;
 using UNSInfra.Storage.Abstractions;
 using UNSInfra.Models.Hierarchy;
 using UNSInfra.Models.Data;
+using UNSInfra.Core.Repositories;
 using UNSInfra.Repositories;
 using UNSInfra.Services.Events;
 using UNSInfra.Services.DataIngestion;

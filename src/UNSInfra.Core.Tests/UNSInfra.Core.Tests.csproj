@@ -26,6 +26,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\UNSInfra.Core\UNSInfra.Core.csproj" />
+    <ProjectReference Include="..\UNSInfra.Storage.InMemory\UNSInfra.Storage.InMemory.csproj" />
   </ItemGroup>
 
 </Project>
