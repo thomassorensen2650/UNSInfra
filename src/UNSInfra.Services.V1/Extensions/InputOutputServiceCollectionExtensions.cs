@@ -19,16 +19,19 @@ public static class InputOutputServiceCollectionExtensions
     /// <returns>The service collection for chaining</returns>
     public static IServiceCollection AddInputOutputServices(this IServiceCollection services)
     {
-        // Register repository (use in-memory by default, can be overridden)
-        services.AddSingleton<IInputOutputConfigurationRepository, InMemoryInputOutputConfigurationRepository>();
+        // Register repository only if not already registered (allows storage provider to override)
+        services.TryAddScoped<IInputOutputConfigurationRepository, InMemoryInputOutputConfigurationRepository>();
+
+        // Register MQTT connection manager as singleton (shared across all services)
+        services.AddSingleton<MqttConnectionManager>();
 
         // Register input services
-        services.AddSingleton<SocketIOConfigurableDataService>();
-        services.AddSingleton<MqttConfigurableDataService>();
+        services.AddScoped<SocketIOConfigurableDataService>();
+        services.AddScoped<MqttConfigurableDataService>();
 
         // Register output services
-        services.AddSingleton<MqttModelExportService>();
-        services.AddSingleton<MqttDataExportService>();
+        services.AddScoped<MqttModelExportService>();
+        services.AddScoped<MqttDataExportService>();
 
         // Register background service coordinator
         services.AddHostedService<InputOutputBackgroundService>();
@@ -50,13 +53,16 @@ public static class InputOutputServiceCollectionExtensions
         // Register custom repository
         services.AddSingleton<IInputOutputConfigurationRepository>(repositoryImplementation);
 
+        // Register MQTT connection manager as singleton (shared across all services)
+        services.AddSingleton<MqttConnectionManager>();
+
         // Register input services
-        services.AddSingleton<SocketIOConfigurableDataService>();
-        services.AddSingleton<MqttConfigurableDataService>();
+        services.AddScoped<SocketIOConfigurableDataService>();
+        services.AddScoped<MqttConfigurableDataService>();
 
         // Register output services
-        services.AddSingleton<MqttModelExportService>();
-        services.AddSingleton<MqttDataExportService>();
+        services.AddScoped<MqttModelExportService>();
+        services.AddScoped<MqttDataExportService>();
 
         // Register background service coordinator
         services.AddHostedService<InputOutputBackgroundService>();
@@ -75,8 +81,8 @@ public static class InputOutputServiceCollectionExtensions
         services.TryAddSingleton<IInputOutputConfigurationRepository, InMemoryInputOutputConfigurationRepository>();
 
         // Register input services only
-        services.AddSingleton<SocketIOConfigurableDataService>();
-        services.AddSingleton<MqttConfigurableDataService>();
+        services.AddScoped<SocketIOConfigurableDataService>();
+        services.AddScoped<MqttConfigurableDataService>();
 
         return services;
     }
@@ -91,9 +97,12 @@ public static class InputOutputServiceCollectionExtensions
         // Register repository if not already registered
         services.TryAddSingleton<IInputOutputConfigurationRepository, InMemoryInputOutputConfigurationRepository>();
 
+        // Register MQTT connection manager as singleton (shared across all services)
+        services.AddSingleton<MqttConnectionManager>();
+
         // Register output services only
-        services.AddSingleton<MqttModelExportService>();
-        services.AddSingleton<MqttDataExportService>();
+        services.AddScoped<MqttModelExportService>();
+        services.AddScoped<MqttDataExportService>();
 
         return services;
     }

@@ -244,4 +244,18 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
         
         await base.StopAsync(cancellationToken);
     }
+
+    /// <summary>
+    /// Manually queue a topic for mapping (primarily for testing purposes)
+    /// </summary>
+    /// <param name="topicInfo">The topic information to queue for mapping</param>
+    public void QueueTopicForMapping(TopicInfo topicInfo)
+    {
+        lock (_queueLock)
+        {
+            _topicsToProcess.Enqueue(topicInfo);
+        }
+        
+        _logger.LogDebug("Manually queued topic '{Topic}' for auto-mapping", topicInfo.Topic);
+    }
 }

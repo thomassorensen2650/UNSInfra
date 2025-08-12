@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using MQTTnet;
 using MQTTnet.Client;
@@ -22,10 +23,12 @@ public class MqttConfigurableDataService : IDataIngestionService
 {
     private readonly ILogger<MqttConfigurableDataService> _logger;
     private readonly IInputOutputConfigurationRepository _configRepository;
-    private readonly ITopicDiscoveryService? _topicDiscoveryService;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
+    private readonly MqttConnectionManager _connectionManager;
     private readonly object? _sparkplugBDecoder;
-    private IManagedMqttClient? _mqttClient;
     private readonly Dictionary<string, MqttInputConfiguration> _activeConfigurations = new();
+    private readonly Dictionary<string, IMqttDataIngestionService> _activeConnections = new();
+    private readonly Dictionary<string, string> _configConnectionMap = new();
     private bool _isRunning;
     private bool _disposed;
 
@@ -34,12 +37,14 @@ public class MqttConfigurableDataService : IDataIngestionService
     public MqttConfigurableDataService(
         ILogger<MqttConfigurableDataService> logger,
         IInputOutputConfigurationRepository configRepository,
-        ITopicDiscoveryService? topicDiscoveryService = null,
+        IServiceScopeFactory serviceScopeFactory,
+        MqttConnectionManager connectionManager,
         object? sparkplugBDecoder = null)
     {
         _logger = logger;
         _configRepository = configRepository;
-        _topicDiscoveryService = topicDiscoveryService;
+        _serviceScopeFactory = serviceScopeFactory;
+        _connectionManager = connectionManager;
         _sparkplugBDecoder = sparkplugBDecoder;
     }
 
@@ -67,32 +72,43 @@ public class MqttConfigurableDataService : IDataIngestionService
 
             _logger.LogInformation("Found {Count} enabled MQTT input configurations", configList.Count);
 
-            // Create MQTT client (assuming default broker configuration)
-            // In a real implementation, you'd want broker configuration to be part of the input config
-            var clientOptions = new MqttClientOptionsBuilder()
-                .WithTcpServer("localhost", 1883) // Default - should be configurable
-                .WithClientId(Guid.NewGuid().ToString())
-                .WithCleanSession()
-                .Build();
-
-            var managedOptions = new ManagedMqttClientOptionsBuilder()
-                .WithClientOptions(clientOptions)
-                .WithAutoReconnectDelay(TimeSpan.FromSeconds(5))
-                .Build();
-
-            _mqttClient = new MqttFactory().CreateManagedMqttClient();
-
-            // Subscribe to message received event
-            _mqttClient.ApplicationMessageReceivedAsync += OnMessageReceivedAsync;
-
-            // Start the client
-            await _mqttClient.StartAsync(managedOptions);
-
-            // Subscribe to all configured topic filters
-            foreach (var config in configList)
+            // Group configurations by connection ID
+            var configsByConnection = configList.GroupBy(c => c.ConnectionId).ToList();
+            
+            foreach (var connectionGroup in configsByConnection)
             {
-                await SubscribeToConfigurationAsync(config);
-                _activeConfigurations[config.Id] = config;
+                var connectionId = connectionGroup.Key;
+                if (string.IsNullOrEmpty(connectionId))
+                {
+                    _logger.LogError("MQTT input configuration does not have a ConnectionId specified");
+                    continue;
+                }
+
+                // Get or create shared MQTT connection
+                var mqttService = await _connectionManager.GetOrCreateConnectionAsync(connectionId, $"MqttInput_{Guid.NewGuid():N}");
+                if (mqttService == null)
+                {
+                    _logger.LogError("Could not create MQTT connection for configuration ID: {ConnectionId}", connectionId);
+                    continue;
+                }
+
+                _activeConnections[connectionId] = mqttService;
+
+                // Subscribe to data received events from the connection
+                mqttService.DataReceived += OnDataReceivedFromConnection;
+                
+                // Subscribe to topics for each input configuration using this connection
+                foreach (var config in connectionGroup)
+                {
+                    _configConnectionMap[config.Id] = connectionId;
+                    _activeConfigurations[config.Id] = config;
+                    
+                    // Subscribe to the topic pattern on the shared connection
+                    await mqttService.SubscribeToTopicAsync(config.TopicFilter, new HierarchicalPath());
+                    
+                    _logger.LogInformation("Subscribed to topic filter '{TopicFilter}' for configuration '{ConfigName}' using connection '{ConnectionId}'", 
+                        config.TopicFilter, config.Name, connectionId);
+                }
             }
 
             _isRunning = true;
@@ -105,56 +121,27 @@ public class MqttConfigurableDataService : IDataIngestionService
         }
     }
 
-    private async Task SubscribeToConfigurationAsync(MqttInputConfiguration config)
+    private async void OnDataReceivedFromConnection(object? sender, DataPoint dataPoint)
     {
         try
         {
-            _logger.LogInformation("Subscribing to topic filter '{TopicFilter}' for configuration '{ConfigName}'", 
-                config.TopicFilter, config.Name);
-
-            var topicFilter = new MqttTopicFilterBuilder()
-                .WithTopic(config.TopicFilter)
-                .WithQualityOfServiceLevel((MQTTnet.Protocol.MqttQualityOfServiceLevel)config.QoS)
-                .Build();
-
-            if (_mqttClient != null)
-            {
-                await _mqttClient.SubscribeAsync(new[] { topicFilter });
-                _logger.LogInformation("Successfully subscribed to '{TopicFilter}' for configuration '{ConfigName}'", 
-                    config.TopicFilter, config.Name);
-            }
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Failed to subscribe to topic filter '{TopicFilter}' for configuration '{ConfigName}'", 
-                config.TopicFilter, config.Name);
-        }
-    }
-
-    private async Task OnMessageReceivedAsync(MqttApplicationMessageReceivedEventArgs args)
-    {
-        try
-        {
-            var topic = args.ApplicationMessage.Topic;
-            var payload = Encoding.UTF8.GetString(args.ApplicationMessage.PayloadSegment);
-            
-            _logger.LogDebug("Received MQTT message on topic '{Topic}' with payload: {Payload}", topic, payload);
-
-            // Find matching configuration
-            var matchingConfig = FindMatchingConfiguration(topic);
+            // Find matching configuration for this topic
+            var matchingConfig = FindMatchingConfiguration(dataPoint.Topic);
             if (matchingConfig == null)
             {
-                _logger.LogDebug("No matching configuration found for topic '{Topic}'", topic);
+                _logger.LogDebug("No matching input configuration found for topic '{Topic}'", dataPoint.Topic);
                 return;
             }
 
-            await ProcessMqttMessage(matchingConfig, topic, payload, args.ApplicationMessage);
+            // Process the message with the matching configuration
+            await ProcessMqttMessage(matchingConfig, dataPoint.Topic, dataPoint.Value?.ToString() ?? "", dataPoint);
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Error processing MQTT message on topic '{Topic}'", args.ApplicationMessage.Topic);
+            _logger.LogError(ex, "Error processing data received from connection for topic '{Topic}'", dataPoint.Topic);
         }
     }
+
 
     private MqttInputConfiguration? FindMatchingConfiguration(string topic)
     {
@@ -180,7 +167,7 @@ public class MqttConfigurableDataService : IDataIngestionService
         return Regex.IsMatch(topic, $"^{pattern}$", RegexOptions.IgnoreCase);
     }
 
-    private async Task ProcessMqttMessage(MqttInputConfiguration config, string topic, string payload, MqttApplicationMessage message)
+    private async Task ProcessMqttMessage(MqttInputConfiguration config, string topic, string payload, DataPoint originalDataPoint)
     {
         try
         {
@@ -226,9 +213,14 @@ public class MqttConfigurableDataService : IDataIngestionService
             DataReceived?.Invoke(this, dataPoint);
 
             // Use topic discovery service if configured for auto-mapping
-            if (config.AutoMapTopicToUNS && _topicDiscoveryService != null)
+            if (config.AutoMapTopicToUNS)
             {
-                await _topicDiscoveryService.CreateUnverifiedTopicAsync(cleanTopic, "MQTT", hierarchicalPath);
+                using var scope = _serviceScopeFactory.CreateScope();
+                var topicDiscoveryService = scope.ServiceProvider.GetService<ITopicDiscoveryService>();
+                if (topicDiscoveryService != null)
+                {
+                    await topicDiscoveryService.CreateUnverifiedTopicAsync(cleanTopic, "MQTT", hierarchicalPath);
+                }
             }
 
             _logger.LogDebug("Successfully processed MQTT message for topic '{Topic}' using configuration '{ConfigName}'", 
@@ -348,13 +340,15 @@ public class MqttConfigurableDataService : IDataIngestionService
         {
             _logger.LogInformation("Stopping MQTT configurable data service");
 
-            if (_mqttClient != null)
+            // Unsubscribe from connection events and release connections
+            foreach (var (connectionId, mqttService) in _activeConnections)
             {
-                await _mqttClient.StopAsync();
-                _mqttClient.Dispose();
-                _mqttClient = null;
+                mqttService.DataReceived -= OnDataReceivedFromConnection;
+                await _connectionManager.ReleaseConnectionAsync(connectionId, $"MqttInput_{connectionId}");
             }
-
+            
+            _activeConnections.Clear();
+            _configConnectionMap.Clear();
             _activeConfigurations.Clear();
             _isRunning = false;
 
@@ -368,13 +362,23 @@ public class MqttConfigurableDataService : IDataIngestionService
 
     public Task<bool> IsRunningAsync() => Task.FromResult(_isRunning);
 
-    public Task<Dictionary<string, object>> GetStatusAsync()
+    public async Task<Dictionary<string, object>> GetStatusAsync()
     {
+        var connectionStatuses = new List<object>();
+        foreach (var (connectionId, mqttService) in _activeConnections)
+        {
+            connectionStatuses.Add(new
+            {
+                ConnectionId = connectionId,
+                IsConnected = await mqttService.IsConnectedAsync()
+            });
+        }
+
         var status = new Dictionary<string, object>
         {
             ["IsRunning"] = _isRunning,
             ["ActiveConfigurations"] = _activeConfigurations.Count,
-            ["MqttConnected"] = _mqttClient?.IsConnected ?? false,
+            ["ActiveConnections"] = connectionStatuses,
             ["Configurations"] = _activeConfigurations.Values.Select(c => new
             {
                 c.Id,
@@ -388,7 +392,7 @@ public class MqttConfigurableDataService : IDataIngestionService
             }).ToList()
         };
 
-        return Task.FromResult(status);
+        return status;
     }
 
     public void Dispose()

@@ -164,6 +164,7 @@
                 try
                 {
                     _cachedTopicsSnapshot = Topics.ToList();
+                    currentTopics = _cachedTopicsSnapshot;
                 }
                 catch (InvalidOperationException)
                 {
@@ -185,8 +186,10 @@
                     currentCount = _cachedTopicsSnapshot.Count;
                 }
             }
-            
-            currentTopics = _cachedTopicsSnapshot;
+            else
+            {
+                currentTopics = _cachedTopicsSnapshot;
+            }
         }
         
         // Check if we need to update the tree structure

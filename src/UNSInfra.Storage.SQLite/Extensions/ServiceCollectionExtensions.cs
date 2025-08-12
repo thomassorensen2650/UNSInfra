@@ -109,6 +109,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
         services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
         services.AddSingleton<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
+        services.AddScoped<IInputOutputConfigurationRepository, SQLiteInputOutputConfigurationRepository>();
 
         // Add storage services - Realtime storage as singleton for in-memory cache, Historical as scoped
         services.AddSingleton<IRealtimeStorage, SQLiteRealtimeStorage>();
@@ -371,6 +372,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
         services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
         services.AddSingleton<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
+        services.AddScoped<IInputOutputConfigurationRepository, SQLiteInputOutputConfigurationRepository>();
 
         return services;
     }
@@ -472,6 +474,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
         services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
         services.AddSingleton<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
+        services.AddScoped<IInputOutputConfigurationRepository, SQLiteInputOutputConfigurationRepository>();
 
         // Add historical storage as scoped
         services.AddScoped<IHistoricalStorage, SQLiteHistoricalStorage>();

@@ -172,7 +172,7 @@ public class MqttModelExportConfiguration
     /// <summary>
     /// Whether to include child node information
     /// </summary>
-    public bool IncludeChildren { get; set; } = false;
+    public bool IncludeChildren { get; set; } = true;
 
     /// <summary>
     /// Custom fields to include in model payload

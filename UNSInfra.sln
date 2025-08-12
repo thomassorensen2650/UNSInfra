@@ -24,9 +24,9 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Services.SocketIO"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Storage.SQLite", "src\UNSInfra.Storage.SQLite\UNSInfra.Storage.SQLite.csproj", "{46977E40-75BD-4BF4-91CA-CB2AA349E9BD}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Core.Tests", "src\UNSInfra.Core.Tests\UNSInfra.Core.Tests.csproj", "{1D58A6DC-A1C0-421F-A767-26D975E72D3E}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Core.Tests", "test\UNSInfra.Core.Tests\UNSInfra.Core.Tests.csproj", "{1D58A6DC-A1C0-421F-A767-26D975E72D3E}"
 EndProject
-Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Services.V1.Tests", "src\UNSInfra.Services.V1.Tests\UNSInfra.Services.V1.Tests.csproj", "{2F68B7EC-B1C1-4E3F-A8E9-3D4C5B6A7E8F}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Services.V1.Tests", "test\UNSInfra.Services.V1.Tests\UNSInfra.Services.V1.Tests.csproj", "{2F68B7EC-B1C1-4E3F-A8E9-3D4C5B6A7E8F}"
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.UI.Tests", "test\UNSInfra.UI.Tests\UNSInfra.UI.Tests.csproj", "{A4E3CFFC-B00C-4A13-BE28-6AD47FA21F56}"
 EndProject

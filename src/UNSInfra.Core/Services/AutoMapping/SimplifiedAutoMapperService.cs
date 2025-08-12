@@ -160,7 +160,7 @@ public class SimplifiedAutoMapperService : IDisposable
     /// </summary>
     private List<string> ExtractCandidatePaths(string topic)
     {
-        var parts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        var parts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries).SkipLast(1).ToArray();
         var candidates = new List<string>();
         
         // Extract all possible paths starting from different points

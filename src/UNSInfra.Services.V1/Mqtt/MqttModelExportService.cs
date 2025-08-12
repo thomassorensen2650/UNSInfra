@@ -2,13 +2,12 @@ using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using MQTTnet;
-using MQTTnet.Client;
-using MQTTnet.Extensions.ManagedClient;
 using UNSInfra.Models.Configuration;
 using UNSInfra.Models.Namespace;
 using UNSInfra.Core.Repositories;
 using UNSInfra.Repositories;
 using UNSInfra.Services;
+using UNSInfra.Services.DataIngestion.Mock;
 
 namespace UNSInfra.Services.V1.Mqtt;
 
@@ -21,8 +20,10 @@ public class MqttModelExportService : IDisposable
     private readonly IInputOutputConfigurationRepository _configRepository;
     private readonly INamespaceStructureService _namespaceStructureService;
     private readonly INamespaceConfigurationRepository _namespaceConfigurationRepository;
-    private IManagedMqttClient? _mqttClient;
+    private readonly MqttConnectionManager _connectionManager;
     private readonly Dictionary<string, Timer> _republishTimers = new();
+    private readonly Dictionary<string, IMqttDataIngestionService> _activeConnections = new();
+    private readonly Dictionary<string, string> _configConnectionMap = new();
     private bool _isRunning;
     private bool _disposed;
 
@@ -30,12 +31,14 @@ public class MqttModelExportService : IDisposable
         ILogger<MqttModelExportService> logger,
         IInputOutputConfigurationRepository configRepository,
         INamespaceStructureService namespaceStructureService,
-        INamespaceConfigurationRepository namespaceConfigurationRepository)
+        INamespaceConfigurationRepository namespaceConfigurationRepository,
+        MqttConnectionManager connectionManager)
     {
         _logger = logger;
         _configRepository = configRepository;
         _namespaceStructureService = namespaceStructureService;
         _namespaceConfigurationRepository = namespaceConfigurationRepository;
+        _connectionManager = connectionManager;
     }
 
     public async Task<bool> StartAsync(CancellationToken cancellationToken = default)
@@ -64,25 +67,34 @@ public class MqttModelExportService : IDisposable
 
             _logger.LogInformation("Found {Count} enabled MQTT model export configurations", modelConfigs.Count);
 
-            // Create MQTT client
-            var clientOptions = new MqttClientOptionsBuilder()
-                .WithTcpServer("localhost", 1883) // Should be configurable
-                .WithClientId($"UNSModelExporter_{Guid.NewGuid():N}")
-                .WithCleanSession()
-                .Build();
-
-            var managedOptions = new ManagedMqttClientOptionsBuilder()
-                .WithClientOptions(clientOptions)
-                .WithAutoReconnectDelay(TimeSpan.FromSeconds(5))
-                .Build();
-
-            _mqttClient = new MqttFactory().CreateManagedMqttClient();
-            await _mqttClient.StartAsync(managedOptions);
-
-            // Setup timers for each configuration
-            foreach (var config in modelConfigs)
+            // Group configurations by connection ID and setup each connection
+            var configsByConnection = modelConfigs.GroupBy(c => c.ConnectionId).ToList();
+            
+            foreach (var connectionGroup in configsByConnection)
             {
-                await SetupModelExportConfiguration(config);
+                var connectionId = connectionGroup.Key;
+                if (string.IsNullOrEmpty(connectionId))
+                {
+                    _logger.LogError("MQTT model export configuration does not have a ConnectionId specified");
+                    continue;
+                }
+
+                // Get or create shared MQTT connection
+                var mqttService = await _connectionManager.GetOrCreateConnectionAsync(connectionId, $"ModelExport_{Guid.NewGuid():N}");
+                if (mqttService == null)
+                {
+                    _logger.LogError("Could not create MQTT connection for configuration ID: {ConnectionId}", connectionId);
+                    continue;
+                }
+
+                _activeConnections[connectionId] = mqttService;
+                
+                // Setup timers for each configuration using this connection
+                foreach (var config in connectionGroup)
+                {
+                    _configConnectionMap[config.Id] = connectionId;
+                    await SetupModelExportConfiguration(config);
+                }
             }
 
             _isRunning = true;
@@ -247,6 +259,13 @@ public class MqttModelExportService : IDisposable
                 modelPayload["Metadata"] = metadata;
             }
 
+            // Added
+            if (node.Children.Any())
+            {
+                await Task.WhenAll(node.Children.Select(n => PublishNodeModel(config, n, namespaceConfigs)).ToArray());
+                //Task.WaitAll(node.Children.Select(n => PublishNodeModel(config, n, namespaceConfigs)).ToArray());
+                //await PublishNodeModel(config, node, namespaceConfigs);
+            }
             // Add children information if enabled
             if (modelConfig.IncludeChildren && node.Children.Any())
             {
@@ -272,19 +291,19 @@ public class MqttModelExportService : IDisposable
                 PropertyNamingPolicy = null
             });
 
-            var message = new MqttApplicationMessageBuilder()
-                .WithTopic(topic)
-                .WithPayload(jsonPayload)
-                .WithQualityOfServiceLevel((MQTTnet.Protocol.MqttQualityOfServiceLevel)config.QoS)
-                .WithRetainFlag(config.Retain)
-                .Build();
-
-            if (_mqttClient != null)
+            // Get the MQTT service for this configuration
+            if (_configConnectionMap.TryGetValue(config.Id, out var connectionId) &&
+                _activeConnections.TryGetValue(connectionId, out var mqttService))
             {
-                await _mqttClient.EnqueueAsync(message);
+                var payload = Encoding.UTF8.GetBytes(jsonPayload);
+                await mqttService.PublishAsync(topic, payload, config.QoS, config.Retain);
                 
                 _logger.LogDebug("Published model for '{NodePath}' to topic '{Topic}'", 
                     node.FullPath, topic);
+            }
+            else
+            {
+                _logger.LogWarning("No MQTT connection available for configuration '{ConfigId}'", config.Id);
             }
         }
         catch (Exception ex)
@@ -332,13 +351,14 @@ public class MqttModelExportService : IDisposable
             }
             _republishTimers.Clear();
 
-            // Stop MQTT client
-            if (_mqttClient != null)
+            // Release MQTT connections
+            foreach (var (configId, connectionId) in _configConnectionMap)
             {
-                await _mqttClient.StopAsync();
-                _mqttClient.Dispose();
-                _mqttClient = null;
+                await _connectionManager.ReleaseConnectionAsync(connectionId, $"ModelExport_{configId}");
             }
+            
+            _activeConnections.Clear();
+            _configConnectionMap.Clear();
 
             _isRunning = false;
             _logger.LogInformation("MQTT model export service stopped successfully");
@@ -354,17 +374,27 @@ public class MqttModelExportService : IDisposable
 
     public Task<bool> IsRunningAsync() => Task.FromResult(_isRunning);
 
-    public Task<Dictionary<string, object>> GetStatusAsync()
+    public async Task<Dictionary<string, object>> GetStatusAsync()
     {
+        var connectionStatuses = new List<object>();
+        foreach (var (connectionId, mqttService) in _activeConnections)
+        {
+            connectionStatuses.Add(new
+            {
+                ConnectionId = connectionId,
+                IsConnected = await mqttService.IsConnectedAsync()
+            });
+        }
+
         var status = new Dictionary<string, object>
         {
             ["IsRunning"] = _isRunning,
-            ["MqttConnected"] = _mqttClient?.IsConnected ?? false,
             ["ActiveTimers"] = _republishTimers.Count,
-            ["Configurations"] = _republishTimers.Count
+            ["Configurations"] = _republishTimers.Count,
+            ["ActiveConnections"] = connectionStatuses
         };
 
-        return Task.FromResult(status);
+        return status;
     }
 
     public void Dispose()

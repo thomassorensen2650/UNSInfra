@@ -7,6 +7,8 @@ using UNSInfra.Models.Data;
 using UNSInfra.Models.Hierarchy;
 using UNSInfra.Models.Configuration;
 using UNSInfra.Core.Repositories;
+using UNSInfra.Core.Configuration;
+using UNSInfra.Services.V1.Configuration;
 using Moq;
 using Microsoft.Extensions.Logging;
 using FluentAssertions;
@@ -21,6 +23,7 @@ public class SettingsTests : UITestContext
     private readonly Mock<ISchemaValidator> _mockSchemaValidator;
     private readonly Mock<ILogger<Settings>> _mockLogger;
     private readonly Mock<IInputOutputConfigurationRepository> _mockInputOutputRepository;
+    private readonly Mock<IDataIngestionConfigurationRepository> _mockDataIngestionRepository;
 
     public SettingsTests()
     {
@@ -29,12 +32,14 @@ public class SettingsTests : UITestContext
         _mockSchemaValidator = new Mock<ISchemaValidator>();
         _mockLogger = new Mock<ILogger<Settings>>();
         _mockInputOutputRepository = new Mock<IInputOutputConfigurationRepository>();
+        _mockDataIngestionRepository = new Mock<IDataIngestionConfigurationRepository>();
 
         Services.AddSingleton(_mockSchemaRepository.Object);
         Services.AddSingleton(_mockTopicBrowserService.Object);
         Services.AddSingleton(_mockSchemaValidator.Object);
         Services.AddSingleton(_mockLogger.Object);
         Services.AddSingleton(_mockInputOutputRepository.Object);
+        Services.AddSingleton(_mockDataIngestionRepository.Object);
     }
 
     [Fact]
@@ -261,7 +266,7 @@ public class SettingsTests : UITestContext
         // Assert
         Assert.Contains("Data Connections", component.Markup);
         Assert.Contains("Configure MQTT, Socket.IO", component.Markup);
-        Assert.Contains("Active Configurations", component.Markup);
+        Assert.Contains("Input Connections", component.Markup);
         Assert.Contains("No configurations yet", component.Markup);
     }
 
@@ -305,8 +310,32 @@ public class SettingsTests : UITestContext
         _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
         _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
             .ReturnsAsync(new List<TopicInfo>());
-        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, true))
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, false))
             .ReturnsAsync(new List<InputOutputConfiguration>());
+        _mockDataIngestionRepository.Setup(x => x.GetAllConfigurationsAsync())
+            .ReturnsAsync(new List<IDataIngestionConfiguration>());
+    }
+
+    private void SetupMocksWithConnection()
+    {
+        var mqttConfig = new MqttDataIngestionConfiguration
+        {
+            Id = "mqtt-conn-1",
+            Name = "Test MQTT Connection",
+            BrokerHost = "localhost",
+            BrokerPort = 1883,
+            Enabled = true
+        };
+
+        var dataIngestionConfigs = new List<IDataIngestionConfiguration> { mqttConfig };
+
+        _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
+        _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
+            .ReturnsAsync(new List<TopicInfo>());
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, false))
+            .ReturnsAsync(new List<InputOutputConfiguration>());
+        _mockDataIngestionRepository.Setup(x => x.GetAllConfigurationsAsync())
+            .ReturnsAsync(dataIngestionConfigs);
     }
 
     private void SetupSchemasWithData()
@@ -348,7 +377,7 @@ public class SettingsTests : UITestContext
     public void Settings_ConnectionsTab_DisplaysAddInputButton()
     {
         // Arrange
-        SetupDefaultMocks();
+        SetupMocksWithConnection();
         var component = RenderComponent<Settings>();
 
         // Act - Navigate to connections tab
@@ -363,7 +392,7 @@ public class SettingsTests : UITestContext
     public void Settings_ConnectionsTab_DisplaysAddOutputButton()
     {
         // Arrange
-        SetupDefaultMocks();
+        SetupMocksWithConnection();
         var component = RenderComponent<Settings>();
 
         // Act - Navigate to connections tab
@@ -400,7 +429,7 @@ public class SettingsTests : UITestContext
         _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
         _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
             .ReturnsAsync(new List<TopicInfo>());
-        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, true))
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, false))
             .ReturnsAsync(configs);
 
         var component = RenderComponent<Settings>();
@@ -451,7 +480,7 @@ public class SettingsTests : UITestContext
     public void Settings_AddInputButton_ClickTriggersModal()
     {
         // Arrange
-        SetupDefaultMocks();
+        SetupMocksWithConnection();
         var component = RenderComponent<Settings>();
         
         // Navigate to connections tab
@@ -471,7 +500,7 @@ public class SettingsTests : UITestContext
     public void Settings_AddOutputButton_ClickTriggersModal()
     {
         // Arrange
-        SetupDefaultMocks();
+        SetupMocksWithConnection();
         var component = RenderComponent<Settings>();
         
         // Navigate to connections tab
@@ -668,7 +697,7 @@ public class SettingsTests : UITestContext
         _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
         _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
             .ReturnsAsync(new List<TopicInfo>());
-        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, true))
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, false))
             .ReturnsAsync(configs);
 
         var component = RenderComponent<Settings>();
@@ -700,7 +729,7 @@ public class SettingsTests : UITestContext
         _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
         _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
             .ReturnsAsync(new List<TopicInfo>());
-        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, true))
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, false))
             .ReturnsAsync(configs);
 
         var component = RenderComponent<Settings>();
@@ -732,7 +761,7 @@ public class SettingsTests : UITestContext
         _mockSchemaRepository.Setup(x => x.GetAllSchemasAsync()).ReturnsAsync(new List<DataSchema>());
         _mockTopicBrowserService.Setup(x => x.GetLatestTopicStructureAsync())
             .ReturnsAsync(new List<TopicInfo>());
-        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, true))
+        _mockInputOutputRepository.Setup(x => x.GetAllConfigurationsAsync(null, null, false))
             .ReturnsAsync(configs);
 
         var component = RenderComponent<Settings>();
@@ -761,6 +790,6 @@ public class SettingsTests : UITestContext
         refreshButton.Click();
 
         // Assert
-        _mockInputOutputRepository.Verify(x => x.GetAllConfigurationsAsync(null, null, true), Times.AtLeastOnce);
+        _mockInputOutputRepository.Verify(x => x.GetAllConfigurationsAsync(null, null, false), Times.AtLeastOnce);
     }
 }

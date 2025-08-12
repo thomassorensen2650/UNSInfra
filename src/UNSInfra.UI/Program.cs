@@ -7,6 +7,7 @@ using UNSInfra.Storage.InMemory;
 using UNSInfra.Storage.SQLite.Extensions;
 using UNSInfra.Services.V1.Descriptors;
 using UNSInfra.Services.SocketIO.Descriptors;
+using UNSInfra.Services.V1.Extensions;
 using UNSInfra.Core.Extensions;
 using UNSInfra.Core.Services;
 using UNSInfra.Services;
@@ -122,8 +123,8 @@ builder.Services.AddDataIngestionServiceDescriptor<UNSInfra.Services.SocketIO.De
 // Register SparkplugB decoder for MQTT service
 builder.Services.AddSingleton<UNSInfra.Services.V1.SparkplugB.SparkplugBDecoder>();
 
-// Register Input/Output configuration services
-builder.Services.AddSingleton<IInputOutputConfigurationRepository, InMemoryInputOutputConfigurationRepository>();
+// Add input/output services for MQTT publishing functionality
+builder.Services.AddInputOutputServices();
 
 // Legacy services removed - now using dynamic configuration system only
 

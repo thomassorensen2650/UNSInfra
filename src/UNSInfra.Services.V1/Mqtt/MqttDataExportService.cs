@@ -2,15 +2,12 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
-using MQTTnet;
-using MQTTnet.Client;
-using MQTTnet.Extensions.ManagedClient;
 using UNSInfra.Models.Configuration;
 using UNSInfra.Models.Data;
 using UNSInfra.Core.Repositories;
 using UNSInfra.Repositories;
 using UNSInfra.Storage.Abstractions;
-using UNSInfra.Services.V1.SparkplugB;
+using UNSInfra.Services.DataIngestion.Mock;
 
 namespace UNSInfra.Services.V1.Mqtt;
 
@@ -23,9 +20,11 @@ public class MqttDataExportService : IDisposable
     private readonly IInputOutputConfigurationRepository _configRepository;
     private readonly ITopicConfigurationRepository _topicConfigurationRepository;
     private readonly IRealtimeStorage _realtimeStorage;
+    private readonly MqttConnectionManager _connectionManager;
     private readonly object? _sparkplugBEncoder;
-    private IManagedMqttClient? _mqttClient;
     private readonly Dictionary<string, MqttOutputConfiguration> _activeConfigurations = new();
+    private readonly Dictionary<string, IMqttDataIngestionService> _activeConnections = new();
+    private readonly Dictionary<string, string> _configConnectionMap = new();
     private readonly Dictionary<string, DateTime> _lastPublishTimes = new();
     private bool _isRunning;
     private bool _disposed;
@@ -38,12 +37,14 @@ public class MqttDataExportService : IDisposable
         IInputOutputConfigurationRepository configRepository,
         ITopicConfigurationRepository topicConfigurationRepository,
         IRealtimeStorage realtimeStorage,
+        MqttConnectionManager connectionManager,
         object? sparkplugBEncoder = null)
     {
         _logger = logger;
         _configRepository = configRepository;
         _topicConfigurationRepository = topicConfigurationRepository;
         _realtimeStorage = realtimeStorage;
+        _connectionManager = connectionManager;
         _sparkplugBEncoder = sparkplugBEncoder;
     }
 
@@ -73,25 +74,34 @@ public class MqttDataExportService : IDisposable
 
             _logger.LogInformation("Found {Count} enabled MQTT data export configurations", dataConfigs.Count);
 
-            // Create MQTT client
-            var clientOptions = new MqttClientOptionsBuilder()
-                .WithTcpServer("localhost", 1883) // Should be configurable
-                .WithClientId($"UNSDataExporter_{Guid.NewGuid():N}")
-                .WithCleanSession()
-                .Build();
-
-            var managedOptions = new ManagedMqttClientOptionsBuilder()
-                .WithClientOptions(clientOptions)
-                .WithAutoReconnectDelay(TimeSpan.FromSeconds(5))
-                .Build();
-
-            _mqttClient = new MqttFactory().CreateManagedMqttClient();
-            await _mqttClient.StartAsync(managedOptions);
-
-            // Setup configurations
-            foreach (var config in dataConfigs)
+            // Group configurations by connection ID and setup each connection
+            var configsByConnection = dataConfigs.GroupBy(c => c.ConnectionId).ToList();
+            
+            foreach (var connectionGroup in configsByConnection)
             {
-                _activeConfigurations[config.Id] = config;
+                var connectionId = connectionGroup.Key;
+                if (string.IsNullOrEmpty(connectionId))
+                {
+                    _logger.LogError("MQTT data export configuration does not have a ConnectionId specified");
+                    continue;
+                }
+
+                // Get or create shared MQTT connection
+                var mqttService = await _connectionManager.GetOrCreateConnectionAsync(connectionId, $"DataExport_{Guid.NewGuid():N}");
+                if (mqttService == null)
+                {
+                    _logger.LogError("Could not create MQTT connection for configuration ID: {ConnectionId}", connectionId);
+                    continue;
+                }
+
+                _activeConnections[connectionId] = mqttService;
+                
+                // Setup configurations using this connection
+                foreach (var config in connectionGroup)
+                {
+                    _configConnectionMap[config.Id] = connectionId;
+                    _activeConfigurations[config.Id] = config;
+                }
             }
 
             // Start data change monitoring
@@ -255,18 +265,13 @@ public class MqttDataExportService : IDisposable
             // Build payload based on format
             var payload = BuildPayload(config, dataPoint);
             
-            // Create MQTT message
-            var message = new MqttApplicationMessageBuilder()
-                .WithTopic(mqttTopic)
-                .WithPayload(payload)
-                .WithQualityOfServiceLevel((MQTTnet.Protocol.MqttQualityOfServiceLevel)config.QoS)
-                .WithRetainFlag(config.Retain)
-                .Build();
+            // Message will be published directly using the service
 
-            // Publish the message
-            if (_mqttClient != null)
+            // Get the MQTT service for this configuration and publish
+            if (_configConnectionMap.TryGetValue(config.Id, out var connectionId) &&
+                _activeConnections.TryGetValue(connectionId, out var mqttService))
             {
-                await _mqttClient.EnqueueAsync(message);
+                await mqttService.PublishAsync(mqttTopic, payload, config.QoS, config.Retain);
                 
                 // Update last publish time
                 var key = $"{config.Id}:{topicConfig.Topic}";
@@ -274,6 +279,10 @@ public class MqttDataExportService : IDisposable
 
                 _logger.LogDebug("Published data for topic '{Topic}' to MQTT topic '{MqttTopic}' using configuration '{ConfigName}'",
                     topicConfig.Topic, mqttTopic, config.Name);
+            }
+            else
+            {
+                _logger.LogWarning("No MQTT connection available for configuration '{ConfigId}'", config.Id);
             }
         }
         catch (Exception ex)
@@ -408,14 +417,14 @@ public class MqttDataExportService : IDisposable
 
             _isRunning = false;
 
-            // Stop MQTT client
-            if (_mqttClient != null)
+            // Release MQTT connections
+            foreach (var (configId, connectionId) in _configConnectionMap)
             {
-                await _mqttClient.StopAsync();
-                _mqttClient.Dispose();
-                _mqttClient = null;
+                await _connectionManager.ReleaseConnectionAsync(connectionId, $"DataExport_{configId}");
             }
-
+            
+            _activeConnections.Clear();
+            _configConnectionMap.Clear();
             _activeConfigurations.Clear();
             _lastPublishTimes.Clear();
 
@@ -431,14 +440,24 @@ public class MqttDataExportService : IDisposable
 
     public Task<bool> IsRunningAsync() => Task.FromResult(_isRunning);
 
-    public Task<Dictionary<string, object>> GetStatusAsync()
+    public async Task<Dictionary<string, object>> GetStatusAsync()
     {
+        var connectionStatuses = new List<object>();
+        foreach (var (connectionId, mqttService) in _activeConnections)
+        {
+            connectionStatuses.Add(new
+            {
+                ConnectionId = connectionId,
+                IsConnected = await mqttService.IsConnectedAsync()
+            });
+        }
+
         var status = new Dictionary<string, object>
         {
             ["IsRunning"] = _isRunning,
-            ["MqttConnected"] = _mqttClient?.IsConnected ?? false,
             ["ActiveConfigurations"] = _activeConfigurations.Count,
             ["TrackedTopics"] = _lastPublishTimes.Count,
+            ["ActiveConnections"] = connectionStatuses,
             ["Configurations"] = _activeConfigurations.Values.Select(c => new
             {
                 c.Id,
@@ -458,7 +477,7 @@ public class MqttDataExportService : IDisposable
             }).ToList()
         };
 
-        return Task.FromResult(status);
+        return status;
     }
 
     public void Dispose()
