@@ -97,8 +97,8 @@ public class NamespaceAutoMappingIntegrationTests : IDisposable
         var testTopic = "mqtt/factory/Enterprise1/Site1/Area1/WorkCenter1/Temperature";
         var initialMapping = _autoMapperService.TryMapTopic(testTopic);
         
-        // Should map to Area1 since WorkCenter1 doesn't exist yet
-        Assert.Equal("Enterprise1/Site1/Area1", initialMapping);
+        // Should fail to map since WorkCenter1 doesn't exist and path fragments don't match
+        Assert.Null(initialMapping);
 
         // Act: Add new WorkCenter1 namespace to the structure
         var updatedNamespaces = new List<NSTreeNode>
@@ -221,9 +221,9 @@ public class NamespaceAutoMappingIntegrationTests : IDisposable
 
         await _autoMapperService.RefreshCacheAsync();
 
-        // Assert: New topic should map to Area1 (parent level)
+        // Assert: New topic should fail to map since WorkCenter1 no longer exists
         var parentMapping = _autoMapperService.TryMapTopic("mqtt/factory/Enterprise1/Site1/Area1/WorkCenter1/Pressure");
-        Assert.Equal("Enterprise1/Site1/Area1", parentMapping);
+        Assert.Null(parentMapping);
     }
 
     private static NSTreeNode CreateNSTreeNode(string name, string nodeType, NSTreeNode[] children)

@@ -21,6 +21,10 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
     private readonly Queue<TopicInfo> _topicsToProcess = new();
     private readonly object _queueLock = new object();
     
+    // Track failed topics for retry when namespace structure changes
+    private readonly Dictionary<string, TopicInfo> _failedTopicsCache = new();
+    private readonly object _failedTopicsLock = new object();
+    
     // Performance settings
     private readonly TimeSpan _processingInterval = TimeSpan.FromSeconds(2); // Process every 2 seconds
     private readonly int _maxBatchSize = 50; // Process up to 50 topics per batch
@@ -107,12 +111,32 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
     }
 
     /// <summary>
-    /// Handle namespace structure changes - refresh the cache
+    /// Handle namespace structure changes - refresh the cache and re-queue failed topics
     /// </summary>
     private async Task OnNamespaceStructureChanged(NamespaceStructureChangedEvent namespaceEvent)
     {
         _logger.LogInformation("Namespace structure changed, refreshing auto-mapper cache");
         await _autoMapper.RefreshCacheAsync();
+        
+        // Re-queue all previously failed topics for retry
+        lock (_failedTopicsLock)
+        {
+            if (_failedTopicsCache.Count > 0)
+            {
+                _logger.LogInformation("Re-queueing {Count} previously failed topics for retry after namespace structure change", _failedTopicsCache.Count);
+                
+                lock (_queueLock)
+                {
+                    foreach (var failedTopic in _failedTopicsCache.Values)
+                    {
+                        _topicsToProcess.Enqueue(failedTopic);
+                    }
+                }
+                
+                // Clear the failed topics list since they're now queued for retry
+                _failedTopicsCache.Clear();
+            }
+        }
     }
 
     /// <summary>
@@ -153,6 +177,12 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
                 
                 if (!string.IsNullOrEmpty(namespacePath))
                 {
+                    // Remove from failed topics if it was previously failed (successful retry)
+                    lock (_failedTopicsLock)
+                    {
+                        _failedTopicsCache.Remove(topic.Topic);
+                    }
+                    
                     // Publish successful mapping event
                     var mappingEvent = new TopicAutoMappedEvent(
                         Topic: topic.Topic,
@@ -170,6 +200,12 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
                 }
                 else
                 {
+                    // Store failed topic for potential retry when namespace structure changes
+                    lock (_failedTopicsLock)
+                    {
+                        _failedTopicsCache[topic.Topic] = topic;
+                    }
+                    
                     // Publish failed mapping event
                     var failedEvent = new TopicAutoMappingFailedEvent(
                         Topic: topic.Topic,
@@ -180,14 +216,20 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
                     await _eventBus.PublishAsync(failedEvent);
                     
                     _failedTopics++;
-                    _logger.LogTrace("Failed to auto-map topic '{Topic}' - no matching namespace found", 
+                    _logger.LogTrace("Failed to auto-map topic '{Topic}' - no matching namespace found, stored for retry", 
                         topic.Topic);
                 }
             }
             catch (Exception ex)
             {
+                // Store failed topic for potential retry when namespace structure changes
+                lock (_failedTopicsLock)
+                {
+                    _failedTopicsCache[topic.Topic] = topic;
+                }
+                
                 _failedTopics++;
-                _logger.LogError(ex, "Error processing topic '{Topic}' for auto-mapping", topic.Topic);
+                _logger.LogError(ex, "Error processing topic '{Topic}' for auto-mapping, stored for retry", topic.Topic);
                 
                 // Publish error event
                 var errorEvent = new TopicAutoMappingFailedEvent(
@@ -213,9 +255,15 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
             var stats = _autoMapper.GetStats();
             var successRate = (double)_mappedTopics / _processedTopics;
             
+            int failedTopicsCount;
+            lock (_failedTopicsLock)
+            {
+                failedTopicsCount = _failedTopicsCache.Count;
+            }
+            
             _logger.LogInformation("AutoMapping stats - Processed: {Processed}, Success rate: {SuccessRate:P1}, " +
-                "Cache hits: {Hits}, Cache misses: {Misses}, Hit ratio: {HitRatio:P1}", 
-                _processedTopics, successRate, stats.CacheHits, stats.CacheMisses, stats.HitRatio);
+                "Cache hits: {Hits}, Cache misses: {Misses}, Hit ratio: {HitRatio:P1}, Failed topics awaiting retry: {FailedCount}", 
+                _processedTopics, successRate, stats.CacheHits, stats.CacheMisses, stats.HitRatio, failedTopicsCount);
         }
     }
 
@@ -238,9 +286,16 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
         var stats = _autoMapper.GetStats();
         var successRate = _processedTopics > 0 ? (double)_mappedTopics / _processedTopics : 0.0;
         
+        int remainingFailedTopics;
+        lock (_failedTopicsLock)
+        {
+            remainingFailedTopics = _failedTopicsCache.Count;
+        }
+        
         _logger.LogInformation("SimplifiedAutoMapping service stopped. Final stats - " +
-            "Processed: {Processed}, Mapped: {Mapped}, Failed: {Failed}, Success rate: {SuccessRate:P1}",
-            _processedTopics, _mappedTopics, _failedTopics, successRate);
+            "Processed: {Processed}, Mapped: {Mapped}, Failed: {Failed}, Success rate: {SuccessRate:P1}, " +
+            "Unresolved failed topics: {UnresolvedFailed}",
+            _processedTopics, _mappedTopics, _failedTopics, successRate, remainingFailedTopics);
         
         await base.StopAsync(cancellationToken);
     }

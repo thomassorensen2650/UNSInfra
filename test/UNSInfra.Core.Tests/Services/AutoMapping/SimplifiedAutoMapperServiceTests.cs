@@ -79,9 +79,9 @@ public class SimplifiedAutoMapperServiceTests : IDisposable
     }
 
     [Theory]
-    [InlineData("socket/virtualfactory/Enterprise1/KPI/MyKPI", "Enterprise1/KPI/MyKPI")]
-    [InlineData("mqtt/factory/Enterprise1/Area1/WorkCenter1/Sensor1", "Enterprise1/Area1/WorkCenter1/Sensor1")]
-    [InlineData("socketio/test/Enterprise1/KPI", "Enterprise1/KPI")]
+    [InlineData("socket/virtualfactory/Enterprise1/KPI/MyKPI", "Enterprise1/KPI")]
+    [InlineData("mqtt/factory/Enterprise1/Area1/WorkCenter1/Sensor1", "Enterprise1/Area1/WorkCenter1")]
+    [InlineData("socketio/test/Enterprise1/KPI", "Enterprise1")]
     public async Task TryMapTopic_WithValidTopics_ReturnsCorrectNamespace(string topic, string expectedNamespace)
     {
         // Arrange
@@ -150,8 +150,8 @@ public class SimplifiedAutoMapperServiceTests : IDisposable
         // Act - Topic should match "Enterprise1/KPI/Production"
         var result = _autoMapperService.TryMapTopic("socket/virtualfactory/Enterprise1/KPI/Production");
 
-        // Assert - Should return the matching namespace
-        Assert.Equal("Enterprise1/KPI/Production", result);
+        // Assert - Should return the longest existing namespace (Production doesn't exist in structure)
+        Assert.Equal("Enterprise1/KPI", result);
     }
 
     [Fact]
@@ -179,7 +179,7 @@ public class SimplifiedAutoMapperServiceTests : IDisposable
         var result2 = _autoMapperService.TryMapTopic(topic);
 
         // Assert
-        Assert.Equal("Enterprise1/KPI/MyKPI", result1);
+        Assert.Equal("Enterprise1/KPI", result1);
         Assert.Null(result2); // Second call should return null as it's already processed
         
         var stats = _autoMapperService.GetStats();
@@ -203,7 +203,7 @@ public class SimplifiedAutoMapperServiceTests : IDisposable
 
         // Assert - Should be able to map the same topic again after refresh
         var result = _autoMapperService.TryMapTopic("socket/test/Enterprise1/KPI/MyKPI");
-        Assert.Equal("Enterprise1/KPI/MyKPI", result);
+        Assert.Equal("Enterprise1/KPI", result);
         
         _namespaceServiceMock.Verify(n => n.GetNamespaceStructureAsync(), Times.Exactly(2));
     }

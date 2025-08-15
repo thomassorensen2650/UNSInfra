@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using UNSInfra.Core.Configuration;
 using UNSInfra.Core.Repositories;
@@ -514,35 +515,96 @@ public static class ServiceCollectionExtensions
     /// <returns>A task representing the async operation.</returns>
     private static async Task InitializeSQLiteDatabaseAsync(this IServiceProvider serviceProvider, StorageConfiguration storageConfig)
     {
-        using var scope = serviceProvider.CreateScope();
-        var context = scope.ServiceProvider.GetRequiredService<UNSInfraDbContext>();
+        var logger = serviceProvider.GetRequiredService<ILogger<UNSInfraDbContext>>();
         
-        // Create database if it doesn't exist
-        await context.Database.EnsureCreatedAsync();
+        var retryCount = 0;
+        const int maxRetries = 2;
         
-        // Apply configuration-based SQLite settings
-        try
+        while (retryCount <= maxRetries)
         {
-            if (storageConfig.EnableWalMode)
+            try
             {
-                await context.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
+                using var scope = serviceProvider.CreateScope();
+                var context = scope.ServiceProvider.GetRequiredService<UNSInfraDbContext>();
+                
+                // Create database if it doesn't exist
+                await context.Database.EnsureCreatedAsync();
+                break; // Success, exit retry loop
             }
-            await context.Database.ExecuteSqlRawAsync("PRAGMA synchronous=NORMAL;");
-            await context.Database.ExecuteSqlRawAsync("PRAGMA cache_size=" + storageConfig.CacheSize + ";");
-            await context.Database.ExecuteSqlRawAsync("PRAGMA temp_store=memory;");
+            catch (Microsoft.Data.Sqlite.SqliteException ex) when ((ex.SqliteErrorCode == 26 || ex.SqliteErrorCode == 10) && retryCount < maxRetries) // SQLITE_NOTADB or SQLITE_IOERR
+            {
+                retryCount++;
+                logger.LogWarning("Database file is corrupted (Error {ErrorCode}: {ErrorMessage}). Attempt {RetryCount}/{MaxRetries} to recreate database...", ex.SqliteErrorCode, ex.Message, retryCount, maxRetries);
+                
+                // Get the database file path from connection string
+                string? dbPath = null;
+                try
+                {
+                    using var scope = serviceProvider.CreateScope();
+                    var context = scope.ServiceProvider.GetRequiredService<UNSInfraDbContext>();
+                    var connectionString = context.Database.GetConnectionString();
+                    dbPath = ExtractDbPathFromConnectionString(connectionString);
+                }
+                catch
+                {
+                    // If we can't get the connection string, we can't clean up files
+                }
+                
+                if (!string.IsNullOrEmpty(dbPath))
+                {
+                    try
+                    {
+                        // Delete the corrupted database file and associated files
+                        DeleteDatabaseFiles(dbPath, logger);
+                        logger.LogInformation("Successfully deleted corrupted database files at: {DbPath}", dbPath);
+                    }
+                    catch (Exception deleteEx)
+                    {
+                        logger.LogWarning(deleteEx, "Failed to delete corrupted database files at: {DbPath}", dbPath);
+                    }
+                }
+                else
+                {
+                    logger.LogWarning("Could not determine database file path to clean up corrupted database");
+                }
+                
+                // If this is our last retry, don't catch the exception
+                if (retryCount >= maxRetries)
+                {
+                    logger.LogError("Failed to recreate database after {MaxRetries} attempts. Manual intervention may be required.", maxRetries);
+                    throw;
+                }
+            }
         }
-        catch (Exception ex)
+        
+        // Apply configuration-based SQLite settings and initialize repositories
+        using (var scope = serviceProvider.CreateScope())
         {
-            Debug.WriteLine($"Warning: Could not set SQLite PRAGMA settings: {ex.Message}");
+            var context = scope.ServiceProvider.GetRequiredService<UNSInfraDbContext>();
+            
+            try
+            {
+                if (storageConfig.EnableWalMode)
+                {
+                    await context.Database.ExecuteSqlRawAsync("PRAGMA journal_mode=WAL;");
+                }
+                await context.Database.ExecuteSqlRawAsync("PRAGMA synchronous=NORMAL;");
+                await context.Database.ExecuteSqlRawAsync("PRAGMA cache_size=" + storageConfig.CacheSize + ";");
+                await context.Database.ExecuteSqlRawAsync("PRAGMA temp_store=memory;");
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Warning: Could not set SQLite PRAGMA settings: {ex.Message}");
+            }
+            
+            // Initialize default hierarchy configuration
+            var hierarchyRepo = scope.ServiceProvider.GetRequiredService<IHierarchyConfigurationRepository>();
+            await hierarchyRepo.EnsureDefaultConfigurationAsync();
+            
+            // Initialize default namespace configurations
+            var namespaceRepo = scope.ServiceProvider.GetRequiredService<INamespaceConfigurationRepository>();
+            await namespaceRepo.EnsureDefaultConfigurationAsync();
         }
-        
-        // Initialize default hierarchy configuration
-        var hierarchyRepo = scope.ServiceProvider.GetRequiredService<IHierarchyConfigurationRepository>();
-        await hierarchyRepo.EnsureDefaultConfigurationAsync();
-        
-        // Initialize default namespace configurations
-        var namespaceRepo = scope.ServiceProvider.GetRequiredService<INamespaceConfigurationRepository>();
-        await namespaceRepo.EnsureDefaultConfigurationAsync();
     }
 
     /// <summary>
@@ -554,9 +616,50 @@ public static class ServiceCollectionExtensions
     {
         using var scope = serviceProvider.CreateScope();
         var context = scope.ServiceProvider.GetRequiredService<UNSInfraDbContext>();
+        var logger = scope.ServiceProvider.GetRequiredService<ILogger<UNSInfraDbContext>>();
         
-        // Create database if it doesn't exist
-        await context.Database.EnsureCreatedAsync();
+        try
+        {
+            // Create database if it doesn't exist
+            await context.Database.EnsureCreatedAsync();
+        }
+        catch (Microsoft.Data.Sqlite.SqliteException ex) when (ex.SqliteErrorCode == 26 || ex.SqliteErrorCode == 10) // SQLITE_NOTADB or SQLITE_IOERR
+        {
+            logger.LogWarning("Database file is corrupted (Error {ErrorCode}: {ErrorMessage}). Attempting to recreate database...", ex.SqliteErrorCode, ex.Message);
+            
+            // Get the database file path
+            var connectionString = context.Database.GetConnectionString();
+            var dbPath = ExtractDbPathFromConnectionString(connectionString);
+            
+            if (!string.IsNullOrEmpty(dbPath) && File.Exists(dbPath))
+            {
+                try
+                {
+                    // Close any existing connections to the database
+                    await context.Database.CloseConnectionAsync();
+                    context.Dispose();
+                    
+                    // Delete the corrupted database file and associated files
+                    DeleteDatabaseFiles(dbPath, logger);
+                    
+                    // Create a new context and database using the outer service provider
+                    using var newScope = serviceProvider.CreateScope();
+                    var newContext = newScope.ServiceProvider.GetRequiredService<UNSInfraDbContext>();
+                    await newContext.Database.EnsureCreatedAsync();
+                    logger.LogInformation("Successfully recreated database at: {DbPath}", dbPath);
+                }
+                catch (Exception recreateEx)
+                {
+                    logger.LogError(recreateEx, "Failed to recreate database after corruption. Manual intervention may be required.");
+                    throw;
+                }
+            }
+            else
+            {
+                logger.LogError("Could not determine database file path to recreate corrupted database");
+                throw;
+            }
+        }
         
         // Enable WAL mode for better concurrency
         try
@@ -578,6 +681,65 @@ public static class ServiceCollectionExtensions
         // Initialize default namespace configurations
         var namespaceRepo = scope.ServiceProvider.GetRequiredService<INamespaceConfigurationRepository>();
         await namespaceRepo.EnsureDefaultConfigurationAsync();
+    }
+
+    /// <summary>
+    /// Deletes the SQLite database file and all associated files (WAL, SHM, etc.)
+    /// </summary>
+    /// <param name="dbPath">The path to the database file</param>
+    /// <param name="logger">Logger for recording deletion operations</param>
+    private static void DeleteDatabaseFiles(string dbPath, ILogger logger)
+    {
+        var filesToDelete = new[]
+        {
+            dbPath,                    // Main database file
+            dbPath + "-wal",          // Write-Ahead Log file
+            dbPath + "-shm",          // Shared Memory file
+            dbPath + "-journal"       // Journal file (rollback mode)
+        };
+
+        foreach (var file in filesToDelete)
+        {
+            try
+            {
+                if (File.Exists(file))
+                {
+                    File.Delete(file);
+                    logger.LogInformation("Deleted database file: {FilePath}", file);
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to delete database file: {FilePath}", file);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Extracts the database file path from a SQLite connection string
+    /// </summary>
+    /// <param name="connectionString">The SQLite connection string</param>
+    /// <returns>The database file path, or null if not found</returns>
+    private static string? ExtractDbPathFromConnectionString(string? connectionString)
+    {
+        if (string.IsNullOrEmpty(connectionString))
+            return null;
+
+        try
+        {
+            var builder = new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder(connectionString);
+            return builder.DataSource;
+        }
+        catch
+        {
+            // Fallback: try to extract manually with regex
+            var match = System.Text.RegularExpressions.Regex.Match(
+                connectionString, 
+                @"Data Source=([^;]+)", 
+                System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+            
+            return match.Success ? match.Groups[1].Value : null;
+        }
     }
 
 }

@@ -443,18 +443,25 @@ public class MqttDataExportService : IDisposable
     public async Task<Dictionary<string, object>> GetStatusAsync()
     {
         var connectionStatuses = new List<object>();
+        bool anyConnected = false;
+        
         foreach (var (connectionId, mqttService) in _activeConnections)
         {
+            var isConnected = await mqttService.IsConnectedAsync();
             connectionStatuses.Add(new
             {
                 ConnectionId = connectionId,
-                IsConnected = await mqttService.IsConnectedAsync()
+                IsConnected = isConnected
             });
+            
+            if (isConnected)
+                anyConnected = true;
         }
 
         var status = new Dictionary<string, object>
         {
             ["IsRunning"] = _isRunning,
+            ["MqttConnected"] = anyConnected,
             ["ActiveConfigurations"] = _activeConfigurations.Count,
             ["TrackedTopics"] = _lastPublishTimes.Count,
             ["ActiveConnections"] = connectionStatuses,
