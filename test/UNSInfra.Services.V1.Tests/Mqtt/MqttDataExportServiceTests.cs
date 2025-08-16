@@ -285,6 +285,80 @@ public class MqttDataExportServiceTests
         result.Should().BeTrue();
     }
 
+    [Fact]
+    public async Task StartAsync_WithMissingConnectionId_ShouldLogError()
+    {
+        // Arrange - Configuration without ConnectionId
+        var config = new MqttOutputConfiguration
+        {
+            Id = "test-output-1",
+            Name = "Test Data Export",
+            IsEnabled = true,
+            OutputType = MqttOutputType.Data,
+            ConnectionId = "", // Missing connection ID
+            DataExportConfig = new MqttDataExportConfiguration
+            {
+                PublishOnChange = true,
+                MinPublishIntervalMs = 100,
+                MaxDataAgeMinutes = 60,
+                DataFormat = MqttDataFormat.Json
+            }
+        };
+
+        _mockConfigRepository.Setup(x => x.GetMqttOutputConfigurationsAsync(true))
+            .ReturnsAsync(new List<MqttOutputConfiguration> { config });
+
+        // Act
+        var result = await _service.StartAsync();
+
+        // Assert
+        result.Should().BeTrue(); // Service starts but with warnings
+        VerifyLogContains("MQTT data export configuration does not have a ConnectionId specified", LogLevel.Error);
+    }
+
+    [Fact]
+    public async Task StartAsync_WithValidConfiguration_ShouldCreateActiveConfiguration()
+    {
+        // Arrange
+        var config = new MqttOutputConfiguration
+        {
+            Id = "test-output-1",
+            Name = "Test Data Export",
+            IsEnabled = true,
+            OutputType = MqttOutputType.Data,
+            ConnectionId = "test-connection",
+            DataExportConfig = new MqttDataExportConfiguration
+            {
+                PublishOnChange = true,
+                MinPublishIntervalMs = 1000,
+                MaxDataAgeMinutes = 60,
+                DataFormat = MqttDataFormat.Json,
+                NamespaceFilter = new List<string> { "Enterprise1" },
+                TopicFilter = new List<string> { "sensor/*" }
+            }
+        };
+
+        _mockConfigRepository.Setup(x => x.GetMqttOutputConfigurationsAsync(true))
+            .ReturnsAsync(new List<MqttOutputConfiguration> { config });
+
+        // Act
+        var result = await _service.StartAsync();
+        var status = await _service.GetStatusAsync();
+        await _service.StopAsync();
+
+        // Assert
+        result.Should().BeTrue();
+        status["ActiveConfigurations"].Should().Be(1);
+        
+        var configurations = (List<object>)status["Configurations"];
+        configurations.Should().HaveCount(1);
+        
+        dynamic firstConfig = configurations[0];
+        firstConfig.Id.Should().Be("test-output-1");
+        firstConfig.Name.Should().Be("Test Data Export");
+        firstConfig.OutputType.Should().Be(MqttOutputType.Data);
+    }
+
     private void VerifyLogContains(string message, LogLevel level)
     {
         _mockLogger.Verify(

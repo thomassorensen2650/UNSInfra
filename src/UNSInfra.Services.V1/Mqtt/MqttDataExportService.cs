@@ -26,6 +26,7 @@ public class MqttDataExportService : IDisposable
     private readonly Dictionary<string, IMqttDataIngestionService> _activeConnections = new();
     private readonly Dictionary<string, string> _configConnectionMap = new();
     private readonly Dictionary<string, DateTime> _lastPublishTimes = new();
+    private readonly Dictionary<string, object?> _lastPublishedValues = new();
     private bool _isRunning;
     private bool _disposed;
 
@@ -235,7 +236,23 @@ public class MqttDataExportService : IDisposable
         var exportConfig = config.DataExportConfig!;
         var key = $"{config.Id}:{topic}";
 
-        // Check minimum publish interval
+        // Check if value has actually changed
+        if (_lastPublishedValues.TryGetValue(key, out var lastValue))
+        {
+            // Compare current value with last published value
+            var valuesAreEqual = lastValue == null && dataPoint.Value == null ||
+                                (lastValue != null && lastValue.Equals(dataPoint.Value));
+            
+            if (valuesAreEqual)
+            {
+                // Value hasn't changed, don't republish
+                _logger.LogDebug("Skipping publish for topic '{Topic}' - value unchanged: {Value}", 
+                    topic, dataPoint.Value);
+                return false;
+            }
+        }
+
+        // Value has changed (or this is first publish), check minimum publish interval for rate limiting
         if (_lastPublishTimes.TryGetValue(key, out var lastPublish))
         {
             var timeSinceLastPublish = DateTime.UtcNow - lastPublish;
@@ -243,10 +260,14 @@ public class MqttDataExportService : IDisposable
             
             if (timeSinceLastPublish < minInterval)
             {
+                _logger.LogDebug("Rate limiting publish for topic '{Topic}' - last publish was {TimeSince}ms ago, minimum interval is {MinInterval}ms", 
+                    topic, timeSinceLastPublish.TotalMilliseconds, exportConfig.MinPublishIntervalMs);
                 return false;
             }
         }
 
+        _logger.LogDebug("Publishing data for topic '{Topic}' - value changed from {OldValue} to {NewValue}", 
+            topic, lastValue, dataPoint.Value);
         return true;
     }
 
@@ -273,9 +294,10 @@ public class MqttDataExportService : IDisposable
             {
                 await mqttService.PublishAsync(mqttTopic, payload, config.QoS, config.Retain);
                 
-                // Update last publish time
+                // Update last publish time and value
                 var key = $"{config.Id}:{topicConfig.Topic}";
                 _lastPublishTimes[key] = DateTime.UtcNow;
+                _lastPublishedValues[key] = dataPoint.Value;
 
                 _logger.LogDebug("Published data for topic '{Topic}' to MQTT topic '{MqttTopic}' using configuration '{ConfigName}'",
                     topicConfig.Topic, mqttTopic, config.Name);
@@ -427,6 +449,7 @@ public class MqttDataExportService : IDisposable
             _configConnectionMap.Clear();
             _activeConfigurations.Clear();
             _lastPublishTimes.Clear();
+            _lastPublishedValues.Clear();
 
             _logger.LogInformation("MQTT data export service stopped successfully");
             return true;
