@@ -7,7 +7,7 @@ using AngleSharp.Dom;
 
 namespace UNSInfra.UI.Tests.Components;
 
-public class LogViewerTests : UITestContext
+public class LogViewerTests : TestContext
 {
     private readonly Mock<IInMemoryLogService> _mockLogService;
 

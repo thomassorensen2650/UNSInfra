@@ -62,6 +62,11 @@ public class UNSInfraDbContext : DbContext
     public DbSet<InputOutputConfigurationEntity> InputOutputConfigurations { get; set; }
 
     /// <summary>
+    /// Gets or sets the connection configurations.
+    /// </summary>
+    public DbSet<ConnectionConfigurationEntity> ConnectionConfigurations { get; set; }
+
+    /// <summary>
     /// Configures the model relationships and constraints.
     /// </summary>
     /// <param name="modelBuilder">The builder being used to construct the model for this context.</param>
@@ -164,6 +169,18 @@ public class UNSInfraDbContext : DbContext
             entity.HasIndex(e => e.Type);
             entity.HasIndex(e => e.IsEnabled);
             entity.HasIndex(e => e.ConnectionId);
+            entity.HasIndex(e => e.CreatedAt);
+            entity.HasIndex(e => e.ModifiedAt);
+        });
+
+        // Configure ConnectionConfiguration
+        modelBuilder.Entity<ConnectionConfigurationEntity>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.Name);
+            entity.HasIndex(e => e.ConnectionType);
+            entity.HasIndex(e => e.IsEnabled);
+            entity.HasIndex(e => e.AutoStart);
             entity.HasIndex(e => e.CreatedAt);
             entity.HasIndex(e => e.ModifiedAt);
         });

@@ -30,6 +30,7 @@
     <ProjectReference Include="..\..\src\UNSInfra.Storage.SQLite\UNSInfra.Storage.SQLite.csproj" />
     <ProjectReference Include="..\..\src\UNSInfra.Services.V1\UNSInfra.Services.V1.csproj" />
     <ProjectReference Include="..\..\src\UNSInfra.Services.SocketIO\UNSInfra.Services.SocketIO.csproj" />
+    <ProjectReference Include="..\..\src\UNSInfra.ConnectionSDK\UNSInfra.ConnectionSDK.csproj" />
   </ItemGroup>
 
 </Project>

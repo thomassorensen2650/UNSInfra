@@ -1,29 +1,34 @@
 @page "/settings"
 @using UNSInfra.UI.Components
+@using UNSInfra.UI.Components.Shared
 @using UNSInfra.Models.Schema
 @using UNSInfra.Core.Repositories
 @using UNSInfra.Repositories
 @using UNSInfra.Validation
 @using UNSInfra.Services.TopicBrowser
 @using UNSInfra.Models.Data
+@using UNSInfra.Models
 @using UNSInfra.UI.Services
-@using UNSInfra.Core.Configuration
-@using UNSInfra.Core.Services
+@* @using UNSInfra.Core.Configuration - Removed, conflicts with ConnectionSDK.Models
+@using UNSInfra.Core.Services - Removed, old data ingestion services *@
 @using UNSInfra.Services
 @using UNSInfra.Models.Hierarchy
 @using UNSInfra.Models.Namespace
 @using UNSInfra.Models.Configuration
+@using UNSInfra.ConnectionSDK.Abstractions
+@using UNSInfra.ConnectionSDK.Models
+@using UNSInfra.Abstractions
 @using System.Text.Json
 @inject ISchemaRepository SchemaRepository
 @inject ISchemaValidator SchemaValidator
 @inject ITopicBrowserService TopicBrowserService
-@inject IDataIngestionServiceManager ServiceManager
-@inject IDataIngestionConfigurationRepository ConfigurationRepository
+@inject IConnectionRegistry ConnectionRegistry
+@inject IConnectionManager ConnectionManager
 @inject ITopicConfigurationRepository TopicConfigurationRepository
 @inject IHierarchyConfigurationRepository HierarchyConfigurationRepository
 @inject INamespaceConfigurationRepository NamespaceConfigurationRepository
 @inject INamespaceStructureService NamespaceStructureService
-@inject IInputOutputConfigurationRepository InputOutputConfigurationRepository
+@inject IConnectionConfigurationRepository ConnectionConfigurationRepository
 @inject IJSRuntime JSRuntime
 @inject ILogger<Settings> Logger
 @implements IDisposable
@@ -144,7 +149,7 @@
                             </div>
                         </div>
                         <div class="card-body">
-                            @if (configurations == null)
+                            @if (connectionConfigurations == null)
                             {
                                 <div class="text-center p-4">
                                     <div class="spinner-border text-primary" role="status">
@@ -153,7 +158,7 @@
                                     <p class="mt-2 text-muted">Loading connections...</p>
                                 </div>
                             }
-                            else if (!configurations.Any())
+                            else if (!connectionConfigurations.Any())
                             {
                                 <div class="text-center p-4">
                                     <i class="bi bi-hdd-network text-muted" style="font-size: 3rem;"></i>
@@ -166,9 +171,9 @@
                             }
                             else
                             {
-                                @foreach (var config in configurations)
+                                @foreach (var config in connectionConfigurations)
                                 {
-                                    var status = serviceStatuses?.GetValueOrDefault(config.Id);
+                                    var status = GetConnectionStatus(config.Id);
                                     var inputConfigs = GetConnectionInputConfigurations(config.Id);
                                     var outputConfigs = GetConnectionOutputConfigurations(config.Id);
                                     
@@ -178,35 +183,41 @@
                                                 <div>
                                                     <h6 class="mb-1">@config.Name</h6>
                                                     <div class="mb-2">
-                                                        <span class="badge bg-info me-2">@config.ServiceType</span>
-                                                        @if (status?.Status == UNSInfra.Core.Configuration.ConnectionStatus.Connected)
+                                                        <span class="badge bg-info me-2">@config.ConnectionType</span>
+                                                        @if (status == ConnectionStatus.Connected)
                                                         {
                                                             <span class="badge bg-success">
                                                                 <i class="bi bi-circle-fill"></i> Connected
                                                             </span>
                                                         }
-                                                        else if (status?.Status == UNSInfra.Core.Configuration.ConnectionStatus.Disconnected)
+                                                        else if (status == ConnectionStatus.Disconnected)
                                                         {
                                                             <span class="badge bg-danger">
                                                                 <i class="bi bi-circle-fill"></i> Disconnected
                                                             </span>
                                                         }
-                                                        else if (status?.Status == UNSInfra.Core.Configuration.ConnectionStatus.Connecting)
+                                                        else if (status == ConnectionStatus.Connecting)
                                                         {
                                                             <span class="badge bg-warning">
                                                                 <i class="bi bi-circle-fill"></i> Connecting
                                                             </span>
                                                         }
-                                                        else if (status?.Status == UNSInfra.Core.Configuration.ConnectionStatus.Error)
+                                                        else if (status == ConnectionStatus.Error)
                                                         {
                                                             <span class="badge bg-danger">
                                                                 <i class="bi bi-circle-fill"></i> Error
                                                             </span>
                                                         }
+                                                        else if (status == ConnectionStatus.Stopping)
+                                                        {
+                                                            <span class="badge bg-warning">
+                                                                <i class="bi bi-circle-fill"></i> Stopping
+                                                            </span>
+                                                        }
                                                         else
                                                         {
                                                             <span class="badge bg-secondary">
-                                                                <i class="bi bi-circle-fill"></i> Disabled
+                                                                <i class="bi bi-circle-fill"></i> @(status?.ToString() ?? "Unknown")
                                                             </span>
                                                         }
                                                     </div>
@@ -216,13 +227,25 @@
                                                     }
                                                 </div>
                                                 <div class="btn-group btn-group-sm">
-                                                    <button class="btn btn-outline-primary" @onclick="() => EditConfiguration(config)">
+                                                    @if (status == ConnectionStatus.Disconnected || status == ConnectionStatus.Error || status == ConnectionStatus.Disabled || status == ConnectionStatus.Unknown)
+                                                    {
+                                                        <button class="btn btn-outline-success" @onclick="() => StartConnectionAsync(config.Id)">
+                                                            <i class="bi bi-play-fill"></i>
+                                                        </button>
+                                                    }
+                                                    @if (status == ConnectionStatus.Connected || status == ConnectionStatus.Connecting)
+                                                    {
+                                                        <button class="btn btn-outline-warning" @onclick="() => StopConnectionAsync(config.Id)">
+                                                            <i class="bi bi-stop-fill"></i>
+                                                        </button>
+                                                    }
+                                                    <button class="btn btn-outline-primary" @onclick="() => EditConnection(config)">
                                                         <i class="bi bi-pencil"></i>
                                                     </button>
                                                     <button class="btn btn-outline-secondary" @onclick="() => TestConnection(config)">
                                                         <i class="bi bi-activity"></i>
                                                     </button>
-                                                    <button class="btn btn-outline-danger" @onclick="() => DeleteConfiguration(config)">
+                                                    <button class="btn btn-outline-danger" @onclick="() => RemoveConnectionAsync(config.Id)">
                                                         <i class="bi bi-trash"></i>
                                                     </button>
                                                 </div>
@@ -260,11 +283,11 @@
                                                                             <div class="form-check form-switch form-check-inline ms-2">
                                                                                 <input class="form-check-input form-check-input-sm" type="checkbox" 
                                                                                        checked="@inputConfig.IsEnabled" 
-                                                                                       @onchange="@(async (e) => await ToggleInputOutputConfiguration(inputConfig, (bool)e.Value!))" />
+                                                                                       @onchange="@(async (e) => await ToggleInput(inputConfig, (bool)e.Value!))" />
                                                                             </div>
                                                                         </div>
                                                                         <div class="btn-group btn-group-sm">
-                                                                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditInputOutputConfiguration(inputConfig)">
+                                                                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditInput((object)inputConfig)">
                                                                                 <i class="bi bi-pencil"></i>
                                                                             </button>
                                                                             <button class="btn btn-outline-danger btn-sm" @onclick="() => DeleteInputOutputConfiguration(inputConfig.Id)">
@@ -307,11 +330,11 @@
                                                                             <div class="form-check form-switch form-check-inline ms-2">
                                                                                 <input class="form-check-input form-check-input-sm" type="checkbox" 
                                                                                        checked="@outputConfig.IsEnabled" 
-                                                                                       @onchange="@(async (e) => await ToggleInputOutputConfiguration(outputConfig, (bool)e.Value!))" />
+                                                                                       @onchange="@(async (e) => await ToggleOutput(outputConfig, (bool)e.Value!))" />
                                                                             </div>
                                                                         </div>
                                                                         <div class="btn-group btn-group-sm">
-                                                                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditInputOutputConfiguration(outputConfig)">
+                                                                            <button class="btn btn-outline-secondary btn-sm" @onclick="() => EditOutput((object)outputConfig)">
                                                                                 <i class="bi bi-pencil"></i>
                                                                             </button>
                                                                             <button class="btn btn-outline-danger btn-sm" @onclick="() => DeleteInputOutputConfiguration(outputConfig.Id)">
@@ -786,406 +809,212 @@
     </div>
 </div>
 
-<!-- Configuration Form Modal -->
-@if (showConfigurationForm)
-{
-    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
-        <div class="modal-dialog modal-xl">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h5 class="modal-title">
-                        <i class="@(selectedServiceDescriptor?.IconClass ?? "bi bi-gear") me-2"></i>
-                        @(editingConfiguration?.Id != null ? "Edit" : "Add") @(selectedServiceDescriptor?.DisplayName ?? "Connection") Configuration
-                    </h5>
-                    <button type="button" class="btn-close" @onclick="HideConfigurationForm"></button>
-                </div>
-                <div class="modal-body p-0">
-                    <!-- Tabs Navigation -->
-                    <ul class="nav nav-tabs" id="connectionConfigTabs" role="tablist">
-                        <li class="nav-item" role="presentation">
-                            <button class="nav-link @(connectionConfigActiveTab == "basic" ? "active" : "")" 
-                                    type="button" role="tab"
-                                    @onclick="@(() => SetConnectionConfigActiveTab("basic"))">
-                                <i class="bi bi-gear me-2"></i>
-                                Connection Settings
-                            </button>
-                        </li>
-                        @if (editingConfiguration?.Id != null)
-                        {
-                            <li class="nav-item" role="presentation">
-                                <button class="nav-link @(connectionConfigActiveTab == "inputs" ? "active" : "")" 
-                                        type="button" role="tab"
-                                        @onclick="@(() => SetConnectionConfigActiveTab("inputs"))">
-                                    <i class="bi bi-arrow-down-circle me-2"></i>
-                                    Input Configurations
-                                    @{
-                                        var inputCount = GetConnectionInputConfigurations(editingConfiguration.Id).Count();
-                                    }
-                                    @if (inputCount > 0)
-                                    {
-                                        <span class="badge bg-success ms-1">@inputCount</span>
-                                    }
-                                </button>
-                            </li>
-                            @if (editingConfiguration.ServiceType == "MQTT")
-                            {
-                                <li class="nav-item" role="presentation">
-                                    <button class="nav-link @(connectionConfigActiveTab == "outputs" ? "active" : "")" 
-                                            type="button" role="tab"
-                                            @onclick="@(() => SetConnectionConfigActiveTab("outputs"))">
-                                        <i class="bi bi-arrow-up-circle me-2"></i>
-                                        Output Configurations
-                                        @{
-                                            var outputCount = GetConnectionOutputConfigurations(editingConfiguration.Id).Count();
-                                        }
-                                        @if (outputCount > 0)
-                                        {
-                                            <span class="badge bg-warning ms-1">@outputCount</span>
-                                        }
-                                    </button>
-                                </li>
-                            }
-                        }
-                    </ul>
-                    
-                    <!-- Tab Content -->
-                    <div class="tab-content p-3">
-                        <!-- Basic Configuration Tab -->
-                        <div class="tab-pane @(connectionConfigActiveTab == "basic" ? "show active" : "")" role="tabpanel">
-                            <DynamicConfigurationForm Configuration="editingConfiguration" 
-                                                    ServiceDescriptor="selectedServiceDescriptor"
-                                                    AvailableDescriptors="availableServiceTypes"
-                                                    OnSave="SaveConfiguration"
-                                                    OnCancel="HideConfigurationForm"
-                                                    OnServiceTypeChanged="OnServiceTypeSelected" />
-                            
-                            @if (editingConfiguration?.Id == null)
-                            {
-                                <hr class="mt-4 mb-3" />
-                                <div class="alert alert-info" role="alert">
-                                    <h6 class="alert-heading">
-                                        <i class="bi bi-info-circle me-2"></i>
-                                        Next Steps
-                                    </h6>
-                                    <p class="mb-0">
-                                        Once this connection is saved, you can configure input and output settings specific to this connection using the additional tabs that will appear.
-                                    </p>
-                                </div>
-                            }
-                        </div>
-                        
-                        <!-- Input Configurations Tab -->
-                        @if (editingConfiguration?.Id != null && connectionConfigActiveTab == "inputs")
-                        {
-                            <div class="tab-pane show active" role="tabpanel">
-                                <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <div>
-                                        <h6 class="mb-1">
-                                            <i class="bi bi-arrow-down-circle me-2"></i>
-                                            Input Configurations for @editingConfiguration.Name
-                                        </h6>
-                                        <p class="text-muted small mb-0">Configure how data flows into the UNS from this @editingConfiguration.ServiceType connection</p>
-                                    </div>
-                                    <button class="btn btn-primary btn-sm" @onclick="@(() => ShowAddInputForConnection(editingConfiguration.Id))">
-                                        <i class="bi bi-plus-circle me-1"></i> Add Input
-                                    </button>
-                                </div>
-                                
-                                @{
-                                    var connectionInputs = GetConnectionInputConfigurations(editingConfiguration.Id).ToList();
-                                }
-                                
-                                @if (!connectionInputs.Any())
-                                {
-                                    <div class="alert alert-light border text-center" role="alert">
-                                        <i class="bi bi-arrow-down-circle text-muted" style="font-size: 2rem;"></i>
-                                        <h6 class="text-muted mt-2 mb-1">No Input Configurations</h6>
-                                        <p class="text-muted small mb-3">Add input configurations to define topic filters, event subscriptions, and data processing rules for this connection.</p>
-                                        <button class="btn btn-primary btn-sm" @onclick="@(() => ShowAddInputForConnection(editingConfiguration.Id))">
-                                            <i class="bi bi-plus-circle me-1"></i> Add Your First Input Configuration
-                                        </button>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div class="row">
-                                        @foreach (var inputConfig in connectionInputs)
-                                        {
-                                            <div class="col-md-6 mb-3">
-                                                <div class="card border-start border-success border-3">
-                                                    <div class="card-body">
-                                                        <div class="d-flex justify-content-between align-items-start">
-                                                            <div class="flex-grow-1">
-                                                                <h6 class="card-title mb-1">@inputConfig.Name</h6>
-                                                                @if (!string.IsNullOrEmpty(inputConfig.Description))
-                                                                {
-                                                                    <p class="text-muted small mb-2">@inputConfig.Description</p>
-                                                                }
-                                                                <div class="mb-2">
-                                                                    <span class="badge @(inputConfig.IsEnabled ? "bg-success" : "bg-secondary") me-1">@(inputConfig.IsEnabled ? "Enabled" : "Disabled")</span>
-                                                                    <span class="badge bg-light text-dark">@inputConfig.ServiceType</span>
-                                                                </div>
-                                                                <small class="text-muted">Modified: @inputConfig.ModifiedAt.ToString("yyyy-MM-dd HH:mm")</small>
-                                                            </div>
-                                                            <div class="btn-group-vertical btn-group-sm ms-2">
-                                                                <button class="btn btn-outline-primary" 
-                                                                        @onclick="@(() => EditInputConfig(inputConfig))"
-                                                                        title="Edit Configuration">
-                                                                    <i class="bi bi-pencil"></i>
-                                                                </button>
-                                                                <button class="btn btn-outline-danger" 
-                                                                        @onclick="@(() => DeleteInputConfig(inputConfig))"
-                                                                        title="Delete Configuration">
-                                                                    <i class="bi bi-trash"></i>
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        }
-                        
-                        <!-- Output Configurations Tab (MQTT only) -->
-                        @if (editingConfiguration?.Id != null && editingConfiguration.ServiceType == "MQTT" && connectionConfigActiveTab == "outputs")
-                        {
-                            <div class="tab-pane show active" role="tabpanel">
-                                <div class="d-flex justify-content-between align-items-center mb-3">
-                                    <div>
-                                        <h6 class="mb-1">
-                                            <i class="bi bi-arrow-up-circle me-2"></i>
-                                            Output Configurations for @editingConfiguration.Name
-                                        </h6>
-                                        <p class="text-muted small mb-0">Configure UNS model and data export through this MQTT connection</p>
-                                    </div>
-                                    <button class="btn btn-primary btn-sm" @onclick="@(() => ShowAddOutputForConnection(editingConfiguration.Id))">
-                                        <i class="bi bi-plus-circle me-1"></i> Add Output
-                                    </button>
-                                </div>
-                                
-                                @{
-                                    var connectionOutputs = GetConnectionOutputConfigurations(editingConfiguration.Id).ToList();
-                                }
-                                
-                                @if (!connectionOutputs.Any())
-                                {
-                                    <div class="alert alert-light border text-center" role="alert">
-                                        <i class="bi bi-arrow-up-circle text-muted" style="font-size: 2rem;"></i>
-                                        <h6 class="text-muted mt-2 mb-1">No Output Configurations</h6>
-                                        <p class="text-muted small mb-3">Add output configurations to publish UNS model metadata and real-time data through this MQTT connection.</p>
-                                        <button class="btn btn-primary btn-sm" @onclick="@(() => ShowAddOutputForConnection(editingConfiguration.Id))">
-                                            <i class="bi bi-plus-circle me-1"></i> Add Your First Output Configuration
-                                        </button>
-                                    </div>
-                                }
-                                else
-                                {
-                                    <div class="row">
-                                        @foreach (var outputConfig in connectionOutputs)
-                                        {
-                                            <div class="col-md-6 mb-3">
-                                                <div class="card border-start border-warning border-3">
-                                                    <div class="card-body">
-                                                        <div class="d-flex justify-content-between align-items-start">
-                                                            <div class="flex-grow-1">
-                                                                <h6 class="card-title mb-1">@outputConfig.Name</h6>
-                                                                @if (!string.IsNullOrEmpty(outputConfig.Description))
-                                                                {
-                                                                    <p class="text-muted small mb-2">@outputConfig.Description</p>
-                                                                }
-                                                                <div class="mb-2">
-                                                                    <span class="badge @(outputConfig.IsEnabled ? "bg-success" : "bg-secondary") me-1">@(outputConfig.IsEnabled ? "Enabled" : "Disabled")</span>
-                                                                    <span class="badge bg-light text-dark">@outputConfig.ServiceType</span>
-                                                                </div>
-                                                                <small class="text-muted">Modified: @outputConfig.ModifiedAt.ToString("yyyy-MM-dd HH:mm")</small>
-                                                            </div>
-                                                            <div class="btn-group-vertical btn-group-sm ms-2">
-                                                                <button class="btn btn-outline-primary" 
-                                                                        @onclick="@(() => EditOutputConfig(outputConfig))"
-                                                                        title="Edit Configuration">
-                                                                    <i class="bi bi-pencil"></i>
-                                                                </button>
-                                                                <button class="btn btn-outline-danger" 
-                                                                        @onclick="@(() => DeleteOutputConfig(outputConfig))"
-                                                                        title="Delete Configuration">
-                                                                    <i class="bi bi-trash"></i>
-                                                                </button>
-                                                            </div>
-                                                        </div>
-                                                    </div>
-                                                </div>
-                                            </div>
-                                        }
-                                    </div>
-                                }
-                            </div>
-                        }
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
-}
+<!-- Connection Configuration Modal -->
+<ConnectionConfigurationModal 
+    IsVisible="@(showAddConnectionModal && selectedConnectionType != null)"
+    Connection="@editingConnection"
+    ConnectionDescriptor="@selectedConnectionType"
+    OnSave="@SaveConnectionAsync"
+    OnCancel="@HideAddConnectionModal" />
 
-<!-- Input/Output Configuration Modal -->
-@if (showInputOutputModal && editingInputOutputConfig != null)
+<!-- Connection Type Selection Modal -->
+@if (showAddConnectionModal && selectedConnectionType == null && !isEditingConnection)
 {
     <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
         <div class="modal-dialog modal-lg">
             <div class="modal-content">
                 <div class="modal-header">
                     <h5 class="modal-title">
-                        <i class="@(isEditingInput ? "bi bi-arrow-down-circle" : "bi bi-arrow-up-circle") me-2"></i>
-                        @(editingInputOutputConfig.Name.StartsWith("New") ? "Add" : "Edit") @(isEditingInput ? "Input" : "Output") Configuration
+                        @if (isEditingConnection)
+                        {
+                            <i class="bi bi-pencil me-2"></i>
+                            <text>Edit Data Connection</text>
+                        }
+                        else
+                        {
+                            <i class="bi bi-plus-circle me-2"></i>
+                            <text>Add Data Connection</text>
+                        }
                     </h5>
-                    <button type="button" class="btn-close" @onclick="HideInputOutputModal"></button>
+                    <button type="button" class="btn-close" @onclick="HideAddConnectionModal"></button>
                 </div>
                 <div class="modal-body">
-                    <form @onsubmit="SaveInputOutputConfiguration" @onsubmit:preventDefault="true">
-                        <!-- Basic Properties -->
-                        <div class="row mb-3">
-                            <div class="col-md-6">
-                                <label class="form-label">Name <span class="text-danger">*</span></label>
-                                <input type="text" class="form-control" @bind="editingInputOutputConfig.Name" required />
-                            </div>
-                            <div class="col-md-6">
-                                <div class="form-check form-switch mt-4">
-                                    <input class="form-check-input" type="checkbox" @bind="editingInputOutputConfig.IsEnabled" />
-                                    <label class="form-check-label">
-                                        Enabled
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                        
-                        <div class="mb-3">
-                            <label class="form-label">Description</label>
-                            <textarea class="form-control" rows="3" @bind="editingInputOutputConfig.Description"></textarea>
-                        </div>
-                        
-                        <!-- Service-Specific Configuration -->
-                        @if (editingInputOutputConfig is MqttInputConfiguration mqttInput)
-                        {
-                            <div class="card">
-                                <div class="card-header">
-                                    <h6 class="mb-0">MQTT Input Configuration</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-3">
-                                        <label class="form-label">Topic Filter <span class="text-danger">*</span></label>
-                                        <input type="text" class="form-control" @bind="mqttInput.TopicFilter" 
-                                               placeholder="e.g., Enterprise1/+/Line1 or #" required />
-                                        <div class="form-text">
-                                            Use '+' for single-level wildcard, '#' for multi-level wildcard
-                                        </div>
-                                    </div>
-                                    <div class="row mb-3">
-                                        <div class="col-md-6">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" @bind="mqttInput.UseSparkplugB" />
-                                                <label class="form-check-label">
-                                                    Use Sparkplug B Protocol
-                                                </label>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <label class="form-label">Quality of Service</label>
-                                            <select class="form-select" @bind="mqttInput.QoS">
-                                                <option value="0">At most once (0)</option>
-                                                <option value="1">At least once (1)</option>
-                                                <option value="2">Exactly once (2)</option>
-                                            </select>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        }
-                        else if (editingInputOutputConfig is SocketIOInputConfiguration socketInput)
-                        {
-                            <div class="card">
-                                <div class="card-header">
-                                    <h6 class="mb-0">SocketIO Input Configuration</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="mb-3">
-                                        <label class="form-label">Event Names <span class="text-danger">*</span></label>
-                                        <input type="text" class="form-control" @bind="socketInput.EventNamesString" 
-                                               placeholder="e.g., updated,data,status" required />
-                                        <div class="form-text">
-                                            Comma-separated list of SocketIO event names to listen for
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label">JSON Path Mappings</label>
-                                        <textarea class="form-control" rows="3" @bind="socketInput.JsonPathMappingsString"
-                                                  placeholder="e.g., $.data -> /value, $.timestamp -> /ts"></textarea>
-                                        <div class="form-text">
-                                            Optional JSON path mappings for data transformation (one per line)
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                        }
-                        else if (editingInputOutputConfig is MqttOutputConfiguration mqttOutput)
-                        {
-                            <div class="card">
-                                <div class="card-header">
-                                    <h6 class="mb-0">MQTT Output Configuration</h6>
-                                </div>
-                                <div class="card-body">
-                                    <div class="row mb-3">
-                                        <div class="col-md-6">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" @bind="mqttOutput.ExportUNSModel" />
-                                                <label class="form-check-label">
-                                                    Export UNS Model
-                                                </label>
-                                            </div>
-                                        </div>
-                                        <div class="col-md-6">
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="checkbox" @bind="mqttOutput.ExportUNSData" />
-                                                <label class="form-check-label">
-                                                    Export UNS Data
-                                                </label>
-                                            </div>
-                                        </div>
-                                    </div>
-                                    
-                                    <div class="mb-3">
-                                        <label class="form-label">Quality of Service</label>
-                                        <select class="form-select" @bind="mqttOutput.QoS">
-                                            <option value="0">At most once (0)</option>
-                                            <option value="1">At least once (1)</option>
-                                            <option value="2">Exactly once (2)</option>
-                                        </select>
-                                        <div class="form-text">
-                                            MQTT Quality of Service level for published messages
-                                        </div>
-                                    </div>
-                                    
-                                    @if (mqttOutput.ExportUNSModel)
+                    <form @onsubmit="SaveConnectionAsync" @onsubmit:preventDefault="true">
+                        <!-- Connection Type Selection -->
+                        <div class="mb-4">
+                            <label class="form-label">Connection Type <span class="text-danger">*</span></label>
+                            @if (availableConnectionTypes != null && availableConnectionTypes.Any())
+                            {
+                                <div class="row">
+                                    @foreach (var connectionType in availableConnectionTypes.OrderBy(c => c.Category).ThenBy(c => c.DisplayName))
                                     {
-                                        <div class="mb-3">
-                                            <label class="form-label">Model Attribute Name</label>
-                                            <input type="text" class="form-control" @bind="mqttOutput.ModelAttributeName" 
-                                                   placeholder="_model" />
-                                            <div class="form-text">
-                                                Attribute name for model metadata (e.g., "_model")
+                                        <div class="col-md-6 mb-3">
+                                            <div class="card connection-type-card @(selectedConnectionType?.ConnectionType == connectionType.ConnectionType ? "border-primary bg-light" : "") @(isEditingConnection ? "text-muted" : "") h-100" 
+                                                 style="cursor: @(isEditingConnection ? "not-allowed" : "pointer");" 
+                                                 @onclick="() => { if (!isEditingConnection) SelectConnectionType(connectionType); }">
+                                                <div class="card-body">
+                                                    <div class="d-flex align-items-center mb-2">
+                                                        @if (!string.IsNullOrEmpty(connectionType.IconClass))
+                                                        {
+                                                            <i class="@connectionType.IconClass me-2"></i>
+                                                        }
+                                                        <h6 class="card-title mb-0">@connectionType.DisplayName</h6>
+                                                    </div>
+                                                    <p class="card-text small text-muted">@connectionType.Description</p>
+                                                    <div class="d-flex justify-content-between">
+                                                        <small class="text-muted">@connectionType.Category</small>
+                                                        <small class="text-muted">v@connectionType.Version</small>
+                                                    </div>
+                                                </div>
                                             </div>
                                         </div>
-                                        
-                                        <div class="mb-3">
-                                            <label class="form-label">Model Republish Interval (hours)</label>
-                                            <input type="number" class="form-control" @bind="mqttOutput.ModelRepublishIntervalHours" 
-                                                   min="1" max="168" />
-                                            <div class="form-text">
-                                                How often to republish model metadata (1-168 hours)
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <div class="alert alert-warning">
+                                    <i class="bi bi-exclamation-triangle me-2"></i>
+                                    No connection types are registered. Please check your application configuration.
+                                </div>
+                            }
+                        </div>
+
+                        @if (selectedConnectionType != null)
+                        {
+                            <!-- Basic Connection Information -->
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="bi bi-info-circle me-1"></i>
+                                        Basic Information
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Connection Name <span class="text-danger">*</span></label>
+                                            <input type="text" class="form-control" @bind="editingConnection.Name" 
+                                                   placeholder="e.g., Main MQTT Broker" required />
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <label class="form-label">Description</label>
+                                            <input type="text" class="form-control" @bind="editingConnection.Description" 
+                                                   placeholder="Optional description" />
+                                        </div>
+                                    </div>
+                                    <div class="row">
+                                        <div class="col-md-6 mb-3">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" @bind="editingConnection.IsEnabled" />
+                                                <label class="form-check-label">
+                                                    Enable this connection
+                                                </label>
                                             </div>
+                                        </div>
+                                        <div class="col-md-6 mb-3">
+                                            <div class="form-check">
+                                                <input class="form-check-input" type="checkbox" @bind="editingConnection.AutoStart" />
+                                                <label class="form-check-label">
+                                                    Auto-start on application startup
+                                                </label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <!-- Connection-Specific Configuration -->
+                            <div class="card mb-4">
+                                <div class="card-header">
+                                    <h6 class="mb-0">
+                                        <i class="@selectedConnectionType.IconClass me-1"></i>
+                                        @selectedConnectionType.DisplayName Configuration
+                                    </h6>
+                                </div>
+                                <div class="card-body">
+                                    @{ 
+                                        var schema = selectedConnectionType.GetConnectionConfigurationSchema();
+                                    }
+                                    @if (schema.Fields.Any())
+                                    {
+                                        @foreach (var field in schema.Fields.OrderBy(f => f.Order))
+                                        {
+                                            <div class="mb-3">
+                                                <label class="form-label">
+                                                    @field.DisplayName
+                                                    @if (field.IsRequired)
+                                                    {
+                                                        <span class="text-danger">*</span>
+                                                    }
+                                                </label>
+                                                @if (field.Type == ConfigurationFieldType.Text)
+                                                {
+                                                    <input type="text" class="form-control" 
+                                                           @onchange="@(e => UpdateConnectionConfig(field.Name, e.Value?.ToString()))"
+                                                           value="@(connectionConfig.ContainsKey(field.Name) ? connectionConfig[field.Name]?.ToString() : field.DefaultValue?.ToString() ?? "")"
+                                                           placeholder="@field.Placeholder"
+                                                           required="@field.IsRequired" />
+                                                }
+                                                else if (field.Type == ConfigurationFieldType.TextArea)
+                                                {
+                                                    <textarea class="form-control" rows="3"
+                                                              @onchange="@(e => UpdateConnectionConfig(field.Name, e.Value?.ToString()))"
+                                                              placeholder="@field.Placeholder"
+                                                              required="@field.IsRequired">@(connectionConfig.ContainsKey(field.Name) ? connectionConfig[field.Name]?.ToString() : field.DefaultValue?.ToString() ?? "")</textarea>
+                                                }
+                                                else if (field.Type == ConfigurationFieldType.Number)
+                                                {
+                                                    <input type="number" class="form-control" 
+                                                           @onchange="@(e => UpdateConnectionConfig(field.Name, ParseNumber(e.Value?.ToString())))"
+                                                           value="@(connectionConfig.ContainsKey(field.Name) ? connectionConfig[field.Name]?.ToString() : field.DefaultValue?.ToString() ?? "")"
+                                                           placeholder="@field.Placeholder"
+                                                           required="@field.IsRequired" />
+                                                }
+                                                else if (field.Type == ConfigurationFieldType.Password)
+                                                {
+                                                    <input type="password" class="form-control" 
+                                                           @onchange="@(e => UpdateConnectionConfig(field.Name, e.Value?.ToString()))"
+                                                           value="@(connectionConfig.ContainsKey(field.Name) ? connectionConfig[field.Name]?.ToString() : field.DefaultValue?.ToString() ?? "")"
+                                                           placeholder="@field.Placeholder"
+                                                           required="@field.IsRequired" />
+                                                }
+                                                else if (field.Type == ConfigurationFieldType.Boolean)
+                                                {
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="checkbox" 
+                                                               @onchange="@(e => UpdateConnectionConfig(field.Name, e.Value))"
+                                                               checked="@(connectionConfig.ContainsKey(field.Name) ? (bool?)connectionConfig[field.Name] == true : field.DefaultValue as bool? == true)" />
+                                                        <label class="form-check-label">
+                                                            @field.Description
+                                                        </label>
+                                                    </div>
+                                                }
+                                                else if (field.Type == ConfigurationFieldType.Select && field.Options != null)
+                                                {
+                                                    <select class="form-select" 
+                                                            @onchange="@(e => UpdateConnectionConfig(field.Name, e.Value?.ToString()))"
+                                                            value="@(connectionConfig.ContainsKey(field.Name) ? connectionConfig[field.Name]?.ToString() : field.DefaultValue?.ToString() ?? "")"
+                                                            required="@field.IsRequired">
+                                                        <option value="">-- Select @field.DisplayName --</option>
+                                                        @foreach (var option in field.Options)
+                                                        {
+                                                            <option value="@option.Value">@option.Text</option>
+                                                        }
+                                                    </select>
+                                                }
+                                                @if (!string.IsNullOrEmpty(field.Description) && field.Type != ConfigurationFieldType.Boolean)
+                                                {
+                                                    <div class="form-text">@field.Description</div>
+                                                }
+                                            </div>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <div class="alert alert-info">
+                                            <i class="bi bi-info-circle me-2"></i>
+                                            No additional configuration required for this connection type.
                                         </div>
                                     }
                                 </div>
@@ -1194,10 +1023,10 @@
                     </form>
                 </div>
                 <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" @onclick="HideInputOutputModal">Cancel</button>
-                    <button type="button" class="btn btn-primary" @onclick="SaveInputOutputConfiguration">
+                    <button type="button" class="btn btn-secondary" @onclick="HideAddConnectionModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="SaveConnectionAsync" disabled="@(selectedConnectionType == null || string.IsNullOrWhiteSpace(editingConnection.Name))">
                         <i class="bi bi-check me-1"></i>
-                        Save Configuration
+                        @(isEditingConnection ? "Update Connection" : "Create Connection")
                     </button>
                 </div>
             </div>
@@ -1205,26 +1034,37 @@
     </div>
 }
 
+<!-- Input/Output Configuration Modal -->
+<InputOutputConfigurationModal 
+    IsVisible="@showInputOutputModal"
+    Configuration="@editingInputOutputConfig"
+    ConnectionDescriptor="@GetConnectionDescriptorForCurrentConfiguration()"
+    IsInput="@isEditingInput"
+    OnSave="@SaveInputOutputConfiguration"
+    OnCancel="@HideInputOutputModal" />
 @code {
     private string activeTab = "storage";
 
 
-    // Data connections properties
-    private List<IDataIngestionConfiguration>? configurations;
-    private Dictionary<string, ServiceStatus>? serviceStatuses;
-    private List<IDataIngestionServiceDescriptor>? availableServiceTypes;
-    private IDataIngestionConfiguration? editingConfiguration;
-    private IDataIngestionServiceDescriptor? selectedServiceDescriptor;
-    private bool showConfigurationForm = false;
+    // Data connections properties (new ConnectionSDK system)
+    private List<ConnectionConfiguration>? connectionConfigurations;
+    private Dictionary<string, ConnectionStatus>? connectionStatuses;
+    private List<IConnectionDescriptor>? availableConnectionTypes;
     private Timer? statusRefreshTimer;
     
+    // Add/Edit connection modal state
+    private bool showAddConnectionModal = false;
+    private bool isEditingConnection = false;
+    private ConnectionConfiguration editingConnection = new();
+    private IConnectionDescriptor? selectedConnectionType;
+    private Dictionary<string, object> connectionConfig = new();
+    
     // Input/Output configuration properties
-    private List<InputOutputConfiguration>? inputOutputConfigurations;
     private string connectionConfigActiveTab = "basic";
     
     // Input/Output modal state
     private bool showInputOutputModal = false;
-    private InputOutputConfiguration? editingInputOutputConfig;
+    private dynamic? editingInputOutputConfig;
     private string currentConnectionId = string.Empty;
     private bool isEditingInput = false;
 
@@ -1282,180 +1122,506 @@
     }
     
     // Helper methods for connection-specific I/O configurations
-    private IEnumerable<InputOutputConfiguration> GetConnectionInputConfigurations(string connectionId)
+    private List<dynamic> GetConnectionInputConfigurations(string connectionId)
     {
-        if (inputOutputConfigurations == null) return Enumerable.Empty<InputOutputConfiguration>();
-        
-        return inputOutputConfigurations.Where(c => 
-            c.Type == InputOutputType.Input && 
-            !string.IsNullOrEmpty(c.ConnectionId) && 
-            c.ConnectionId == connectionId);
+        var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == connectionId);
+        return connection?.Inputs.Cast<dynamic>().ToList() ?? new List<dynamic>();
     }
     
-    private IEnumerable<InputOutputConfiguration> GetConnectionOutputConfigurations(string connectionId)
+    private List<dynamic> GetConnectionOutputConfigurations(string connectionId)
     {
-        if (inputOutputConfigurations == null) return Enumerable.Empty<InputOutputConfiguration>();
-        
-        return inputOutputConfigurations.Where(c => 
-            c.Type == InputOutputType.Output && 
-            !string.IsNullOrEmpty(c.ConnectionId) && 
-            c.ConnectionId == connectionId);
+        var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == connectionId);
+        return connection?.Outputs.Cast<dynamic>().ToList() ?? new List<dynamic>();
+    }
+    
+    // Helper methods to safely handle dynamic method calls
+    private void EditInput(object inputConfig)
+    {
+        EditInputOutputConfiguration((dynamic)inputConfig, true);
+    }
+    
+    private void EditOutput(object outputConfig)
+    {
+        EditInputOutputConfiguration((dynamic)outputConfig, false);
+    }
+    
+    private async Task ToggleInput(dynamic inputConfig, bool isEnabled)
+    {
+        await ToggleInputOutputConfiguration(inputConfig, isEnabled);
+    }
+    
+    private async Task ToggleOutput(dynamic outputConfig, bool isEnabled)
+    {
+        await ToggleInputOutputConfiguration(outputConfig, isEnabled);
     }
 
     // Data connections methods
     private async Task LoadConnectionData()
     {
-        configurations = await ConfigurationRepository.GetAllConfigurationsAsync();
-        serviceStatuses = ServiceManager.GetServicesStatus();
-        availableServiceTypes = ServiceManager.GetAvailableServiceTypes();
-        inputOutputConfigurations = (await InputOutputConfigurationRepository.GetAllConfigurationsAsync()).ToList();
+        // Load connection configurations from database repository instead of ConnectionManager cache
+        connectionConfigurations = (await ConnectionConfigurationRepository.GetAllConnectionsAsync()).ToList();
+        connectionStatuses = new Dictionary<string, ConnectionStatus>();
+        foreach (var config in connectionConfigurations)
+        {
+            connectionStatuses[config.Id] = ConnectionManager.GetConnectionStatus(config.Id);
+        }
+        availableConnectionTypes = ConnectionRegistry.GetAllDescriptors().ToList();
         StateHasChanged();
     }
 
     private async Task RefreshConfigurations()
     {
-        configurations = await ConfigurationRepository.GetAllConfigurationsAsync();
-        StateHasChanged();
+        await LoadConnectionData();
     }
 
     private async Task RefreshConnectionStatus()
     {
-        serviceStatuses = ServiceManager.GetServicesStatus();
+        if (connectionConfigurations != null && connectionStatuses != null)
+        {
+            foreach (var config in connectionConfigurations)
+            {
+                connectionStatuses[config.Id] = ConnectionManager.GetConnectionStatus(config.Id);
+            }
+            StateHasChanged();
+        }
+    }
+
+    private ConnectionStatus? GetConnectionStatus(string connectionId)
+    {
+        return connectionStatuses?.TryGetValue(connectionId, out var status) == true ? status : null;
+    }
+
+    private async Task StartConnectionAsync(string connectionId)
+    {
+        try
+        {
+            var success = await ConnectionManager.StartConnectionAsync(connectionId);
+            if (success && connectionStatuses != null)
+            {
+                connectionStatuses[connectionId] = ConnectionManager.GetConnectionStatus(connectionId);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error starting connection {ConnectionId}", connectionId);
+        }
+    }
+
+    private async Task StopConnectionAsync(string connectionId)
+    {
+        try
+        {
+            var success = await ConnectionManager.StopConnectionAsync(connectionId);
+            if (success && connectionStatuses != null)
+            {
+                connectionStatuses[connectionId] = ConnectionManager.GetConnectionStatus(connectionId);
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error stopping connection {ConnectionId}", connectionId);
+        }
+    }
+
+    private async Task RemoveConnectionAsync(string connectionId)
+    {
+        try
+        {
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
+                "Are you sure you want to remove this connection?");
+            
+            if (confirmed)
+            {
+                // First try to remove from ConnectionManager (this handles active connections)
+                var managerRemoved = await ConnectionManager.RemoveConnectionAsync(connectionId);
+                
+                // Always try to remove from database repository (handles both active and inactive connections)
+                var dbRemoved = await ConnectionConfigurationRepository.DeleteConnectionAsync(connectionId);
+                
+                if (managerRemoved || dbRemoved)
+                {
+                    // Remove from local UI state
+                    connectionConfigurations?.RemoveAll(c => c.Id == connectionId);
+                    connectionStatuses?.Remove(connectionId);
+                    await InvokeAsync(StateHasChanged);
+                    
+                    Logger.LogInformation("Connection {ConnectionId} removed successfully", connectionId);
+                }
+                else
+                {
+                    Logger.LogWarning("Failed to remove connection {ConnectionId} - not found in manager or database", connectionId);
+                    await JSRuntime.InvokeVoidAsync("alert", "Failed to remove connection - connection not found.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error removing connection {ConnectionId}", connectionId);
+            await JSRuntime.InvokeVoidAsync("alert", "An error occurred while removing the connection.");
+        }
+    }
+
+    private async Task TestConnection(ConnectionConfiguration config)
+    {
+        // TODO: Implement connection testing
+        await JSRuntime.InvokeVoidAsync("alert", $"Testing connection '{config.Name}' - Feature coming soon!");
+    }
+
+    private void EditConnection(ConnectionConfiguration config)
+    {
+        isEditingConnection = true;
+        
+        // Clone the connection configuration for editing
+        editingConnection = new ConnectionConfiguration
+        {
+            Id = config.Id,
+            Name = config.Name,
+            ConnectionType = config.ConnectionType,
+            IsEnabled = config.IsEnabled,
+            AutoStart = config.AutoStart,
+            Description = config.Description,
+            ConnectionConfig = config.ConnectionConfig,
+            Inputs = new List<object>(config.Inputs),
+            Outputs = new List<object>(config.Outputs),
+            Tags = new List<string>(config.Tags),
+            Metadata = new Dictionary<string, object>(config.Metadata),
+            CreatedAt = config.CreatedAt,
+            ModifiedAt = config.ModifiedAt
+        };
+        
+        // Find and select the connection type
+        selectedConnectionType = availableConnectionTypes?.FirstOrDefault(ct => ct.ConnectionType == config.ConnectionType);
+        
+        // Populate the configuration dictionary from the strongly-typed config
+        connectionConfig.Clear();
+        if (selectedConnectionType != null && config.ConnectionConfig != null)
+        {
+            MapObjectToDictionary(config.ConnectionConfig, connectionConfig);
+        }
+        
+        showAddConnectionModal = true;
         StateHasChanged();
     }
 
-    private ServiceStatus? GetServiceStatus(string configurationId)
+    private async Task ShowAddConfiguration()
     {
-        return serviceStatuses?.TryGetValue(configurationId, out var status) == true ? status : null;
-    }
-
-    private string GetConnectionStatusBadgeClass(UNSInfra.Core.Configuration.ConnectionStatus status)
-    {
-        return status switch
+        isEditingConnection = false;
+        editingConnection = new ConnectionConfiguration
         {
-            UNSInfra.Core.Configuration.ConnectionStatus.Connected => "bg-success",
-            UNSInfra.Core.Configuration.ConnectionStatus.Connecting => "bg-warning",
-            UNSInfra.Core.Configuration.ConnectionStatus.Disconnected => "bg-secondary",
-            UNSInfra.Core.Configuration.ConnectionStatus.Error => "bg-danger",
-            UNSInfra.Core.Configuration.ConnectionStatus.Stopping => "bg-warning",
-            UNSInfra.Core.Configuration.ConnectionStatus.Disabled => "bg-secondary",
-            _ => "bg-secondary"
+            Id = Guid.NewGuid().ToString(),
+            Name = "",
+            ConnectionType = "",
+            IsEnabled = true,
+            AutoStart = true,
+            Description = ""
         };
-    }
-
-    private string GetConnectionStatusText(UNSInfra.Core.Configuration.ConnectionStatus status)
-    {
-        return status switch
+        connectionConfig.Clear();
+        selectedConnectionType = null;
+        
+        // Load available connection types if not already loaded
+        if (availableConnectionTypes == null)
         {
-            UNSInfra.Core.Configuration.ConnectionStatus.Connected => "Connected",
-            UNSInfra.Core.Configuration.ConnectionStatus.Connecting => "Connecting",
-            UNSInfra.Core.Configuration.ConnectionStatus.Disconnected => "Disconnected",
-            UNSInfra.Core.Configuration.ConnectionStatus.Error => "Error",
-            UNSInfra.Core.Configuration.ConnectionStatus.Stopping => "Stopping",
-            UNSInfra.Core.Configuration.ConnectionStatus.Disabled => "Disabled",
-            _ => "Unknown"
-        };
-    }
-
-    private void ShowAddConfiguration()
-    {
-        editingConfiguration = null;
-        selectedServiceDescriptor = null;
-        showConfigurationForm = true;
-    }
-
-    private void CreateConfiguration(IDataIngestionServiceDescriptor serviceDescriptor)
-    {
-        editingConfiguration = serviceDescriptor.CreateDefaultConfiguration();
-        selectedServiceDescriptor = serviceDescriptor;
-        showConfigurationForm = true;
-    }
-
-    private void EditConfiguration(IDataIngestionConfiguration configuration)
-    {
-        editingConfiguration = configuration.Clone();
-        selectedServiceDescriptor = availableServiceTypes?.FirstOrDefault(s => s.ServiceType == configuration.ServiceType);
-        showConfigurationForm = true;
-    }
-
-    private void HideConfigurationForm()
-    {
-        showConfigurationForm = false;
-        editingConfiguration = null;
-        selectedServiceDescriptor = null;
-    }
-
-    private void OnServiceTypeSelected(IDataIngestionServiceDescriptor serviceDescriptor)
-    {
-        selectedServiceDescriptor = serviceDescriptor;
-        editingConfiguration = serviceDescriptor.CreateDefaultConfiguration();
+            availableConnectionTypes = ConnectionRegistry.GetAllDescriptors().ToList();
+        }
+        
+        showAddConnectionModal = true;
         StateHasChanged();
     }
 
-    private async Task SaveConfiguration(IDataIngestionConfiguration configuration)
+    private void HideAddConnectionModal()
     {
-        try
-        {
-            await ConfigurationRepository.SaveConfigurationAsync(configuration);
-            await LoadConnectionData();
-            HideConfigurationForm();
-        }
-        catch (Exception ex)
-        {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error saving configuration: {ex.Message}");
-        }
+        showAddConnectionModal = false;
+        isEditingConnection = false;
+        editingConnection = new();
+        selectedConnectionType = null;
+        connectionConfig.Clear();
+        StateHasChanged();
     }
 
-    private async Task ToggleConfiguration(IDataIngestionConfiguration configuration, bool enabled)
+    private void SelectConnectionType(IConnectionDescriptor connectionType)
     {
-        configuration.Enabled = enabled;
-        configuration.ModifiedAt = DateTime.UtcNow;
+        selectedConnectionType = connectionType;
+        editingConnection.ConnectionType = connectionType.ConnectionType;
         
-        try
+        // Initialize connection config with default values
+        connectionConfig.Clear();
+        var defaultConfig = connectionType.CreateDefaultConnectionConfiguration();
+        if (defaultConfig != null)
         {
-            await ConfigurationRepository.SaveConfigurationAsync(configuration);
-            await LoadConnectionData();
-        }
-        catch (Exception ex)
-        {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error updating configuration: {ex.Message}");
-        }
-    }
-
-    private async Task TestConnection(IDataIngestionConfiguration configuration)
-    {
-        try
-        {
-            if (configuration.Enabled)
+            // Convert the default configuration to a dictionary
+            var properties = defaultConfig.GetType().GetProperties();
+            foreach (var prop in properties)
             {
-                await ServiceManager.RestartServiceAsync(configuration.Id);
-                await JSRuntime.InvokeVoidAsync("alert", "Connection test initiated. Check the status panel for results.");
+                var value = prop.GetValue(defaultConfig);
+                if (value != null)
+                {
+                    connectionConfig[prop.Name] = value;
+                }
             }
         }
-        catch (Exception ex)
-        {
-            await JSRuntime.InvokeVoidAsync("alert", $"Error testing connection: {ex.Message}");
-        }
-    }
-
-    private async Task DeleteConfiguration(IDataIngestionConfiguration configuration)
-    {
-        var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", 
-            $"Are you sure you want to delete '{configuration.Name}'?");
         
-        if (confirmed)
+        StateHasChanged();
+    }
+
+    private void UpdateConnectionConfig(string fieldName, object? value)
+    {
+        if (value == null || (value is string str && string.IsNullOrEmpty(str)))
         {
-            try
+            connectionConfig.Remove(fieldName);
+        }
+        else
+        {
+            connectionConfig[fieldName] = value;
+        }
+    }
+    
+    private int? ParseNumber(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return null;
+        
+        return int.TryParse(value, out var result) ? result : null;
+    }
+
+    private async Task SaveConnectionAsync()
+    {
+        if (selectedConnectionType == null || string.IsNullOrWhiteSpace(editingConnection.Name))
+        {
+            return;
+        }
+
+        try
+        {
+            // Create the strongly-typed connection configuration
+            var typedConfig = selectedConnectionType.CreateDefaultConnectionConfiguration();
+            
+            // Map the dictionary values to the typed configuration
+            MapDictionaryToObject(connectionConfig, typedConfig);
+            
+            // Set the strongly-typed connection config object
+            editingConnection.ConnectionConfig = typedConfig;
+            
+            // Create or update the connection using ConnectionManager
+            bool success;
+            if (isEditingConnection)
             {
-                await ConfigurationRepository.DeleteConfigurationAsync(configuration.Id);
-                await LoadConnectionData();
+                // Update existing connection
+                editingConnection.ModifiedAt = DateTime.UtcNow;
+                success = await UpdateConnectionAsync(editingConnection);
             }
-            catch (Exception ex)
+            else
             {
-                await JSRuntime.InvokeVoidAsync("alert", $"Error deleting configuration: {ex.Message}");
+                // Create new connection
+                success = await ConnectionManager.CreateConnectionAsync(editingConnection);
+            }
+            
+            if (success)
+            {
+                // Hide modal and refresh data
+                HideAddConnectionModal();
+                await RefreshConfigurations();
+                string action = isEditingConnection ? "updated" : "created";
+                Logger.LogInformation("Connection '{Name}' {Action} successfully", editingConnection.Name, action);
+            }
+            else
+            {
+                string action = isEditingConnection ? "update" : "create";
+                await JSRuntime.InvokeVoidAsync("alert", $"Failed to {action} connection. Please check your configuration.");
+            }
+        }
+        catch (Exception ex)
+        {
+            string action = isEditingConnection ? "updating" : "creating";
+            Logger.LogError(ex, "Error {Action} connection {Name}", action, editingConnection.Name);
+            await JSRuntime.InvokeVoidAsync("alert", $"Error {action} connection: {ex.Message}");
+        }
+    }
+
+    private async Task<bool> UpdateConnectionAsync(ConnectionConfiguration config)
+    {
+        try
+        {
+            // First update in the repository
+            await ConnectionConfigurationRepository.SaveConnectionAsync(config);
+            
+            // Check if the connection is currently active in the ConnectionManager
+            var isActive = ConnectionManager.GetActiveConnectionIds().Contains(config.Id);
+            
+            if (isActive)
+            {
+                // If the connection is active, we need to restart it with the new configuration
+                // Stop the existing connection
+                await ConnectionManager.StopConnectionAsync(config.Id);
+                await ConnectionManager.RemoveConnectionAsync(config.Id);
+                
+                // Create it again with the new configuration
+                var success = await ConnectionManager.CreateConnectionAsync(config);
+                if (success)
+                {
+                    Logger.LogInformation("Active connection {ConnectionId} updated and restarted successfully", config.Id);
+                }
+                return success;
+            }
+            else
+            {
+                // Connection is not active, just update the configuration in memory
+                Logger.LogInformation("Inactive connection {ConnectionId} configuration updated", config.Id);
+                return true;
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error updating connection {ConnectionId}", config.Id);
+            return false;
+        }
+    }
+
+    private void MapDictionaryToObject(Dictionary<string, object> source, object target)
+    {
+        var targetType = target.GetType();
+        
+        foreach (var kvp in source)
+        {
+            var property = targetType.GetProperty(kvp.Key);
+            if (property != null && property.CanWrite)
+            {
+                try
+                {
+                    var value = kvp.Value;
+                    
+                    // Convert the value to the target property type
+                    if (value != null)
+                    {
+                        var targetPropertyType = property.PropertyType;
+                        
+                        // Handle nullable types
+                        if (targetPropertyType.IsGenericType && targetPropertyType.GetGenericTypeDefinition() == typeof(Nullable<>))
+                        {
+                            targetPropertyType = Nullable.GetUnderlyingType(targetPropertyType)!;
+                        }
+                        
+                        // Convert value to the correct type
+                        object? convertedValue = null;
+                        
+                        if (targetPropertyType == typeof(string))
+                        {
+                            convertedValue = value.ToString();
+                        }
+                        else if (targetPropertyType == typeof(int))
+                        {
+                            convertedValue = Convert.ToInt32(value);
+                        }
+                        else if (targetPropertyType == typeof(bool))
+                        {
+                            convertedValue = Convert.ToBoolean(value);
+                        }
+                        else if (targetPropertyType == typeof(double))
+                        {
+                            convertedValue = Convert.ToDouble(value);
+                        }
+                        else if (targetPropertyType.IsEnum)
+                        {
+                            convertedValue = Enum.Parse(targetPropertyType, value.ToString()!);
+                        }
+                        else
+                        {
+                            // Try direct assignment for other types
+                            convertedValue = value;
+                        }
+                        
+                        property.SetValue(target, convertedValue);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to set property {Property} to value {Value}", kvp.Key, kvp.Value);
+                }
             }
         }
     }
+
+    // Input Configuration Methods (ConnectionSDK)
+    private void ShowInputModal(string? connectionId = null)
+    {
+        if (string.IsNullOrEmpty(connectionId))
+        {
+            Logger.LogWarning("ShowInputModal called with null or empty connectionId");
+            return;
+        }
+
+        // Find the connection configuration
+        var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == connectionId);
+        if (connection == null)
+        {
+            Logger.LogWarning("Connection not found for ID: {ConnectionId}", connectionId);
+            return;
+        }
+
+        // Get the connection descriptor to create input configuration
+        var descriptor = ConnectionRegistry.GetDescriptor(connection.ConnectionType);
+        if (descriptor == null)
+        {
+            Logger.LogWarning("Connection descriptor not found for type: {ConnectionType}", connection.ConnectionType);
+            return;
+        }
+
+        // Check if the connection type supports inputs
+        if (!descriptor.SupportsInputs)
+        {
+            JSRuntime.InvokeVoidAsync("alert", $"Connection type '{descriptor.DisplayName}' does not support inputs.");
+            return;
+        }
+
+        // Create a concrete input configuration based on connection type
+        InputOutputConfiguration? inputConfig = connection.ConnectionType.ToLower() switch
+        {
+            "socketio" => new SocketIOInputConfiguration
+            {
+                Id = Guid.NewGuid().ToString(),
+                Name = $"New {descriptor.DisplayName} Input",
+                ConnectionId = connectionId,
+                IsEnabled = true,
+                EventNames = new List<string> { "data", "update" }
+            },
+            // Add other connection types here as needed
+            _ => null
+        };
+
+        if (inputConfig == null)
+        {
+            JSRuntime.InvokeVoidAsync("alert", $"Input configuration not yet supported for connection type '{descriptor.DisplayName}'. Coming soon!");
+            return;
+        }
+        
+        // Initialize the editing state
+        selectedConnectionType = descriptor;
+        currentConnectionId = connectionId;
+        editingInputOutputConfig = inputConfig;
+        isEditingInput = true;
+        showInputOutputModal = true;
+        StateHasChanged();
+    }
+
+    private void ShowOutputModal(string? connectionId = null)
+    {
+        // For now, outputs are not implemented in the new ConnectionSDK system
+        JSRuntime.InvokeVoidAsync("alert", "Output configuration coming soon with ConnectionSDK!");
+        return;
+    }
+
+    // TODO: Replace with ConnectionSDK configuration saving
+    private async Task SaveConfiguration()
+    {
+        await JSRuntime.InvokeVoidAsync("alert", "Save configuration feature coming soon with ConnectionSDK!");
+    }
+
+    // TODO: Replace with ConnectionSDK toggle method
+
+    // TODO: Replace with ConnectionSDK test method
+
+    // TODO: Replace with ConnectionSDK delete method
 
     // Schema validation methods
     private async Task RefreshSchemas()
@@ -1684,7 +1850,7 @@
         try
         {
             var jsonElement = JsonSerializer.Deserialize<JsonElement>(testJsonData);
-            var testDataPoint = new DataPoint
+            var testDataPoint = new UNSInfra.Models.Data.DataPoint
             {
                 Topic = selectedValidationSchema.Topic,
                 Value = jsonElement,
@@ -2075,32 +2241,24 @@
     // Input/Output Configuration Management Methods
     private void ShowAddInputForConnection(string connectionId)
     {
-        var connection = configurations?.FirstOrDefault(c => c.Id == connectionId);
+        var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == connectionId);
         if (connection == null) return;
 
-        // Create new input configuration based on service type
-        editingInputOutputConfig = connection.ServiceType switch
+        var descriptor = availableConnectionTypes?.FirstOrDefault(ct => ct.ConnectionType == connection.ConnectionType);
+        if (descriptor == null || !descriptor.SupportsInputs) return;
+
+        // Create new input configuration using the descriptor
+        var defaultInput = descriptor.CreateDefaultInputConfiguration();
+        if (defaultInput is InputConfiguration inputConfig)
         {
-            "MQTT" => new MqttInputConfiguration
-            {
-                Id = Guid.NewGuid().ToString(),
-                ConnectionId = connectionId,
-                ServiceType = connection.ServiceType,
-                Name = "New MQTT Input",
-                Description = "",
-                IsEnabled = true
-            },
-            "SocketIO" => new SocketIOInputConfiguration
-            {
-                Id = Guid.NewGuid().ToString(),
-                ConnectionId = connectionId,
-                ServiceType = connection.ServiceType,
-                Name = "New SocketIO Input",
-                Description = "",
-                IsEnabled = true
-            },
-            _ => throw new NotSupportedException($"Service type {connection.ServiceType} is not supported for input configurations")
-        };
+            inputConfig.ConnectionId = connectionId;
+            editingInputOutputConfig = inputConfig;
+        }
+        else
+        {
+            Logger.LogWarning("Failed to create input configuration for connection type {ConnectionType}", connection.ConnectionType);
+            return;
+        }
         
         currentConnectionId = connectionId;
         isEditingInput = true;
@@ -2110,22 +2268,24 @@
     
     private void ShowAddOutputForConnection(string connectionId)
     {
-        var connection = configurations?.FirstOrDefault(c => c.Id == connectionId);
+        var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == connectionId);
         if (connection == null) return;
 
-        // Only MQTT supports output configurations
-        if (connection.ServiceType != "MQTT")
-            return;
+        var descriptor = availableConnectionTypes?.FirstOrDefault(ct => ct.ConnectionType == connection.ConnectionType);
+        if (descriptor == null || !descriptor.SupportsOutputs) return;
 
-        editingInputOutputConfig = new MqttOutputConfiguration
+        // Create new output configuration using the descriptor
+        var defaultOutput = descriptor.CreateDefaultOutputConfiguration();
+        if (defaultOutput is OutputConfiguration outputConfig)
         {
-            Id = Guid.NewGuid().ToString(),
-            ConnectionId = connectionId,
-            ServiceType = connection.ServiceType,
-            Name = "New MQTT Output",
-            Description = "",
-            IsEnabled = true
-        };
+            outputConfig.ConnectionId = connectionId;
+            editingInputOutputConfig = outputConfig;
+        }
+        else
+        {
+            Logger.LogWarning("Failed to create output configuration for connection type {ConnectionType}", connection.ConnectionType);
+            return;
+        }
         
         currentConnectionId = connectionId;
         isEditingInput = false;
@@ -2165,16 +2325,55 @@
         
         try
         {
-            // Update timestamps
-            if (editingInputOutputConfig.Name.StartsWith("New"))
+            // Handle ID assignment for new configurations
+            var configName = ((dynamic)editingInputOutputConfig).Name as string;
+            if (configName?.StartsWith("New") == true)
             {
-                editingInputOutputConfig.Id = Guid.NewGuid().ToString();
-                editingInputOutputConfig.CreatedAt = DateTime.UtcNow;
+                ((dynamic)editingInputOutputConfig).Id = Guid.NewGuid().ToString();
             }
-            editingInputOutputConfig.ModifiedAt = DateTime.UtcNow;
             
-            // Save the configuration
-            await InputOutputConfigurationRepository.SaveConfigurationAsync(editingInputOutputConfig);
+            // Find the connection this input/output belongs to
+            string configId = ((dynamic)editingInputOutputConfig).Id;
+            ConnectionConfiguration? connection = null;
+            bool isInput = false;
+            
+            // Search all connections to find which one contains this configuration
+            foreach (var conn in connectionConfigurations ?? new List<ConnectionConfiguration>())
+            {
+                var hasInput = conn.Inputs.Any(i => ((dynamic)i).Id == configId);
+                var hasOutput = conn.Outputs.Any(o => ((dynamic)o).Id == configId);
+                
+                if (hasInput || hasOutput)
+                {
+                    connection = conn;
+                    isInput = hasInput;
+                    break;
+                }
+            }
+            
+            if (connection == null)
+            {
+                throw new InvalidOperationException($"Connection containing configuration {configId} not found");
+            }
+            
+            // Update the configuration in the connection's lists
+            if (isInput)
+            {
+                // Remove existing input with same ID if it exists
+                connection.Inputs.RemoveAll(i => ((dynamic)i).Id == configId);
+                // Add the updated input
+                connection.Inputs.Add(editingInputOutputConfig);
+            }
+            else
+            {
+                // Remove existing output with same ID if it exists
+                connection.Outputs.RemoveAll(o => ((dynamic)o).Id == configId);
+                // Add the updated output
+                connection.Outputs.Add(editingInputOutputConfig);
+            }
+            
+            // Save the entire connection configuration via ConnectionManager to update cache
+            await ConnectionManager.UpdateConnectionAsync(connection);
             
             // Refresh the data and close the modal
             await LoadConnectionData();
@@ -2191,7 +2390,14 @@
     {
         try
         {
-            await InputOutputConfigurationRepository.DeleteConfigurationAsync(inputConfig.Id);
+            // Find the connection and remove the input from its Inputs list
+            var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == inputConfig.ConnectionId);
+            if (connection != null)
+            {
+                connection.Inputs.RemoveAll(i => i is InputConfiguration input && input.Id == inputConfig.Id);
+                await ConnectionManager.UpdateConnectionAsync(connection);
+            }
+            
             await LoadConnectionData(); // Refresh the data
         }
         catch (Exception ex)
@@ -2204,7 +2410,14 @@
     {
         try
         {
-            await InputOutputConfigurationRepository.DeleteConfigurationAsync(outputConfig.Id);
+            // Find the connection and remove the output from its Outputs list
+            var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == outputConfig.ConnectionId);
+            if (connection != null)
+            {
+                connection.Outputs.RemoveAll(o => o is OutputConfiguration output && output.Id == outputConfig.Id);
+                await ConnectionManager.UpdateConnectionAsync(connection);
+            }
+            
             await LoadConnectionData(); // Refresh the data
         }
         catch (Exception ex)
@@ -2214,92 +2427,39 @@
     }
 
     // New Input/Output Modal Methods
-    private async Task RefreshInputOutputConfigurations()
-    {
-        inputOutputConfigurations = (await InputOutputConfigurationRepository.GetAllConfigurationsAsync()).ToList();
-        StateHasChanged();
-    }
 
-    private void ShowInputModal(string? connectionId = null)
-    {
-        // Find the connection to get its service type
-        var connection = configurations?.FirstOrDefault(c => c.Id == connectionId);
-        var serviceType = connection?.ServiceType ?? "MQTT";
-        
-        // Create appropriate input configuration based on service type
-        if (serviceType == "SocketIO")
-        {
-            editingInputOutputConfig = new SocketIOInputConfiguration
-            {
-                Id = Guid.NewGuid().ToString(),
-                Name = "New SocketIO Input",
-                Description = "",
-                IsEnabled = true,
-                ServiceType = "SocketIO",
-                ConnectionId = connectionId ?? ""
-            };
-        }
-        else
-        {
-            editingInputOutputConfig = new MqttInputConfiguration
-            {
-                Id = Guid.NewGuid().ToString(),
-                Name = "New MQTT Input",
-                Description = "",
-                IsEnabled = true,
-                ServiceType = "MQTT",
-                ConnectionId = connectionId ?? ""
-            };
-        }
-        
-        currentConnectionId = connectionId ?? "";
-        isEditingInput = true;
-        showInputOutputModal = true;
-        StateHasChanged();
-    }
-
-    private void ShowOutputModal(string? connectionId = null)
-    {
-        // Find the connection to get its service type
-        var connection = configurations?.FirstOrDefault(c => c.Id == connectionId);
-        var serviceType = connection?.ServiceType ?? "MQTT";
-        
-        // For now, outputs are only MQTT
-        editingInputOutputConfig = new MqttOutputConfiguration
-        {
-            Id = Guid.NewGuid().ToString(),
-            Name = "New MQTT Output", 
-            Description = "",
-            IsEnabled = true,
-            ServiceType = "MQTT",
-            ConnectionId = connectionId ?? ""
-        };
-        
-        currentConnectionId = connectionId ?? "";
-        isEditingInput = false;
-        showInputOutputModal = true;
-        StateHasChanged();
-    }
-
-    private async Task ToggleInputOutputConfiguration(InputOutputConfiguration config, bool isEnabled)
+    private async Task ToggleInputOutputConfiguration(dynamic config, bool isEnabled)
     {
         try
         {
-            await InputOutputConfigurationRepository.SetConfigurationEnabledAsync(config.Id, isEnabled);
+            // Update the configuration in memory
             config.IsEnabled = isEnabled;
+            
+            // Find the connection that contains this input/output and update it
+            string configId = config.Id;
+            var connection = connectionConfigurations?.FirstOrDefault(c => 
+                c.Inputs.Any(i => ((dynamic)i).Id == configId) || 
+                c.Outputs.Any(o => ((dynamic)o).Id == configId));
+                
+            if (connection != null)
+            {
+                await ConnectionManager.UpdateConnectionAsync(connection);
+            }
+            
             StateHasChanged();
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error toggling configuration {Id}", config.Id);
+            string configId = config.Id;
+            Logger.LogError(ex, "Error toggling configuration {Id}", configId);
             await JSRuntime.InvokeVoidAsync("alert", $"Error updating configuration: {ex.Message}");
         }
     }
 
-    private void EditInputOutputConfiguration(InputOutputConfiguration config)
+    private void EditInputOutputConfiguration(dynamic config, bool isInput)
     {
         editingInputOutputConfig = config;
-        isEditingInput = config.Type == InputOutputType.Input;
+        isEditingInput = isInput;
         showInputOutputModal = true;
         StateHasChanged();
     }
@@ -2310,8 +2470,49 @@
         {
             try
             {
-                await InputOutputConfigurationRepository.DeleteConfigurationAsync(configId);
-                await RefreshInputOutputConfigurations();
+                // Find which connection contains this input/output configuration
+                dynamic? configToDelete = null;
+                ConnectionConfiguration? targetConnection = null;
+                bool isInput = false;
+                
+                foreach (var connection in connectionConfigurations ?? new List<ConnectionConfiguration>())
+                {
+                    // Check inputs using dynamic to handle any input configuration type
+                    var inputConfig = connection.Inputs.Cast<dynamic>().FirstOrDefault(i => (string)i.Id == configId);
+                    if (inputConfig != null)
+                    {
+                        configToDelete = inputConfig;
+                        targetConnection = connection;
+                        isInput = true;
+                        break;
+                    }
+                    
+                    // Check outputs using dynamic to handle any output configuration type
+                    var outputConfig = connection.Outputs.Cast<dynamic>().FirstOrDefault(o => (string)o.Id == configId);
+                    if (outputConfig != null)
+                    {
+                        configToDelete = outputConfig;
+                        targetConnection = connection;
+                        isInput = false;
+                        break;
+                    }
+                }
+                
+                if (configToDelete != null && targetConnection != null)
+                {
+                    if (isInput)
+                    {
+                        targetConnection.Inputs.RemoveAll(i => ((dynamic)i).Id == configId);
+                    }
+                    else
+                    {
+                        targetConnection.Outputs.RemoveAll(o => ((dynamic)o).Id == configId);
+                    }
+                    
+                    await ConnectionManager.UpdateConnectionAsync(targetConnection);
+                }
+                
+                StateHasChanged();
             }
             catch (Exception ex)
             {
@@ -2319,6 +2520,63 @@
                 await JSRuntime.InvokeVoidAsync("alert", $"Error deleting configuration: {ex.Message}");
             }
         }
+    }
+
+    // Helper method to map object properties to dictionary
+    private void MapObjectToDictionary(object source, Dictionary<string, object> target)
+    {
+        if (source == null) return;
+        
+        var properties = source.GetType().GetProperties();
+        foreach (var property in properties)
+        {
+            // Skip indexers and properties that require parameters
+            if (property.CanRead && property.GetIndexParameters().Length == 0)
+            {
+                try
+                {
+                    var value = property.GetValue(source);
+                    if (value != null)
+                    {
+                        target[property.Name] = value;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Failed to read property {PropertyName} from {SourceType}", property.Name, source.GetType().Name);
+                    // Continue with other properties
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Gets the connection descriptor for the current configuration being edited
+    /// </summary>
+    private IConnectionDescriptor? GetConnectionDescriptorForCurrentConfiguration()
+    {
+        if (editingInputOutputConfig == null) return null;
+        
+        // Find which connection contains this input/output configuration
+        string configId = ((dynamic)editingInputOutputConfig).Id;
+        ConnectionConfiguration? connection = null;
+        
+        foreach (var conn in connectionConfigurations ?? new List<ConnectionConfiguration>())
+        {
+            // Check if this configuration is in the connection's inputs or outputs
+            var hasInput = conn.Inputs.Any(i => ((dynamic)i).Id == configId);
+            var hasOutput = conn.Outputs.Any(o => ((dynamic)o).Id == configId);
+            
+            if (hasInput || hasOutput)
+            {
+                connection = conn;
+                break;
+            }
+        }
+        
+        if (connection == null) return null;
+        
+        return availableConnectionTypes?.FirstOrDefault(ct => ct.ConnectionType == connection.ConnectionType);
     }
 
     public void Dispose()

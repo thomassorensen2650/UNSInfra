@@ -1,10 +1,12 @@
 @page "/"
 @using UNSInfra.Services.TopicBrowser
-@using UNSInfra.Core.Services
-@using UNSInfra.Core.Repositories
+@using UNSInfra.ConnectionSDK.Abstractions
+@using UNSInfra.ConnectionSDK.Models
+@using UNSInfra.Abstractions
+@using UNSInfra.Models
 @inject ITopicBrowserService TopicBrowserService
-@inject IDataIngestionServiceManager ServiceManager
-@inject IDataIngestionConfigurationRepository ConfigurationRepository
+@inject IConnectionManager ConnectionManager
+@inject IConnectionRegistry ConnectionRegistry
 @inject ILogger<Overview> Logger
 
 <PageTitle>System Overview - UNS Infrastructure</PageTitle>
@@ -240,14 +242,14 @@
             activeTopics = topicStats.ActiveTopics;
 
             // Load connection statistics
-            var configurations = await ConfigurationRepository.GetAllConfigurationsAsync();
-            var enabledConfigurations = configurations.Where(c => c.Enabled).ToList();
+            var connectionConfigurations = ConnectionManager.GetAllConnectionConfigurations().ToList();
+            var enabledConfigurations = connectionConfigurations.Where(c => c.IsEnabled).ToList();
             
             connectionStats = new ConnectionStats
             {
-                TotalConnections = configurations.Count,
+                TotalConnections = connectionConfigurations.Count,
                 ActiveConnections = enabledConfigurations.Count,
-                InactiveConnections = configurations.Count - enabledConfigurations.Count
+                InactiveConnections = connectionConfigurations.Count - enabledConfigurations.Count
             };
             
             lastRefresh = DateTime.UtcNow;

@@ -10,11 +10,11 @@ using UNSInfra.Storage.SQLite.Extensions;
 using UNSInfra.Services.TopicDiscovery;
 using UNSInfra.Repositories;
 using UNSInfra.Storage.Abstractions;
-using UNSInfra.Core.Services;
+// using UNSInfra.Core.Services; // Removed - old data ingestion services
 using UNSInfra.Services;
 using UNSInfra.Extensions;
-using UNSInfra.Services.V1.Descriptors;
-using UNSInfra.Services.SocketIO.Descriptors;
+using UNSInfra.Services.V1.Extensions;
+using UNSInfra.Services.SocketIO.Extensions;
 
 var builder = Host.CreateApplicationBuilder(args);
 builder.Logging.AddConsole(consoleLogOptions =>
@@ -48,9 +48,10 @@ builder.Services.AddSingleton<ITopicConfigurationNotificationService, TopicConfi
 builder.Services.AddScoped<UNSInfra.Repositories.ISchemaRepository, UNSInfra.Repositories.InMemorySchemaRepository>();
 builder.Services.AddScoped<UNSInfra.Validation.ISchemaValidator, UNSInfra.Validation.JsonSchemaValidator>();
 
-// Register service descriptors (optional for MCP server)
-builder.Services.AddDataIngestionServiceDescriptor<MqttServiceDescriptor>();
-builder.Services.AddDataIngestionServiceDescriptor<SocketIOServiceDescriptor>();
+// Register connection services
+builder.Services.AddConnectionServices();
+builder.Services.AddProductionMqttConnection();
+builder.Services.AddProductionSocketIOConnection();
 
 // Register SparkplugB decoder (if needed)
 builder.Services.AddSingleton<UNSInfra.Services.V1.SparkplugB.SparkplugBDecoder>();
@@ -65,5 +66,8 @@ var host = builder.Build();
 
 // Initialize configurable storage
 await host.Services.InitializeConfigurableStorageAsync(builder.Configuration);
+
+// Register connection types
+host.Services.RegisterConnectionTypes();
 
 await host.RunAsync();

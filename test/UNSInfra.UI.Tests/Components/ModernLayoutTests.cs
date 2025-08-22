@@ -6,7 +6,7 @@ using Moq;
 
 namespace UNSInfra.UI.Tests.Components;
 
-public class ModernLayoutTests : UITestContext
+public class ModernLayoutTests : TestContext
 {
     public ModernLayoutTests()
     {

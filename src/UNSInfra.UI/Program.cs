@@ -5,11 +5,10 @@ using UNSInfra.Core.Repositories;
 using UNSInfra.Storage.Abstractions;
 using UNSInfra.Storage.InMemory;
 using UNSInfra.Storage.SQLite.Extensions;
-using UNSInfra.Services.V1.Descriptors;
-using UNSInfra.Services.SocketIO.Descriptors;
 using UNSInfra.Services.V1.Extensions;
+using UNSInfra.Services.SocketIO.Extensions;
 using UNSInfra.Core.Extensions;
-using UNSInfra.Core.Services;
+// using UNSInfra.Core.Services; // Removed - old data ingestion services
 using UNSInfra.Services;
 using UNSInfra.Extensions;
 using UNSInfra.UI;
@@ -97,8 +96,8 @@ builder.Services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
 // Add event-driven services for better performance
 builder.Services.AddEventDrivenServices();
 
-// Add the event-driven background service for non-blocking data processing
-builder.Services.AddHostedService<UNSInfra.UI.Services.EventDrivenDataIngestionBackgroundService>();
+// Event-driven background service moved to ConnectionSDK system
+// builder.Services.AddHostedService<UNSInfra.UI.Services.EventDrivenDataIngestionBackgroundService>();
 
 // Register hierarchy service
 builder.Services.AddScoped<IHierarchyService, HierarchyService>();
@@ -116,15 +115,15 @@ builder.Services.AddScoped<UNSInfra.Validation.ISchemaValidator, UNSInfra.Valida
 // Add new dynamic configuration system
 builder.Services.AddUNSInfrastructureCore();
 
-// Register service descriptors for MQTT and SocketIO
-builder.Services.AddDataIngestionServiceDescriptor<UNSInfra.Services.V1.Descriptors.MqttServiceDescriptor>();
-builder.Services.AddDataIngestionServiceDescriptor<UNSInfra.Services.SocketIO.Descriptors.SocketIOServiceDescriptor>();
+// Register connection services
+builder.Services.AddConnectionServices();
+builder.Services.AddProductionMqttConnection();
+builder.Services.AddProductionSocketIOConnection();
 
 // Register SparkplugB decoder for MQTT service
 builder.Services.AddSingleton<UNSInfra.Services.V1.SparkplugB.SparkplugBDecoder>();
 
-// Add input/output services for MQTT publishing functionality
-builder.Services.AddInputOutputServices();
+// Input/output services are now handled by the ConnectionSDK system
 
 // Legacy services removed - now using dynamic configuration system only
 
@@ -132,6 +131,9 @@ var app = builder.Build();
 
 // Initialize configurable storage and default configuration
 await app.Services.InitializeConfigurableStorageAsync(app.Configuration);
+
+// Register connection types
+app.Services.RegisterConnectionTypes();
 
 // Configure the HTTP request pipeline.
 if (!app.Environment.IsDevelopment())

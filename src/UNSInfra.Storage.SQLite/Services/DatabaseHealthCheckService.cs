@@ -1,6 +1,5 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using UNSInfra.Core.Repositories;
 using UNSInfra.Storage.SQLite;
 
 namespace UNSInfra.Storage.SQLite.Services;
@@ -11,16 +10,13 @@ namespace UNSInfra.Storage.SQLite.Services;
 public class DatabaseHealthCheckService
 {
     private readonly IDbContextFactory<UNSInfraDbContext> _contextFactory;
-    private readonly IDataIngestionConfigurationRepository _repository;
     private readonly ILogger<DatabaseHealthCheckService> _logger;
 
     public DatabaseHealthCheckService(
         IDbContextFactory<UNSInfraDbContext> contextFactory,
-        IDataIngestionConfigurationRepository repository,
         ILogger<DatabaseHealthCheckService> logger)
     {
         _contextFactory = contextFactory;
-        _repository = repository;
         _logger = logger;
     }
 
@@ -91,40 +87,9 @@ public class DatabaseHealthCheckService
     {
         try
         {
-            var testId = Guid.NewGuid().ToString();
-            
-            // Create a test configuration
-            var testConfig = new UNSInfra.Services.SocketIO.Configuration.SocketIODataIngestionConfiguration
-            {
-                Id = testId,
-                Name = "Health Check Test Config",
-                Description = "Temporary config for health check",
-                Enabled = false,
-                CreatedBy = "HealthCheck",
-                ServerUrl = "https://test.example.com",
-                EventNames = new[] { "test" },
-                BaseTopicPath = "test"
-            };
-
-            // Save it
-            await _repository.SaveConfigurationAsync(testConfig);
-            _logger.LogInformation("✅ Write test passed - saved config {TestId}", testId);
-
-            // Read it back
-            var retrievedConfig = await _repository.GetConfigurationAsync(testId);
-            if (retrievedConfig != null)
-            {
-                _logger.LogInformation("✅ Read test passed - retrieved config {TestId}", testId);
-            }
-            else
-            {
-                _logger.LogError("❌ Read test failed - could not retrieve config {TestId}", testId);
-                throw new InvalidOperationException("Read test failed");
-            }
-
-            // Clean up
-            await _repository.DeleteConfigurationAsync(testId);
-            _logger.LogInformation("✅ Delete test passed - cleaned up config {TestId}", testId);
+            // Skip write/read test as data ingestion has moved to the ConnectionSDK system
+            // The data ingestion configuration repository is now deprecated
+            _logger.LogInformation("⚠️  Write/Read test skipped - data ingestion moved to ConnectionSDK system");
         }
         catch (Exception ex)
         {
@@ -137,14 +102,10 @@ public class DatabaseHealthCheckService
     {
         try
         {
-            var allConfigs = await _repository.GetAllConfigurationsAsync();
-            _logger.LogInformation("📊 Current configuration count: {ConfigCount}", allConfigs.Count);
-            
-            foreach (var config in allConfigs)
-            {
-                _logger.LogInformation("  - {ConfigName} ({ServiceType}) - Enabled: {Enabled}", 
-                    config.Name, config.ServiceType, config.Enabled);
-            }
+            // Skip configuration count test as data ingestion has moved to the ConnectionSDK system
+            // The data ingestion configuration repository is now deprecated
+            _logger.LogInformation("⚠️  Configuration count test skipped - data ingestion moved to ConnectionSDK system");
+            await Task.CompletedTask;
         }
         catch (Exception ex)
         {

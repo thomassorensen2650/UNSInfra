@@ -1,0 +1,78 @@
+@using UNSInfra.ConnectionSDK.Abstractions
+@using UNSInfra.ConnectionSDK.Models
+@using UNSInfra.Models.Configuration
+@using UNSInfra.Models
+
+@if (IsVisible && Configuration != null && ConnectionDescriptor != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="@(IsInput ? "bi bi-arrow-down-circle" : "bi bi-arrow-up-circle") me-2"></i>
+                        @(((dynamic)Configuration).Name?.StartsWith("New") == true ? "Add" : "Edit") @(IsInput ? "Input" : "Output") Configuration
+                        <span class="badge bg-info ms-2">@ConnectionDescriptor.DisplayName</span>
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="Hide"></button>
+                </div>
+                <div class="modal-body">
+                    <form @onsubmit="Save" @onsubmit:preventDefault="true">
+                        <GenericConfigurationForm 
+                            Schema="@schema"
+                            Configuration="@Configuration"
+                            ConfigurationChanged="@OnConfigurationChanged" />
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Hide">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="Save" 
+                            disabled="@(string.IsNullOrWhiteSpace(((dynamic)Configuration)?.Name))">
+                        <i class="bi bi-check-lg me-1"></i>
+                        Save @(IsInput ? "Input" : "Output")
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public object? Configuration { get; set; }
+    [Parameter] public IConnectionDescriptor? ConnectionDescriptor { get; set; }
+    [Parameter] public bool IsInput { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private ConfigurationSchema? schema;
+
+    protected override void OnParametersSet()
+    {
+        if (ConnectionDescriptor != null)
+        {
+            schema = IsInput 
+                ? ConnectionDescriptor.GetInputConfigurationSchema()
+                : ConnectionDescriptor.GetOutputConfigurationSchema();
+        }
+    }
+
+    private void OnConfigurationChanged(object configuration)
+    {
+        // The configuration object is updated by reference
+        StateHasChanged();
+    }
+
+    private async Task Save()
+    {
+        if (Configuration != null && !string.IsNullOrWhiteSpace(((dynamic)Configuration).Name))
+        {
+            await OnSave.InvokeAsync();
+        }
+    }
+
+    private async Task Hide()
+    {
+        await OnCancel.InvokeAsync();
+    }
+}

@@ -32,6 +32,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\UNSInfra.Core\UNSInfra.Core.csproj" />
+    <ProjectReference Include="..\UNSInfra.ConnectionSDK\UNSInfra.ConnectionSDK.csproj" />
   </ItemGroup>
 
 </Project>

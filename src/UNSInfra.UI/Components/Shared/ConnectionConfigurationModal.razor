@@ -1,0 +1,123 @@
+@using UNSInfra.ConnectionSDK.Abstractions
+@using UNSInfra.ConnectionSDK.Models
+@using UNSInfra.Models
+
+@if (IsVisible && Connection != null && ConnectionDescriptor != null)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog modal-lg">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">
+                        <i class="@ConnectionDescriptor.IconClass me-2"></i>
+                        @(Connection.Name?.StartsWith("New") == true ? "Add" : "Edit") @ConnectionDescriptor.DisplayName Connection
+                    </h5>
+                    <button type="button" class="btn-close" @onclick="Hide"></button>
+                </div>
+                <div class="modal-body">
+                    <form @onsubmit="Save" @onsubmit:preventDefault="true">
+                        <!-- Basic Connection Info -->
+                        <div class="card mb-3">
+                            <div class="card-header">
+                                <h6 class="mb-0">Basic Information</h6>
+                            </div>
+                            <div class="card-body">
+                                <div class="row">
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Connection Name <span class="text-danger">*</span></label>
+                                        <input type="text" class="form-control" @bind="Connection.Name" 
+                                               placeholder="e.g., Main Production Server" required />
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <label class="form-label">Description</label>
+                                        <input type="text" class="form-control" @bind="Connection.Description" 
+                                               placeholder="Optional description" />
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input" @bind="Connection.IsEnabled" />
+                                            <label class="form-check-label">Enabled</label>
+                                        </div>
+                                    </div>
+                                    <div class="col-md-6 mb-3">
+                                        <div class="form-check">
+                                            <input type="checkbox" class="form-check-input" @bind="Connection.AutoStart" />
+                                            <label class="form-check-label">Auto-start on application startup</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Connection-Specific Configuration -->
+                        <GenericConfigurationForm 
+                            Schema="@schema"
+                            Configuration="@connectionConfig"
+                            ConfigurationChanged="@OnConnectionConfigChanged" />
+                    </form>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="Hide">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="Save" 
+                            disabled="@(string.IsNullOrWhiteSpace(Connection?.Name))">
+                        <i class="bi bi-check-lg me-1"></i>
+                        Save Connection
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public bool IsVisible { get; set; }
+    [Parameter] public ConnectionConfiguration? Connection { get; set; }
+    [Parameter] public IConnectionDescriptor? ConnectionDescriptor { get; set; }
+    [Parameter] public EventCallback OnSave { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private ConfigurationSchema? schema;
+    private object? connectionConfig;
+
+    protected override void OnParametersSet()
+    {
+        if (ConnectionDescriptor != null)
+        {
+            schema = ConnectionDescriptor.GetConnectionConfigurationSchema();
+            
+            if (Connection?.ConnectionConfig != null)
+            {
+                connectionConfig = Connection.ConnectionConfig;
+            }
+            else if (Connection != null)
+            {
+                // Create default configuration if none exists
+                connectionConfig = ConnectionDescriptor.CreateDefaultConnectionConfiguration();
+                Connection.ConnectionConfig = connectionConfig;
+            }
+        }
+    }
+
+    private void OnConnectionConfigChanged(object configuration)
+    {
+        if (Connection != null)
+        {
+            Connection.ConnectionConfig = configuration;
+            connectionConfig = configuration;
+        }
+        StateHasChanged();
+    }
+
+    private async Task Save()
+    {
+        if (Connection != null && !string.IsNullOrWhiteSpace(Connection.Name))
+        {
+            await OnSave.InvokeAsync();
+        }
+    }
+
+    private async Task Hide()
+    {
+        await OnCancel.InvokeAsync();
+    }
+}

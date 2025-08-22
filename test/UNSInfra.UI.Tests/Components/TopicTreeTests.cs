@@ -1,19 +1,24 @@
 using UNSInfra.UI.Components;
 using UNSInfra.Models.Hierarchy;
 using UNSInfra.Services.TopicBrowser;
+using UNSInfra.Services;
 using Microsoft.Extensions.Logging;
 using Moq;
 
 namespace UNSInfra.UI.Tests.Components;
 
-public class TopicTreeTests : UITestContext
+public class TopicTreeTests : TestContext
 {
     private readonly Mock<ILogger<TopicTree>> _mockLogger;
+    private readonly Mock<INamespaceStructureService> _mockNamespaceService;
 
     public TopicTreeTests()
     {
         _mockLogger = new Mock<ILogger<TopicTree>>();
+        _mockNamespaceService = new Mock<INamespaceStructureService>();
+        
         Services.AddSingleton(_mockLogger.Object);
+        Services.AddSingleton(_mockNamespaceService.Object);
     }
 
     [Fact]

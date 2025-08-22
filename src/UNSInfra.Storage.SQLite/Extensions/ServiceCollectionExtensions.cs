@@ -109,8 +109,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISchemaRepository, SQLiteSchemaRepository>();
         services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
         services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
-        services.AddSingleton<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
-        services.AddScoped<IInputOutputConfigurationRepository, SQLiteInputOutputConfigurationRepository>();
+        // Old data ingestion configuration repository removed - moved to ConnectionSDK
+        // New ConnectionSDK repository for connection persistence
+        services.AddScoped<IConnectionConfigurationRepository, SQLiteConnectionConfigurationRepository>();
 
         // Add storage services - Realtime storage as singleton for in-memory cache, Historical as scoped
         services.AddSingleton<IRealtimeStorage, SQLiteRealtimeStorage>();
@@ -155,7 +156,8 @@ public static class ServiceCollectionExtensions
                 services.AddScoped<IHierarchyConfigurationRepository, InMemoryHierarchyConfigurationRepository>();
                 services.AddScoped<ITopicConfigurationRepository, InMemoryTopicConfigurationRepository>();
                 services.AddScoped<ISchemaRepository, InMemorySchemaRepository>();
-                services.AddScoped<IDataIngestionConfigurationRepository, InMemoryDataIngestionConfigurationRepository>();
+                // Old data ingestion configuration repository removed - moved to ConnectionSDK
+                services.AddScoped<IConnectionConfigurationRepository, InMemoryConnectionConfigurationRepository>();
                 // Add SQLite repositories for namespace and NSTree only (these don't have InMemory implementations yet)
                 services.AddSQLiteDbContextOnly(storageConfig);
                 services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
@@ -372,8 +374,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISchemaRepository, SQLiteSchemaRepository>();
         services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
         services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
-        services.AddSingleton<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
-        services.AddScoped<IInputOutputConfigurationRepository, SQLiteInputOutputConfigurationRepository>();
+        // Old data ingestion configuration repository removed - moved to ConnectionSDK
+        // New ConnectionSDK repository for connection persistence
+        services.AddScoped<IConnectionConfigurationRepository, SQLiteConnectionConfigurationRepository>();
 
         return services;
     }
@@ -474,8 +477,9 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ISchemaRepository, SQLiteSchemaRepository>();
         services.AddScoped<INamespaceConfigurationRepository, SQLiteNamespaceConfigurationRepository>();
         services.AddScoped<INSTreeInstanceRepository, SQLiteNSTreeInstanceRepository>();
-        services.AddSingleton<IDataIngestionConfigurationRepository, SQLiteDataIngestionConfigurationRepository>();
-        services.AddScoped<IInputOutputConfigurationRepository, SQLiteInputOutputConfigurationRepository>();
+        // Old data ingestion configuration repository removed - moved to ConnectionSDK
+        // New ConnectionSDK repository for connection persistence
+        services.AddScoped<IConnectionConfigurationRepository, SQLiteConnectionConfigurationRepository>();
 
         // Add historical storage as scoped
         services.AddScoped<IHistoricalStorage, SQLiteHistoricalStorage>();

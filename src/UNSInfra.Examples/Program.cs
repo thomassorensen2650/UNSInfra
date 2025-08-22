@@ -6,7 +6,7 @@
     using UNSInfra.Models.Hierarchy;
     using UNSInfra.Models.Schema;
     using UNSInfra.Repositories;
-    using UNSInfra.Services.DataIngestion.Mock;
+    // using UNSInfra.Services.DataIngestion.Mock; // Removed - old data ingestion services
     using UNSInfra.Services.TopicDiscovery;
     using UNSInfra.Storage.InMemory;
     using UNSInfra.Validation;
@@ -87,17 +87,19 @@
 
         
         // Setup data services
-        var mqttLogger = loggerFactory.CreateLogger<MockMqttDataService>();
-        var mqttService = new MockMqttDataService(topicDiscovery, mqttLogger);
-        var kafkaLogger = loggerFactory.CreateLogger<MockKafkaDataService>();
-        var kafkaService = new MockKafkaDataService(topicDiscovery, kafkaLogger);
+        // MQTT service moved to ConnectionSDK system
+        // var mqttLogger = loggerFactory.CreateLogger<MockMqttDataService>();
+        // var mqttService = new MockMqttDataService(topicDiscovery, mqttLogger);
+        // Kafka service moved to ConnectionSDK system
+        // var kafkaLogger = loggerFactory.CreateLogger<MockKafkaDataService>();
+        // var kafkaService = new MockKafkaDataService(topicDiscovery, kafkaLogger);
 
         // Define hierarchy path using dynamic hierarchy service
         var robotPath = await hierarchyService.CreatePathFromStringAsync("enterprise/factoryA/assemblyLine1/robot123/temperature");
         
         // Subscribe to topics
-        await mqttService.SubscribeToTopicAsync("sensors/temperature", robotPath);
-        await kafkaService.SubscribeToTopicAsync("production/data", robotPath);
+        // await mqttService.SubscribeToTopicAsync("sensors/temperature", robotPath);
+        // await kafkaService.SubscribeToTopicAsync("production/data", robotPath); // Moved to ConnectionSDK
 
         // Define schema for temperature data
         var tempSchema = new DataSchema
@@ -119,8 +121,8 @@
         await schemaRepository.SaveSchemaAsync(tempSchema);
 
         // Start services
-        await mqttService.StartAsync();
-        await kafkaService.StartAsync();
+        // await mqttService.StartAsync();
+        // await kafkaService.StartAsync(); // Moved to ConnectionSDK
 
         // Simulate data reception
         var tempData = JsonSerializer.SerializeToElement(new 
@@ -130,8 +132,8 @@
             timestamp = DateTime.UtcNow 
         });
         
-        mqttService.SimulateDataReceived("sensors/temperature", tempData);
-        kafkaService.SimulateDataReceived("production/data", tempData);
+        // mqttService.SimulateDataReceived("sensors/temperature", tempData);
+        // kafkaService.SimulateDataReceived("production/data", tempData); // Moved to ConnectionSDK
 
         // Wait a bit for processing
         await Task.Delay(1000);
@@ -149,7 +151,7 @@
         
         Console.WriteLine($"Historical data points: {history.Count()}");
 
-        await mqttService.StopAsync();
-        await kafkaService.StopAsync();
+        // await mqttService.StopAsync();
+        // await kafkaService.StopAsync(); // Moved to ConnectionSDK
     }
 }

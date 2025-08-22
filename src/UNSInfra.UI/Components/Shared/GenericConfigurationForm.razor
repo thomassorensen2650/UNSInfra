@@ -1,0 +1,282 @@
+@using UNSInfra.ConnectionSDK.Models
+@using System.Reflection
+@using System.Text.Json
+
+@if (Schema != null && Configuration != null)
+{
+    <div class="configuration-form">
+        @foreach (var group in Schema.Groups.OrderBy(g => g.Order))
+        {
+            <div class="configuration-group mb-4">
+                @if (group.IsCollapsible)
+                {
+                    <div class="card">
+                        <div class="card-header" @onclick="() => ToggleGroupCollapse(group.Name)">
+                            <h6 class="mb-0 d-flex align-items-center">
+                                <i class="@(collapsedGroups.Contains(group.Name) ? "bi bi-chevron-right" : "bi bi-chevron-down") me-2"></i>
+                                @group.DisplayName
+                                @if (!string.IsNullOrEmpty(group.Description))
+                                {
+                                    <small class="text-muted ms-2">@group.Description</small>
+                                }
+                            </h6>
+                        </div>
+                        @if (!collapsedGroups.Contains(group.Name))
+                        {
+                            <div class="card-body">
+                                @RenderGroupFields(group.Name)
+                            </div>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <div class="card">
+                        <div class="card-header">
+                            <h6 class="mb-0">
+                                @group.DisplayName
+                                @if (!string.IsNullOrEmpty(group.Description))
+                                {
+                                    <small class="text-muted ms-2">@group.Description</small>
+                                }
+                            </h6>
+                        </div>
+                        <div class="card-body">
+                            @RenderGroupFields(group.Name)
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        @* Render fields that don't belong to any group *@
+        @{
+            var ungroupedFields = Schema.Fields.Where(f => string.IsNullOrEmpty(f.Group)).OrderBy(f => f.Order);
+        }
+        @if (ungroupedFields.Any())
+        {
+            <div class="configuration-group mb-4">
+                <div class="card">
+                    <div class="card-body">
+                        @foreach (var field in ungroupedFields)
+                        {
+                            @RenderField(field)
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public ConfigurationSchema? Schema { get; set; }
+    [Parameter] public object? Configuration { get; set; }
+    [Parameter] public EventCallback<object> ConfigurationChanged { get; set; }
+
+    private readonly HashSet<string> collapsedGroups = new();
+
+    protected override void OnParametersSet()
+    {
+        // Initialize collapsed groups based on schema
+        if (Schema != null)
+        {
+            collapsedGroups.Clear();
+            foreach (var group in Schema.Groups.Where(g => g.IsCollapsed))
+            {
+                collapsedGroups.Add(group.Name);
+            }
+        }
+    }
+
+    private void ToggleGroupCollapse(string groupName)
+    {
+        if (collapsedGroups.Contains(groupName))
+        {
+            collapsedGroups.Remove(groupName);
+        }
+        else
+        {
+            collapsedGroups.Add(groupName);
+        }
+    }
+
+    private RenderFragment RenderGroupFields(string groupName)
+    {
+        return @<div class="row">
+            @foreach (var field in Schema!.Fields.Where(f => f.Group == groupName).OrderBy(f => f.Order))
+            {
+                @RenderField(field)
+            }
+        </div>;
+    }
+
+    private RenderFragment RenderField(ConfigurationField field)
+    {
+        return @<div class="col-md-6 mb-3">
+            <label class="form-label">
+                @field.DisplayName
+                @if (field.IsRequired)
+                {
+                    <span class="text-danger">*</span>
+                }
+                @if (!string.IsNullOrEmpty(field.Description))
+                {
+                    <i class="bi bi-info-circle text-muted ms-1" title="@field.Description"></i>
+                }
+            </label>
+            @RenderFieldInput(field)
+        </div>;
+    }
+
+    private RenderFragment RenderFieldInput(ConfigurationField field)
+    {
+        var currentValue = GetFieldValue(field.Name);
+
+        return field.Type switch
+        {
+            ConfigurationFieldType.Text => @<input type="text" class="form-control" value="@currentValue" 
+                placeholder="@field.Placeholder" required="@field.IsRequired"
+                @onchange="@(e => SetFieldValue(field.Name, e.Value?.ToString()))" />,
+
+            ConfigurationFieldType.TextArea => @<textarea class="form-control" rows="3" 
+                placeholder="@field.Placeholder" required="@field.IsRequired"
+                @onchange="@(e => SetFieldValue(field.Name, e.Value?.ToString()))">@currentValue</textarea>,
+
+            ConfigurationFieldType.Password => @<input type="password" class="form-control" value="@currentValue" 
+                placeholder="@field.Placeholder" required="@field.IsRequired"
+                @onchange="@(e => SetFieldValue(field.Name, e.Value?.ToString()))" />,
+
+            ConfigurationFieldType.Number => @<input type="number" class="form-control" value="@currentValue" 
+                placeholder="@field.Placeholder" required="@field.IsRequired"
+                @onchange="@(e => SetFieldValue(field.Name, ParseNumber(e.Value?.ToString())))" />,
+
+            ConfigurationFieldType.Boolean => @<div class="form-check">
+                <input type="checkbox" class="form-check-input" checked="@(bool.TryParse(currentValue?.ToString(), out var boolVal) && boolVal)"
+                    @onchange="@(e => SetFieldValue(field.Name, bool.Parse(e.Value?.ToString() ?? "false")))" />
+                <label class="form-check-label">@field.DisplayName</label>
+            </div>,
+
+            ConfigurationFieldType.Select => @<select class="form-select" required="@field.IsRequired"
+                @onchange="@(e => SetFieldValue(field.Name, e.Value))">
+                @if (!field.IsRequired)
+                {
+                    <option value="">-- Select --</option>
+                }
+                @if (field.Options != null)
+                {
+                    @foreach (var option in field.Options)
+                    {
+                        <option value="@option.Value" selected="@(object.Equals(currentValue, option.Value))">
+                            @option.Text
+                        </option>
+                    }
+                }
+            </select>,
+
+            ConfigurationFieldType.Url => @<input type="url" class="form-control" value="@currentValue" 
+                placeholder="@field.Placeholder" required="@field.IsRequired"
+                @onchange="@(e => SetFieldValue(field.Name, e.Value?.ToString()))" />,
+
+            ConfigurationFieldType.Email => @<input type="email" class="form-control" value="@currentValue" 
+                placeholder="@field.Placeholder" required="@field.IsRequired"
+                @onchange="@(e => SetFieldValue(field.Name, e.Value?.ToString()))" />,
+
+            _ => @<input type="text" class="form-control" value="@currentValue" 
+                placeholder="@field.Placeholder" required="@field.IsRequired"
+                @onchange="@(e => SetFieldValue(field.Name, e.Value?.ToString()))" />
+        };
+    }
+
+    private object? GetFieldValue(string fieldName)
+    {
+        if (Configuration == null) return null;
+
+        var property = Configuration.GetType().GetProperty(fieldName, BindingFlags.Public | BindingFlags.Instance);
+        if (property != null)
+        {
+            var value = property.GetValue(Configuration);
+            
+            // Handle special cases for display
+            if (value is IList<string> stringList)
+            {
+                return string.Join("\n", stringList);
+            }
+            
+            return value;
+        }
+
+        return null;
+    }
+
+    private void SetFieldValue(string fieldName, object? value)
+    {
+        if (Configuration == null) return;
+
+        var property = Configuration.GetType().GetProperty(fieldName, BindingFlags.Public | BindingFlags.Instance);
+        if (property != null && property.CanWrite)
+        {
+            try
+            {
+                // Handle special type conversions
+                if (property.PropertyType == typeof(List<string>) && value is string stringValue)
+                {
+                    var lines = stringValue.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries)
+                                          .Select(line => line.Trim())
+                                          .Where(line => !string.IsNullOrEmpty(line))
+                                          .ToList();
+                    property.SetValue(Configuration, lines);
+                }
+                else if (property.PropertyType.IsEnum && value is string enumString)
+                {
+                    if (Enum.TryParse(property.PropertyType, enumString, out var enumValue))
+                    {
+                        property.SetValue(Configuration, enumValue);
+                    }
+                }
+                else
+                {
+                    // Convert to the target type
+                    var convertedValue = Convert.ChangeType(value, Nullable.GetUnderlyingType(property.PropertyType) ?? property.PropertyType);
+                    property.SetValue(Configuration, convertedValue);
+                }
+
+                // Notify parent of change
+                ConfigurationChanged.InvokeAsync(Configuration);
+            }
+            catch (Exception ex)
+            {
+                // Log conversion errors
+                Console.WriteLine($"Error setting field {fieldName}: {ex.Message}");
+            }
+        }
+    }
+
+    private object? ParseNumber(string? value)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        
+        if (double.TryParse(value, out var doubleValue))
+        {
+            return doubleValue;
+        }
+        
+        return null;
+    }
+}
+
+<style>
+    .configuration-form .card-header {
+        cursor: pointer;
+        user-select: none;
+    }
+    
+    .configuration-form .card-header:hover {
+        background-color: var(--bs-light);
+    }
+    
+    .form-check-input:checked {
+        background-color: var(--bs-primary);
+        border-color: var(--bs-primary);
+    }
+</style>
