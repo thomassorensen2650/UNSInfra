@@ -49,6 +49,40 @@ public class InMemoryHistoricalStorage : IHistoricalStorage
         return Task.CompletedTask;
     }
 
+    public Task StoreBulkAsync(IEnumerable<DataPoint> dataPoints)
+    {
+        var dataPointsList = dataPoints.ToList();
+        if (dataPointsList.Count == 0) return Task.CompletedTask;
+
+        _lock.EnterWriteLock();
+        try
+        {
+            foreach (var dataPoint in dataPointsList)
+            {
+                var topic = dataPoint.Topic;
+                
+                // Get or create queue for this topic
+                var queue = _storageByTopic.GetOrAdd(topic, _ => new ConcurrentQueue<DataPoint>());
+                
+                // Add the data point
+                queue.Enqueue(dataPoint);
+                Interlocked.Increment(ref _totalDataPointCount);
+                
+                // Cleanup if needed (less frequent during bulk operations for performance)
+                if (_options.AutoCleanup && Random.Shared.Next(100) < 5) // 5% chance
+                {
+                    CleanupIfNeeded(topic, queue);
+                }
+            }
+        }
+        finally
+        {
+            _lock.ExitWriteLock();
+        }
+        
+        return Task.CompletedTask;
+    }
+
     public Task<IEnumerable<DataPoint>> GetHistoryAsync(string topic, DateTime from, DateTime to)
     {
         _lock.EnterReadLock();

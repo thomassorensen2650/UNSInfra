@@ -4,10 +4,14 @@
 @using UNSInfra.ConnectionSDK.Models
 @using UNSInfra.Abstractions
 @using UNSInfra.Models
-@inject ITopicBrowserService TopicBrowserService
+@using UNSInfra.Services.TopicBrowser.Events
+@using UNSInfra.Services.UI
+@inject CachedTopicBrowserService CachedTopicBrowserService
+@inject BatchedUIUpdateService BatchedUIUpdateService
 @inject IConnectionManager ConnectionManager
 @inject IConnectionRegistry ConnectionRegistry
 @inject ILogger<Overview> Logger
+@implements IDisposable
 
 <PageTitle>System Overview - UNS Infrastructure</PageTitle>
 
@@ -208,27 +212,28 @@
     private int activeTopics = 0;
     private DateTime lastRefresh = DateTime.UtcNow;
     private readonly DateTime startTime = DateTime.UtcNow;
+    private volatile bool _disposed = false;
 
     protected override async Task OnInitializedAsync()
     {
-        await LoadStatistics();
+        // Subscribe to topic structure change events
+        CachedTopicBrowserService.TopicStructureChanged += OnTopicStructureChanged;
         
-        // Set up auto-refresh every 30 seconds
-        var timer = new System.Timers.Timer(30000);
-        timer.Elapsed += async (sender, e) => await InvokeAsync(async () =>
-        {
-            await LoadStatistics();
-            StateHasChanged();
-        });
-        timer.Start();
+        // Subscribe to batched UI updates
+        BatchedUIUpdateService.UpdateBatchReady += OnUIUpdateBatchReady;
+        
+        // Initial load
+        await LoadStatistics();
     }
 
     private async Task LoadStatistics()
     {
+        if (_disposed) return;
+        
         try
         {
-            // Load topic statistics
-            var topics = await TopicBrowserService.GetLatestTopicStructureAsync();
+            // Load topic statistics from cached service
+            var topics = await CachedTopicBrowserService.GetLatestTopicStructureAsync();
             var topicList = topics.ToList();
             
             topicStats = new TopicStats
@@ -256,8 +261,42 @@
         }
         catch (Exception ex)
         {
-            // Handle error silently for now
             Logger.LogError(ex, "Error loading statistics");
+        }
+    }
+
+    private async void OnTopicStructureChanged(object? sender, TopicStructureChangedEventArgs e)
+    {
+        if (_disposed) return;
+        
+        Logger.LogDebug("Topic structure changed in Overview - scheduling UI update");
+        
+        // Schedule a batched UI update instead of immediate refresh
+        BatchedUIUpdateService.ScheduleUpdate("overview-stats", UIUpdateType.StatisticsUpdate, 
+            new Dictionary<string, object> { { "reason", "topic_structure_changed" } });
+    }
+    
+    private async void OnUIUpdateBatchReady(object? sender, UIUpdateBatchEventArgs e)
+    {
+        if (_disposed) return;
+        
+        // Check if this batch contains updates for our component
+        var relevantUpdates = e.Updates.Where(u => u.ComponentId == "overview-stats").ToList();
+        if (!relevantUpdates.Any()) return;
+        
+        Logger.LogDebug("Processing UI update batch with {Count} updates for Overview", relevantUpdates.Count);
+        
+        try
+        {
+            await InvokeAsync(async () =>
+            {
+                await LoadStatistics();
+                StateHasChanged();
+            });
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error processing UI update batch for Overview");
         }
     }
 
@@ -284,5 +323,14 @@
         public int TotalConnections { get; set; }
         public int ActiveConnections { get; set; }
         public int InactiveConnections { get; set; }
+    }
+    
+    public void Dispose()
+    {
+        _disposed = true;
+        
+        // Unsubscribe from events
+        CachedTopicBrowserService.TopicStructureChanged -= OnTopicStructureChanged;
+        BatchedUIUpdateService.UpdateBatchReady -= OnUIUpdateBatchReady;
     }
 }

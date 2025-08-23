@@ -239,6 +239,13 @@
         try
         {
             TopicConfiguration = await TopicBrowserService.GetTopicConfigurationAsync(SelectedTopic!.Topic);
+            
+            // If no existing configuration found, create a new one for discovered topics
+            if (TopicConfiguration == null && SelectedTopic != null)
+            {
+                TopicConfiguration = CreateConfigurationFromTopicInfo(SelectedTopic);
+            }
+            
             if (TopicConfiguration != null)
             {
                 _editConfiguration = CloneConfiguration(TopicConfiguration);
@@ -250,6 +257,30 @@
         {
             Logger.LogError(ex, "Error loading topic configuration");
         }
+    }
+
+    private TopicConfiguration CreateConfigurationFromTopicInfo(TopicInfo topicInfo)
+    {
+        var now = DateTime.UtcNow;
+        return new TopicConfiguration
+        {
+            Id = Guid.NewGuid().ToString(),
+            Topic = topicInfo.Topic,
+            Path = new HierarchicalPath(), // Empty path for discovered topics
+            IsActive = true,
+            SourceType = topicInfo.SourceType ?? "Discovered",
+            Description = "",
+            CreatedAt = now,
+            ModifiedAt = now,
+            CreatedBy = "System",
+            Metadata = new Dictionary<string, object>
+            {
+                ["AutoDiscovered"] = true,
+                ["DiscoveredAt"] = now.ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
+            },
+            NSPath = string.Empty,
+            UNSName = string.Empty
+        };
     }
 
     private TopicConfiguration CloneConfiguration(TopicConfiguration config)

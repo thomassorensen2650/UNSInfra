@@ -194,6 +194,11 @@ public class InMemoryRealtimeStorage : IRealtimeStorage, IDisposable
         return Task.FromResult(results.AsEnumerable());
     }
 
+    public Task<IEnumerable<string>> GetAllTopicsAsync()
+    {
+        return Task.FromResult(_storage.Keys.AsEnumerable());
+    }
+
     public Task DeleteAsync(string id)
     {
         // Find and remove the data point, maintaining the index

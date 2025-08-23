@@ -255,7 +255,7 @@
             
         var newTopics = topics.Skip(_lastTopicsCount).ToList();
         
-        // Add new topics using folder structure grouped by source type
+        // Add new topics using folder structure WITHOUT grouping by source type
         if (newTopics.Count > 0)
         {
             const string dataBrowserSectionName = "📊 Data Browser";
@@ -271,66 +271,47 @@
             if (!TopicsByPath.ContainsKey(dataBrowserSectionName))
                 TopicsByPath[dataBrowserSectionName] = new List<TopicInfo>();
             
-            // Group topics by source type, then build folder structure
-            var topicsBySourceType = newTopics.GroupBy(t => t.SourceType).ToList();
-            
-            foreach (var sourceGroup in topicsBySourceType)
+            // Build hierarchical structure for new topics without source type grouping
+            foreach (var topic in newTopics.Where(t => !string.IsNullOrEmpty(t.Topic)))
             {
-                var sourceType = sourceGroup.Key;
-                var sourcePath = $"{dataBrowserSectionName}/{sourceType}";
+                var topicParts = topic.Topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
                 
-                // Ensure source type folder exists
-                if (!ChildrenLookup[dataBrowserSectionName].Contains(sourceType))
+                // If topic has no separators (flat topic name), treat it as a single item
+                if (topicParts.Length == 1)
                 {
-                    ChildrenLookup[dataBrowserSectionName].Add(sourceType);
-                }
-                if (!ChildrenLookup.ContainsKey(sourcePath))
-                    ChildrenLookup[sourcePath] = new List<string>();
-                if (!TopicsByPath.ContainsKey(sourcePath))
-                    TopicsByPath[sourcePath] = new List<TopicInfo>();
-                
-                // Build folder structure for each topic within this source type
-                foreach (var topic in sourceGroup)
-                {
-                    var topicParts = topic.Topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                    
-                    // If topic has no separators (flat topic name), treat it as a single item
-                    if (topicParts.Length == 1)
+                    var topicKey = $"{dataBrowserSectionName}/{topic.Topic}";
+                    if (!ChildrenLookup[dataBrowserSectionName].Contains(topic.Topic))
                     {
-                        var topicKey = $"{sourcePath}/{topic.Topic}";
-                        if (!ChildrenLookup[sourcePath].Contains(topic.Topic))
-                        {
-                            ChildrenLookup[sourcePath].Add(topic.Topic);
-                            TopicsByPath[topicKey] = new List<TopicInfo> { topic };
-                        }
+                        ChildrenLookup[dataBrowserSectionName].Add(topic.Topic);
+                        TopicsByPath[topicKey] = new List<TopicInfo> { topic };
                     }
-                    else
+                }
+                else
+                {
+                    // Build nested folder structure based on topic path segments
+                    string currentPath = dataBrowserSectionName;
+                    
+                    for (int i = 0; i < topicParts.Length; i++)
                     {
-                        // Build nested folder structure based on topic path segments
-                        string currentPath = sourcePath;
+                        var part = topicParts[i];
+                        var parentPath = currentPath;
+                        currentPath = $"{currentPath}/{part}";
                         
-                        for (int i = 0; i < topicParts.Length; i++)
+                        // Initialize path structures if they don't exist
+                        if (!TopicsByPath.ContainsKey(currentPath))
+                            TopicsByPath[currentPath] = new List<TopicInfo>();
+                        
+                        if (!ChildrenLookup.ContainsKey(parentPath))
+                            ChildrenLookup[parentPath] = new List<string>();
+                        
+                        // Add this part as a child of the parent path
+                        if (!ChildrenLookup[parentPath].Contains(part))
+                            ChildrenLookup[parentPath].Add(part);
+                        
+                        // If this is the final segment, store the actual topic data
+                        if (i == topicParts.Length - 1)
                         {
-                            var part = topicParts[i];
-                            var parentPath = currentPath;
-                            currentPath = $"{currentPath}/{part}";
-                            
-                            // Initialize path structures if they don't exist
-                            if (!TopicsByPath.ContainsKey(currentPath))
-                                TopicsByPath[currentPath] = new List<TopicInfo>();
-                            
-                            if (!ChildrenLookup.ContainsKey(parentPath))
-                                ChildrenLookup[parentPath] = new List<string>();
-                            
-                            // Add this part as a child of the parent path
-                            if (!ChildrenLookup[parentPath].Contains(part))
-                                ChildrenLookup[parentPath].Add(part);
-                            
-                            // If this is the final segment, store the actual topic data
-                            if (i == topicParts.Length - 1)
-                            {
-                                TopicsByPath[currentPath].Add(topic);
-                            }
+                            TopicsByPath[currentPath].Add(topic);
                         }
                     }
                 }
@@ -444,70 +425,50 @@
         if (!TopicsByPath.ContainsKey(dataBrowserSectionName))
             TopicsByPath[dataBrowserSectionName] = new List<TopicInfo>();
 
-        // Process all topics using folder structure grouped by source type
+        // Process all topics using folder structure WITHOUT grouping by source type
         if (allTopics.Count > 0)
         {
-            
-            // Group all topics by source type, then build folder structure
-            var topicsBySourceType = allTopics.GroupBy(t => t.SourceType).ToList();
-            
-            foreach (var sourceGroup in topicsBySourceType)
+            // Build hierarchical structure for ALL topics without source type grouping
+            foreach (var topic in allTopics.Where(t => !string.IsNullOrEmpty(t.Topic)))
             {
-                var sourceType = sourceGroup.Key;
-                var sourcePath = $"{dataBrowserSectionName}/{sourceType}";
+                var topicParts = topic.Topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
                 
-                // Ensure source type folder exists
-                if (!ChildrenLookup[dataBrowserSectionName].Contains(sourceType))
+                // If topic has no separators (flat topic name), treat it as a single item at data browser root
+                if (topicParts.Length == 1)
                 {
-                    ChildrenLookup[dataBrowserSectionName].Add(sourceType);
-                }
-                if (!ChildrenLookup.ContainsKey(sourcePath))
-                    ChildrenLookup[sourcePath] = new List<string>();
-                if (!TopicsByPath.ContainsKey(sourcePath))
-                    TopicsByPath[sourcePath] = new List<TopicInfo>();
-                
-                // Build folder structure for each topic within this source type
-                foreach (var topic in sourceGroup)
-                {
-                    var topicParts = topic.Topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                    
-                    // If topic has no separators (flat topic name), treat it as a single item
-                    if (topicParts.Length == 1)
+                    var topicKey = $"{dataBrowserSectionName}/{topic.Topic}";
+                    if (!ChildrenLookup[dataBrowserSectionName].Contains(topic.Topic))
                     {
-                        var topicKey = $"{sourcePath}/{topic.Topic}";
-                        if (!ChildrenLookup[sourcePath].Contains(topic.Topic))
-                        {
-                            ChildrenLookup[sourcePath].Add(topic.Topic);
-                            TopicsByPath[topicKey] = new List<TopicInfo> { topic };
-                        }
+                        ChildrenLookup[dataBrowserSectionName].Add(topic.Topic);
+                        TopicsByPath[topicKey] = new List<TopicInfo> { topic };
                     }
-                    else
+                }
+                else
+                {
+                    // Build nested folder structure based on topic path segments
+                    string currentPath = dataBrowserSectionName;
+                    
+                    for (int i = 0; i < topicParts.Length; i++)
                     {
-                        // Build nested folder structure based on topic path segments
-                        string currentPath = sourcePath;
+                        var part = topicParts[i];
+                        var parentPath = currentPath;
+                        currentPath = $"{currentPath}/{part}";
                         
-                        for (int i = 0; i < topicParts.Length; i++)
+                        // Initialize path structures if they don't exist
+                        if (!TopicsByPath.ContainsKey(currentPath))
+                            TopicsByPath[currentPath] = new List<TopicInfo>();
+                        
+                        if (!ChildrenLookup.ContainsKey(parentPath))
+                            ChildrenLookup[parentPath] = new List<string>();
+                        
+                        // Add this part as a child of the parent path
+                        if (!ChildrenLookup[parentPath].Contains(part))
+                            ChildrenLookup[parentPath].Add(part);
+                        
+                        // If this is the final segment, store the actual topic data
+                        if (i == topicParts.Length - 1)
                         {
-                            var part = topicParts[i];
-                            var parentPath = currentPath;
-                            currentPath = $"{currentPath}/{part}";
-                            
-                            // Initialize path structures if they don't exist
-                            if (!TopicsByPath.ContainsKey(currentPath))
-                                TopicsByPath[currentPath] = new List<TopicInfo>();
-                            
-                            if (!ChildrenLookup.ContainsKey(parentPath))
-                                ChildrenLookup[parentPath] = new List<string>();
-                            
-                            // Add this part as a child of the parent path
-                            if (!ChildrenLookup[parentPath].Contains(part))
-                                ChildrenLookup[parentPath].Add(part);
-                            
-                            // If this is the final segment, store the actual topic data
-                            if (i == topicParts.Length - 1)
-                            {
-                                TopicsByPath[currentPath].Add(topic);
-                            }
+                            TopicsByPath[currentPath].Add(topic);
                         }
                     }
                 }
@@ -672,77 +633,66 @@
         var tempChildrenLookup = new Dictionary<string, List<string>>();
         var tempTopicsByPath = new Dictionary<string, List<TopicInfo>>();
         
-        // Group topics by source type and build hierarchical structure
-        var topicsBySourceType = topics.GroupBy(t => t.SourceType).Where(g => !string.IsNullOrEmpty(g.Key)).ToList();
-
-        foreach (var sourceGroup in topicsBySourceType)
+        // Build hierarchical structure for ALL topics without grouping by source type
+        foreach (var topic in topics.Where(t => !string.IsNullOrEmpty(t.Topic)))
         {
-            var sourceType = sourceGroup.Key;
-            var sourcePath = $"{dataBrowserSectionName}/{sourceType}";
+            var topicParts = topic.Topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
             
-            // Initialize source type folder
-            if (!tempChildrenLookup.ContainsKey(sourcePath))
-                tempChildrenLookup[sourcePath] = new List<string>();
-            if (!tempTopicsByPath.ContainsKey(sourcePath))
-                tempTopicsByPath[sourcePath] = new List<TopicInfo>();
-
-            // Build hierarchical folder structure for each topic within this source type
-            foreach (var topic in sourceGroup.Where(t => !string.IsNullOrEmpty(t.Topic)))
+            // If topic has no separators (flat topic name), treat it as a single item at root level
+            if (topicParts.Length == 1)
             {
-                var topicParts = topic.Topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
-                
-                // If topic has no separators (flat topic name), treat it as a single item
-                if (topicParts.Length == 1)
+                var topicKey = $"{dataBrowserSectionName}/{topic.Topic}";
+                if (!tempChildrenLookup.ContainsKey(dataBrowserSectionName))
+                    tempChildrenLookup[dataBrowserSectionName] = new List<string>();
+                if (!tempChildrenLookup[dataBrowserSectionName].Contains(topic.Topic))
                 {
-                    var topicKey = $"{sourcePath}/{topic.Topic}";
-                    if (!tempChildrenLookup[sourcePath].Contains(topic.Topic))
-                    {
-                        tempChildrenLookup[sourcePath].Add(topic.Topic);
-                        tempTopicsByPath[topicKey] = new List<TopicInfo> { topic };
-                    }
+                    tempChildrenLookup[dataBrowserSectionName].Add(topic.Topic);
+                    tempTopicsByPath[topicKey] = new List<TopicInfo> { topic };
                 }
-                else
+            }
+            else
+            {
+                // Build nested folder structure based on topic path segments
+                string currentPath = dataBrowserSectionName;
+                
+                for (int i = 0; i < topicParts.Length; i++)
                 {
-                    // Build nested folder structure based on topic path segments
-                    string currentPath = sourcePath;
+                    var part = topicParts[i];
+                    var parentPath = currentPath;
+                    currentPath = $"{currentPath}/{part}";
                     
-                    for (int i = 0; i < topicParts.Length; i++)
+                    // Initialize path structures if they don't exist
+                    if (!tempTopicsByPath.ContainsKey(currentPath))
+                        tempTopicsByPath[currentPath] = new List<TopicInfo>();
+                    
+                    if (!tempChildrenLookup.ContainsKey(parentPath))
+                        tempChildrenLookup[parentPath] = new List<string>();
+                    
+                    // Add this part as a child of the parent path
+                    if (!tempChildrenLookup[parentPath].Contains(part))
+                        tempChildrenLookup[parentPath].Add(part);
+                    
+                    // If this is the final segment, store the actual topic data
+                    if (i == topicParts.Length - 1)
                     {
-                        var part = topicParts[i];
-                        var parentPath = currentPath;
-                        currentPath = $"{currentPath}/{part}";
-                        
-                        // Initialize path structures if they don't exist
-                        if (!tempTopicsByPath.ContainsKey(currentPath))
-                            tempTopicsByPath[currentPath] = new List<TopicInfo>();
-                        
-                        if (!tempChildrenLookup.ContainsKey(parentPath))
-                            tempChildrenLookup[parentPath] = new List<string>();
-                        
-                        // Add this part as a child of the parent path
-                        if (!tempChildrenLookup[parentPath].Contains(part))
-                            tempChildrenLookup[parentPath].Add(part);
-                        
-                        // If this is the final segment, store the actual topic data
-                        if (i == topicParts.Length - 1)
-                        {
-                            tempTopicsByPath[currentPath].Add(topic);
-                        }
+                        tempTopicsByPath[currentPath].Add(topic);
                     }
                 }
             }
         }
 
-        // Now build the actual node structure from the temporary hierarchical data
-        foreach (var sourceGroup in topicsBySourceType)
+        // Build the root-level nodes directly (no source type grouping)
+        if (tempChildrenLookup.ContainsKey(dataBrowserSectionName))
         {
-            var sourceType = sourceGroup.Key;
-            var sourcePath = $"{dataBrowserSectionName}/{sourceType}";
-            
-            var sourceNode = BuildDataBrowserNode(sourceType ?? "Unknown", sourcePath, tempChildrenLookup, tempTopicsByPath, currentExpansionState);
-            if (sourceNode != null && (sourceNode.Children.Any() || sourceNode.Topic != null))
+            var rootChildNames = tempChildrenLookup[dataBrowserSectionName];
+            foreach (var childName in rootChildNames)
             {
-                DataBrowserNodes.Add(sourceNode);
+                var childPath = $"{dataBrowserSectionName}/{childName}";
+                var childNode = BuildDataBrowserNode(childName, childPath, tempChildrenLookup, tempTopicsByPath, currentExpansionState);
+                if (childNode != null)
+                {
+                    DataBrowserNodes.Add(childNode);
+                }
             }
         }
     }
@@ -797,9 +747,9 @@
     {
         try
         {
-            // Use the topic path under the source type folder in Data Browser
+            // Use the topic path directly under Data Browser (no source type grouping)
             const string dataBrowserSectionName = "📊 Data Browser";
-            SelectedNodePath = $"{dataBrowserSectionName}/{topic.SourceType}/{topic.Topic}";
+            SelectedNodePath = $"{dataBrowserSectionName}/{topic.Topic}";
             
             // First invoke the callback to update the parent component
             await OnTopicSelected.InvokeAsync(topic);

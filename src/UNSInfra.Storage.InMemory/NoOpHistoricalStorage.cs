@@ -16,6 +16,12 @@ public class NoOpHistoricalStorage : IHistoricalStorage
         return Task.CompletedTask;
     }
 
+    public Task StoreBulkAsync(IEnumerable<DataPoint> dataPoints)
+    {
+        // No-op: Discard all data points
+        return Task.CompletedTask;
+    }
+
     public Task<IEnumerable<DataPoint>> GetHistoryAsync(string topic, DateTime from, DateTime to)
     {
         // No-op: Return empty collection

@@ -96,6 +96,9 @@ builder.Services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
 // Add event-driven services for better performance
 builder.Services.AddEventDrivenServices();
 
+// Add high-performance data ingestion pipeline (Phase 2 optimization)
+builder.Services.AddHighPerformanceDataIngestion();
+
 // Event-driven background service moved to ConnectionSDK system
 // builder.Services.AddHostedService<UNSInfra.UI.Services.EventDrivenDataIngestionBackgroundService>();
 

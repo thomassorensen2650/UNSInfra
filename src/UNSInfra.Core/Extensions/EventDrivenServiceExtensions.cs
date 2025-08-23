@@ -2,6 +2,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using UNSInfra.Services.Events;
 using UNSInfra.Services.TopicBrowser;
+using UNSInfra.Services.UI;
 
 namespace UNSInfra.Extensions;
 
@@ -18,9 +19,15 @@ public static class EventDrivenServiceExtensions
         // Register event bus as singleton for high performance
         services.AddSingleton<IEventBus, InMemoryEventBus>();
         
-        // Replace the standard topic browser service with the event-driven version
-        services.AddSingleton<EventDrivenTopicBrowserService>();
-        services.AddSingleton<ITopicBrowserService>(provider => provider.GetRequiredService<EventDrivenTopicBrowserService>());
+        // Register the high-performance cached topic browser service
+        services.AddSingleton<CachedTopicBrowserService>();
+        services.AddSingleton<ITopicBrowserService>(provider => provider.GetRequiredService<CachedTopicBrowserService>());
+        
+        // Register batched UI update service for better performance
+        services.AddSingleton<BatchedUIUpdateService>();
+        
+        // Register background service to initialize the cache on startup
+        services.AddHostedService<TopicCacheInitializationService>();
         
         return services;
     }

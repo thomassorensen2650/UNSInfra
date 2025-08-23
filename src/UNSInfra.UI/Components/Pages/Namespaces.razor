@@ -4,10 +4,13 @@
 @using UNSInfra.Repositories
 @using UNSInfra.Services
 @using UNSInfra.Services.TopicBrowser
+@using UNSInfra.Services.TopicBrowser.Events
+@using UNSInfra.Services.UI
 @inject INamespaceConfigurationRepository NamespaceRepository
 @inject IHierarchyConfigurationRepository HierarchyRepository
 @inject INamespaceStructureService NamespaceStructureService
-@inject ITopicBrowserService TopicBrowserService
+@inject CachedTopicBrowserService CachedTopicBrowserService
+@inject BatchedUIUpdateService BatchedUIUpdateService
 @inject ITopicConfigurationRepository TopicConfigurationRepository
 @inject ITopicConfigurationNotificationService NotificationService
 @inject IJSRuntime JSRuntime
@@ -243,6 +246,12 @@
         // Subscribe to topic configuration changes
         NotificationService.TopicConfigurationChanged += OnTopicConfigurationChanged;
         
+        // Subscribe to cached service topic structure changes
+        CachedTopicBrowserService.TopicStructureChanged += OnCachedTopicStructureChanged;
+        
+        // Subscribe to batched UI updates
+        BatchedUIUpdateService.UpdateBatchReady += OnUIUpdateBatchReady;
+        
         await LoadNamespaces();
         await LoadTopics();
     }
@@ -267,7 +276,8 @@
         
         try
         {
-            var topics = await TopicBrowserService.GetLatestTopicStructureAsync();
+            // Use cached service for better performance
+            var topics = await CachedTopicBrowserService.GetLatestTopicStructureAsync();
             allTopics = topics.ToList();
         }
         catch (Exception ex)
@@ -356,8 +366,8 @@
                     };
                 }
                 
-                // Save the configuration via TopicBrowserService to trigger events
-                await TopicBrowserService.UpdateTopicConfigurationAsync(config);
+                // Save the configuration via CachedTopicBrowserService to trigger events
+                await CachedTopicBrowserService.UpdateTopicConfigurationAsync(config);
                 
                 // Update the in-memory topic as well
                 topic.NSPath = selectedNamespacePath;
@@ -403,30 +413,69 @@
     {
         if (_disposed) return;
         
+        Logger.LogDebug("Topic configuration changed: {TopicName} - {ChangeType}", e.TopicName, e.ChangeType);
+        
+        // Schedule a batched UI update instead of immediate refresh
+        BatchedUIUpdateService.ScheduleUpdate("namespaces-tree", UIUpdateType.TopicTreeRefresh, 
+            new Dictionary<string, object> 
+            { 
+                { "reason", "topic_configuration_changed" },
+                { "topic_name", e.TopicName },
+                { "change_type", e.ChangeType.ToString() }
+            });
+    }
+    
+    private async void OnCachedTopicStructureChanged(object? sender, TopicStructureChangedEventArgs e)
+    {
+        if (_disposed) return;
+        
+        Logger.LogDebug("Cached topic structure changed in Namespaces - scheduling UI update");
+        
+        // Schedule a batched UI update
+        BatchedUIUpdateService.ScheduleUpdate("namespaces-tree", UIUpdateType.TopicTreeRefresh, 
+            new Dictionary<string, object> 
+            { 
+                { "reason", "cached_structure_changed" },
+                { "topics_affected", e.AffectedTopics.Count() }
+            });
+    }
+    
+    private async void OnUIUpdateBatchReady(object? sender, UIUpdateBatchEventArgs e)
+    {
+        if (_disposed) return;
+        
+        // Check if this batch contains updates for our component
+        var relevantUpdates = e.Updates.Where(u => u.ComponentId == "namespaces-tree").ToList();
+        if (!relevantUpdates.Any()) return;
+        
+        Logger.LogDebug("Processing UI update batch with {Count} updates for Namespaces", relevantUpdates.Count);
+        
         try
         {
-            Logger.LogDebug("Topic configuration changed: {TopicName} - {ChangeType}", e.TopicName, e.ChangeType);
-            
-            // Refresh topics and tree when configurations change
-            await LoadTopics();
-            if (treeEditor != null)
+            await InvokeAsync(async () =>
             {
-                await treeEditor.RefreshTree();
-            }
-            
-            // Update UI
-            await InvokeAsync(StateHasChanged);
+                // Refresh topics and tree when configurations change
+                await LoadTopics();
+                if (treeEditor != null)
+                {
+                    await treeEditor.RefreshTree();
+                }
+                StateHasChanged();
+            });
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Error handling topic configuration change");
+            Logger.LogError(ex, "Error processing UI update batch for Namespaces");
         }
     }
 
     public void Dispose()
     {
-        // Unsubscribe from events before disposing
-        NotificationService.TopicConfigurationChanged -= OnTopicConfigurationChanged;
         _disposed = true;
+        
+        // Unsubscribe from all events before disposing
+        NotificationService.TopicConfigurationChanged -= OnTopicConfigurationChanged;
+        CachedTopicBrowserService.TopicStructureChanged -= OnCachedTopicStructureChanged;
+        BatchedUIUpdateService.UpdateBatchReady -= OnUIUpdateBatchReady;
     }
 }

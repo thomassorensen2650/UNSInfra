@@ -56,6 +56,51 @@ public class SQLiteHistoricalStorage : IHistoricalStorage
     }
 
     /// <inheritdoc />
+    public async Task StoreBulkAsync(IEnumerable<DataPoint> dataPoints)
+    {
+        var dataPointsList = dataPoints.ToList();
+        if (dataPointsList.Count == 0) return;
+
+        const int maxRetries = 3;
+        const int batchSize = 1000; // Process in batches to avoid memory issues
+        
+        for (int attempt = 1; attempt <= maxRetries; attempt++)
+        {
+            try
+            {
+                using var context = _contextFactory.CreateDbContext();
+                
+                // Process in batches for better performance
+                for (int i = 0; i < dataPointsList.Count; i += batchSize)
+                {
+                    var batch = dataPointsList.Skip(i).Take(batchSize);
+                    var entities = batch.Select(dp => dp.ToEntity()).ToList();
+                    
+                    context.DataPoints.AddRange(entities);
+                }
+                
+                await context.SaveChangesAsync();
+                
+                _logger.LogDebug("Bulk stored {Count} data points to historical storage", dataPointsList.Count);
+                break; // Success, exit retry loop
+            }
+            catch (Exception ex) when (attempt < maxRetries && 
+                (ex.Message.Contains("database is locked") || ex.Message.Contains("disposed") || ex.Message.Contains("second operation")))
+            {
+                // Retry with exponential backoff for database concurrency issues
+                await Task.Delay(attempt * 100);
+                _logger.LogDebug("Retry {Attempt} for bulk storing historical data ({Count} points): {Message}", 
+                    attempt, dataPointsList.Count, ex.Message);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to bulk store {Count} data points to historical storage", dataPointsList.Count);
+                throw;
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<IEnumerable<DataPoint>> GetHistoryAsync(string topic, DateTime startTime, DateTime endTime)
     {
         using var context = _contextFactory.CreateDbContext();

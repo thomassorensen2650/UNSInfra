@@ -710,7 +710,7 @@ public class MqttConnection : BaseDataConnection
             var modelInfo = await BuildModelInfoAsync(node, hierarchyService);
             
             // Create MQTT topic for the model
-            var modelTopic = node.FullPath + output.ModelTopicSuffix;
+            var modelTopic = node.FullPath + "/" + output.ModelTopicSuffix;
             
             // Serialize to JSON
             var jsonPayload = JsonSerializer.Serialize(modelInfo, new JsonSerializerOptions

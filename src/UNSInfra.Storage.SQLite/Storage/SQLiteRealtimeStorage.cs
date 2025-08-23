@@ -136,6 +136,12 @@ public class SQLiteRealtimeStorage : IRealtimeStorage
         }
     }
 
+    /// <inheritdoc />
+    public Task<IEnumerable<string>> GetAllTopicsAsync()
+    {
+        return Task.FromResult(_latestValues.Keys.AsEnumerable());
+    }
+
     /// <summary>
     /// Loads the latest values from the database into memory on startup.
     /// </summary>
