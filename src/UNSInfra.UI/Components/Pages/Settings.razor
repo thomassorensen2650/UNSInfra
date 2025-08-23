@@ -1375,6 +1375,7 @@
         {
             connectionConfig[fieldName] = value;
         }
+        StateHasChanged(); // Ensure UI updates immediately
     }
     
     private int? ParseNumber(string? value)
@@ -1387,21 +1388,15 @@
 
     private async Task SaveConnectionAsync()
     {
-        if (selectedConnectionType == null || string.IsNullOrWhiteSpace(editingConnection.Name))
+        if (string.IsNullOrWhiteSpace(editingConnection.Name))
         {
             return;
         }
 
         try
         {
-            // Create the strongly-typed connection configuration
-            var typedConfig = selectedConnectionType.CreateDefaultConnectionConfiguration();
-            
-            // Map the dictionary values to the typed configuration
-            MapDictionaryToObject(connectionConfig, typedConfig);
-            
-            // Set the strongly-typed connection config object
-            editingConnection.ConnectionConfig = typedConfig;
+            // editingConnection.ConnectionConfig is already up-to-date from the modal
+            // No need for dictionary mapping - the modal keeps it current via OnConnectionConfigChanged
             
             // Create or update the connection using ConnectionManager
             bool success;
@@ -1443,15 +1438,24 @@
     {
         try
         {
+            Logger.LogInformation("UpdateConnectionAsync called for connection {ConnectionId} ({ConnectionName})", config.Id, config.Name);
+            Logger.LogInformation("Connection config type: {ConfigType}", config.ConnectionConfig?.GetType().Name ?? "null");
+            
             // First update in the repository
+            Logger.LogInformation("Saving connection to repository...");
             await ConnectionConfigurationRepository.SaveConnectionAsync(config);
+            Logger.LogInformation("Successfully saved connection to repository");
             
             // Check if the connection is currently active in the ConnectionManager
-            var isActive = ConnectionManager.GetActiveConnectionIds().Contains(config.Id);
+            var activeIds = ConnectionManager.GetActiveConnectionIds();
+            var isActive = activeIds.Contains(config.Id);
+            Logger.LogInformation("Connection is active: {IsActive}. Active connections: [{ActiveIds}]", 
+                isActive, string.Join(", ", activeIds));
             
             if (isActive)
             {
                 // If the connection is active, we need to restart it with the new configuration
+                Logger.LogInformation("Restarting active connection...");
                 // Stop the existing connection
                 await ConnectionManager.StopConnectionAsync(config.Id);
                 await ConnectionManager.RemoveConnectionAsync(config.Id);
@@ -1462,12 +1466,16 @@
                 {
                     Logger.LogInformation("Active connection {ConnectionId} updated and restarted successfully", config.Id);
                 }
+                else
+                {
+                    Logger.LogError("Failed to restart active connection {ConnectionId}", config.Id);
+                }
                 return success;
             }
             else
             {
                 // Connection is not active, just update the configuration in memory
-                Logger.LogInformation("Inactive connection {ConnectionId} configuration updated", config.Id);
+                Logger.LogInformation("Inactive connection {ConnectionId} configuration updated successfully", config.Id);
                 return true;
             }
         }
@@ -1478,73 +1486,12 @@
         }
     }
 
-    private void MapDictionaryToObject(Dictionary<string, object> source, object target)
-    {
-        var targetType = target.GetType();
-        
-        foreach (var kvp in source)
-        {
-            var property = targetType.GetProperty(kvp.Key);
-            if (property != null && property.CanWrite)
-            {
-                try
-                {
-                    var value = kvp.Value;
-                    
-                    // Convert the value to the target property type
-                    if (value != null)
-                    {
-                        var targetPropertyType = property.PropertyType;
-                        
-                        // Handle nullable types
-                        if (targetPropertyType.IsGenericType && targetPropertyType.GetGenericTypeDefinition() == typeof(Nullable<>))
-                        {
-                            targetPropertyType = Nullable.GetUnderlyingType(targetPropertyType)!;
-                        }
-                        
-                        // Convert value to the correct type
-                        object? convertedValue = null;
-                        
-                        if (targetPropertyType == typeof(string))
-                        {
-                            convertedValue = value.ToString();
-                        }
-                        else if (targetPropertyType == typeof(int))
-                        {
-                            convertedValue = Convert.ToInt32(value);
-                        }
-                        else if (targetPropertyType == typeof(bool))
-                        {
-                            convertedValue = Convert.ToBoolean(value);
-                        }
-                        else if (targetPropertyType == typeof(double))
-                        {
-                            convertedValue = Convert.ToDouble(value);
-                        }
-                        else if (targetPropertyType.IsEnum)
-                        {
-                            convertedValue = Enum.Parse(targetPropertyType, value.ToString()!);
-                        }
-                        else
-                        {
-                            // Try direct assignment for other types
-                            convertedValue = value;
-                        }
-                        
-                        property.SetValue(target, convertedValue);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Logger.LogWarning(ex, "Failed to set property {Property} to value {Value}", kvp.Key, kvp.Value);
-                }
-            }
-        }
-    }
 
     // Input Configuration Methods (ConnectionSDK)
     private void ShowInputModal(string? connectionId = null)
     {
+        Logger.LogInformation("ShowInputModal called with connectionId: {ConnectionId}", connectionId ?? "null");
+        
         if (string.IsNullOrEmpty(connectionId))
         {
             Logger.LogWarning("ShowInputModal called with null or empty connectionId");
@@ -1559,6 +1506,8 @@
             return;
         }
 
+        Logger.LogInformation("Found connection: {ConnectionName} (Type: {ConnectionType})", connection.Name, connection.ConnectionType);
+
         // Get the connection descriptor to create input configuration
         var descriptor = ConnectionRegistry.GetDescriptor(connection.ConnectionType);
         if (descriptor == null)
@@ -1567,62 +1516,91 @@
             return;
         }
 
+        Logger.LogInformation("Found descriptor: {DescriptorName}, SupportsInputs: {SupportsInputs}", descriptor.DisplayName, descriptor.SupportsInputs);
+
         // Check if the connection type supports inputs
         if (!descriptor.SupportsInputs)
         {
+            Logger.LogWarning("Connection type '{ConnectionType}' does not support inputs", connection.ConnectionType);
             JSRuntime.InvokeVoidAsync("alert", $"Connection type '{descriptor.DisplayName}' does not support inputs.");
             return;
         }
 
-        // Create a concrete input configuration based on connection type
-        InputOutputConfiguration? inputConfig = connection.ConnectionType.ToLower() switch
-        {
-            "socketio" => new SocketIOInputConfiguration
-            {
-                Id = Guid.NewGuid().ToString(),
-                Name = $"New {descriptor.DisplayName} Input",
-                ConnectionId = connectionId,
-                IsEnabled = true,
-                EventNames = new List<string> { "data", "update" }
-            },
-            // Add other connection types here as needed
-            _ => null
-        };
-
-        if (inputConfig == null)
-        {
-            JSRuntime.InvokeVoidAsync("alert", $"Input configuration not yet supported for connection type '{descriptor.DisplayName}'. Coming soon!");
-            return;
-        }
+        // Use the ConnectionSDK descriptor to create a default input configuration
+        var inputConfig = descriptor.CreateDefaultInputConfiguration();
+        Logger.LogInformation("Created default input configuration: {ConfigType}", inputConfig?.GetType().Name ?? "null");
         
+        //EditInputOutputConfiguration((dynamic)inputConfig, true);
+
+        //return;
         // Initialize the editing state
         selectedConnectionType = descriptor;
         currentConnectionId = connectionId;
         editingInputOutputConfig = inputConfig;
         isEditingInput = true;
         showInputOutputModal = true;
+        
+        // ConnectionDescriptor
+        
+        
+        Logger.LogInformation("Modal state set: showInputOutputModal={ShowModal}, isEditingInput={IsEditingInput}", showInputOutputModal, isEditingInput);
         StateHasChanged();
     }
 
     private void ShowOutputModal(string? connectionId = null)
     {
-        // For now, outputs are not implemented in the new ConnectionSDK system
-        JSRuntime.InvokeVoidAsync("alert", "Output configuration coming soon with ConnectionSDK!");
-        return;
+        Logger.LogInformation("ShowOutputModal called with connectionId: {ConnectionId}", connectionId ?? "null");
+        
+        if (string.IsNullOrEmpty(connectionId))
+        {
+            Logger.LogWarning("ShowOutputModal called with null or empty connectionId");
+            return;
+        }
+
+        // Find the connection configuration
+        var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == connectionId);
+        if (connection == null)
+        {
+            Logger.LogWarning("Connection not found for ID: {ConnectionId}", connectionId);
+            return;
+        }
+
+        Logger.LogInformation("Found connection: {ConnectionName} (Type: {ConnectionType})", connection.Name, connection.ConnectionType);
+
+        // Get the connection descriptor to create output configuration - FIXED: Use ConnectionRegistry like ShowInputModal
+        var descriptor = ConnectionRegistry.GetDescriptor(connection.ConnectionType);
+        if (descriptor == null)
+        {
+            Logger.LogWarning("Connection descriptor not found for type: {ConnectionType}", connection.ConnectionType);
+            return;
+        }
+
+        Logger.LogInformation("Found descriptor: {DescriptorName}, SupportsOutputs: {SupportsOutputs}", descriptor.DisplayName, descriptor.SupportsOutputs);
+
+        // Check if the connection type supports outputs
+        if (!descriptor.SupportsOutputs)
+        {
+            Logger.LogWarning("Connection type '{ConnectionType}' does not support outputs", connection.ConnectionType);
+            JSRuntime.InvokeVoidAsync("alert", $"Connection type '{descriptor.DisplayName}' does not support outputs.");
+            return;
+        }
+
+        // Use the ConnectionSDK descriptor to create a default output configuration
+        var outputConfig = descriptor.CreateDefaultOutputConfiguration();
+        Logger.LogInformation("Created default output configuration: {ConfigType}", outputConfig?.GetType().Name ?? "null");
+        
+        // Initialize the editing state
+        selectedConnectionType = descriptor;
+        currentConnectionId = connectionId;
+        editingInputOutputConfig = outputConfig;
+        isEditingInput = false;
+        showInputOutputModal = true;
+        
+        Logger.LogInformation("Modal state set: showInputOutputModal={ShowModal}, isEditingInput={IsEditingInput}", showInputOutputModal, isEditingInput);
+        StateHasChanged();
     }
-
-    // TODO: Replace with ConnectionSDK configuration saving
-    private async Task SaveConfiguration()
-    {
-        await JSRuntime.InvokeVoidAsync("alert", "Save configuration feature coming soon with ConnectionSDK!");
-    }
-
-    // TODO: Replace with ConnectionSDK toggle method
-
-    // TODO: Replace with ConnectionSDK test method
-
-    // TODO: Replace with ConnectionSDK delete method
-
+    
+    #region schema
     // Schema validation methods
     private async Task RefreshSchemas()
     {
@@ -1891,6 +1869,8 @@
         StateHasChanged();
     }
 
+    #endregion
+    
     // Import/Export Methods
     private async Task ExportConfiguration()
     {
@@ -2238,61 +2218,7 @@
     }
 
     
-    // Input/Output Configuration Management Methods
-    private void ShowAddInputForConnection(string connectionId)
-    {
-        var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == connectionId);
-        if (connection == null) return;
-
-        var descriptor = availableConnectionTypes?.FirstOrDefault(ct => ct.ConnectionType == connection.ConnectionType);
-        if (descriptor == null || !descriptor.SupportsInputs) return;
-
-        // Create new input configuration using the descriptor
-        var defaultInput = descriptor.CreateDefaultInputConfiguration();
-        if (defaultInput is InputConfiguration inputConfig)
-        {
-            inputConfig.ConnectionId = connectionId;
-            editingInputOutputConfig = inputConfig;
-        }
-        else
-        {
-            Logger.LogWarning("Failed to create input configuration for connection type {ConnectionType}", connection.ConnectionType);
-            return;
-        }
-        
-        currentConnectionId = connectionId;
-        isEditingInput = true;
-        showInputOutputModal = true;
-        StateHasChanged();
-    }
-    
-    private void ShowAddOutputForConnection(string connectionId)
-    {
-        var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == connectionId);
-        if (connection == null) return;
-
-        var descriptor = availableConnectionTypes?.FirstOrDefault(ct => ct.ConnectionType == connection.ConnectionType);
-        if (descriptor == null || !descriptor.SupportsOutputs) return;
-
-        // Create new output configuration using the descriptor
-        var defaultOutput = descriptor.CreateDefaultOutputConfiguration();
-        if (defaultOutput is OutputConfiguration outputConfig)
-        {
-            outputConfig.ConnectionId = connectionId;
-            editingInputOutputConfig = outputConfig;
-        }
-        else
-        {
-            Logger.LogWarning("Failed to create output configuration for connection type {ConnectionType}", connection.ConnectionType);
-            return;
-        }
-        
-        currentConnectionId = connectionId;
-        isEditingInput = false;
-        showInputOutputModal = true;
-        StateHasChanged();
-    }
-    
+    /*
     private void EditInputConfig(InputOutputConfiguration inputConfig)
     {
         editingInputOutputConfig = inputConfig;
@@ -2301,7 +2227,8 @@
         showInputOutputModal = true;
         StateHasChanged();
     }
-    
+    */
+    /*
     private void EditOutputConfig(InputOutputConfiguration outputConfig)
     {
         editingInputOutputConfig = outputConfig;
@@ -2310,7 +2237,7 @@
         showInputOutputModal = true;
         StateHasChanged();
     }
-    
+    */
     private void HideInputOutputModal()
     {
         showInputOutputModal = false;
@@ -2335,9 +2262,9 @@
             // Find the connection this input/output belongs to
             string configId = ((dynamic)editingInputOutputConfig).Id;
             ConnectionConfiguration? connection = null;
-            bool isInput = false;
+            bool isInput = isEditingInput; // Use the editing flag to determine type
             
-            // Search all connections to find which one contains this configuration
+            // First, try to find an existing configuration
             foreach (var conn in connectionConfigurations ?? new List<ConnectionConfiguration>())
             {
                 var hasInput = conn.Inputs.Any(i => ((dynamic)i).Id == configId);
@@ -2351,9 +2278,14 @@
                 }
             }
             
+            // If not found, this is a new configuration - use the current connection
             if (connection == null)
             {
-                throw new InvalidOperationException($"Connection containing configuration {configId} not found");
+                connection = connectionConfigurations?.FirstOrDefault(c => c.Id == currentConnectionId);
+                if (connection == null)
+                {
+                    throw new InvalidOperationException($"Connection {currentConnectionId} not found");
+                }
             }
             
             // Update the configuration in the connection's lists
@@ -2385,7 +2317,7 @@
             await JSRuntime.InvokeVoidAsync("alert", $"Error saving configuration: {ex.Message}");
         }
     }
-    
+    /*
     private async Task DeleteInputConfig(InputOutputConfiguration inputConfig)
     {
         try
@@ -2425,7 +2357,7 @@
             Logger.LogError(ex, "Error deleting output configuration {Id}", outputConfig.Id);
         }
     }
-
+*/
     // New Input/Output Modal Methods
 
     private async Task ToggleInputOutputConfiguration(dynamic config, bool isEnabled)
@@ -2555,11 +2487,28 @@
     /// </summary>
     private IConnectionDescriptor? GetConnectionDescriptorForCurrentConfiguration()
     {
+        // For new configurations, use the selectedConnectionType that was set in ShowInputModal/ShowOutputModal
+        if (selectedConnectionType != null)
+        {
+            return selectedConnectionType;
+        }
+        
+        // For existing configurations, try to find the connection
         if (editingInputOutputConfig == null) return null;
         
-        // Find which connection contains this input/output configuration
+        // If we have currentConnectionId set, use that (preferred approach)
+        if (!string.IsNullOrEmpty(currentConnectionId))
+        {
+            var connection = connectionConfigurations?.FirstOrDefault(c => c.Id == currentConnectionId);
+            if (connection != null)
+            {
+                return ConnectionRegistry.GetDescriptor(connection.ConnectionType);
+            }
+        }
+        
+        // Fallback: Find which connection contains this input/output configuration
         string configId = ((dynamic)editingInputOutputConfig).Id;
-        ConnectionConfiguration? connection = null;
+        ConnectionConfiguration? foundConnection = null;
         
         foreach (var conn in connectionConfigurations ?? new List<ConnectionConfiguration>())
         {
@@ -2569,14 +2518,15 @@
             
             if (hasInput || hasOutput)
             {
-                connection = conn;
+                foundConnection = conn;
                 break;
             }
         }
         
-        if (connection == null) return null;
+        if (foundConnection == null) return null;
         
-        return availableConnectionTypes?.FirstOrDefault(ct => ct.ConnectionType == connection.ConnectionType);
+        // FIXED: Use ConnectionRegistry instead of availableConnectionTypes
+        return ConnectionRegistry.GetDescriptor(foundConnection.ConnectionType);
     }
 
     public void Dispose()

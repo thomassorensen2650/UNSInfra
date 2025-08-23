@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.DependencyInjection;
 using MQTTnet;
 using MQTTnet.Client;
 using MQTTnet.Extensions.ManagedClient;
@@ -10,6 +11,8 @@ using UNSInfra.ConnectionSDK.Abstractions;
 using UNSInfra.ConnectionSDK.Base;
 using UNSInfra.ConnectionSDK.Models;
 using UNSInfra.Services.V1.Models;
+using UNSInfra.Services;
+using UNSInfra.Models.Namespace;
 
 namespace UNSInfra.Services.V1.Connections;
 
@@ -23,16 +26,20 @@ public class MqttConnection : BaseDataConnection
     private readonly Dictionary<string, MqttOutputConfiguration> _outputs = new();
     private readonly Dictionary<string, object?> _lastPublishedValues = new();
     private readonly Dictionary<string, DateTime> _lastPublishTimes = new();
+    private readonly Dictionary<string, DateTime> _lastModelPublishTimes = new();
 
     private IManagedMqttClient? _mqttClient;
     private bool _isConnected;
+    private Timer? _modelPublishTimer;
+    private readonly IServiceProvider _serviceProvider;
 
     /// <summary>
     /// Initializes a new MQTT connection
     /// </summary>
-    public MqttConnection(string connectionId, string name, ILogger<MqttConnection> logger) 
+    public MqttConnection(string connectionId, string name, ILogger<MqttConnection> logger, IServiceProvider serviceProvider) 
         : base(connectionId, name, logger)
     {
+        _serviceProvider = serviceProvider;
     }
 
     /// <inheritdoc />
@@ -140,6 +147,9 @@ public class MqttConnection : BaseDataConnection
                 // Subscribe to all configured inputs
                 await SubscribeToConfiguredInputs();
                 
+                // Start model publishing for any outputs that have it enabled
+                await StartModelPublishingForEnabledOutputs();
+                
                 return true;
             }
             else
@@ -155,31 +165,6 @@ public class MqttConnection : BaseDataConnection
         }
     }
 
-    /// <inheritdoc />
-    protected override async Task<bool> OnStopAsync(CancellationToken cancellationToken)
-    {
-        try
-        {
-            if (_mqttClient != null)
-            {
-                await _mqttClient.StopAsync();
-                _mqttClient.ApplicationMessageReceivedAsync -= OnMqttMessageReceived;
-                _mqttClient.ConnectedAsync -= OnMqttConnected;
-                _mqttClient.DisconnectedAsync -= OnMqttDisconnected;
-                _mqttClient.Dispose();
-                _mqttClient = null;
-            }
-
-            _isConnected = false;
-            Logger.LogInformation("Disconnected from MQTT broker");
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Logger.LogError(ex, "Error disconnecting from MQTT broker");
-            return false;
-        }
-    }
 
     /// <inheritdoc />
     protected override async Task<bool> OnConfigureInputAsync(object inputConfig, CancellationToken cancellationToken)
@@ -260,6 +245,12 @@ public class MqttConnection : BaseDataConnection
             lock (_lockObject)
             {
                 _outputs[config.Id] = config;
+            }
+
+            // Start model publishing if enabled
+            if (config.PublishModels && _isConnected)
+            {
+                StartModelPublishing(config);
             }
 
             return true;
@@ -627,5 +618,209 @@ public class MqttConnection : BaseDataConnection
         });
 
         return Encoding.UTF8.GetBytes(json);
+    }
+
+    private async Task StartModelPublishingForEnabledOutputs()
+    {
+        List<MqttOutputConfiguration> enabledOutputs;
+        lock (_lockObject)
+        {
+            enabledOutputs = _outputs.Values.Where(o => o.IsEnabled && o.PublishModels).ToList();
+        }
+
+        foreach (var output in enabledOutputs)
+        {
+            StartModelPublishing(output);
+        }
+    }
+
+    private void StartModelPublishing(MqttOutputConfiguration output)
+    {
+        try
+        {
+            Logger.LogInformation("Starting model publishing for output {OutputId} with interval {Interval}ms", 
+                output.Id, output.ModelPublishIntervalMs);
+
+            // Stop existing timer if any
+            _modelPublishTimer?.Dispose();
+            
+            // Create new timer
+            _modelPublishTimer = new Timer(
+                async _ => await PublishModelsAsync(output),
+                null,
+                TimeSpan.FromMilliseconds(1000), // Initial delay
+                TimeSpan.FromMilliseconds(output.ModelPublishIntervalMs));
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error starting model publishing timer");
+        }
+    }
+
+    private void StopModelPublishing()
+    {
+        _modelPublishTimer?.Dispose();
+        _modelPublishTimer = null;
+        Logger.LogInformation("Stopped model publishing timer");
+    }
+
+    private async Task PublishModelsAsync(MqttOutputConfiguration output)
+    {
+        if (!_isConnected || _mqttClient == null)
+            return;
+
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var namespaceService = scope.ServiceProvider.GetRequiredService<INamespaceStructureService>();
+            var hierarchyService = scope.ServiceProvider.GetRequiredService<IHierarchyService>();
+
+            // Get the complete UNS tree structure
+            var nsTree = await namespaceService.GetNamespaceStructureAsync();
+
+            foreach (var rootNode in nsTree)
+            {
+                await PublishModelForNodeAsync(output, rootNode, hierarchyService);
+            }
+
+            Logger.LogDebug("Published models for all UNS tree nodes");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error publishing model information");
+        }
+    }
+
+    private async Task PublishModelForNodeAsync(MqttOutputConfiguration output, NSTreeNode node, IHierarchyService hierarchyService)
+    {
+        try
+        {
+            // Check if we should publish model for this node
+            var modelKey = $"{output.Id}:model:{node.FullPath}";
+            if (_lastModelPublishTimes.TryGetValue(modelKey, out var lastPublish))
+            {
+                var timeSinceLastPublish = DateTime.UtcNow - lastPublish;
+                if (timeSinceLastPublish.TotalMilliseconds < output.ModelPublishIntervalMs)
+                {
+                    return; // Skip if too soon
+                }
+            }
+
+            // Build model information
+            var modelInfo = await BuildModelInfoAsync(node, hierarchyService);
+            
+            // Create MQTT topic for the model
+            var modelTopic = node.FullPath + output.ModelTopicSuffix;
+            
+            // Serialize to JSON
+            var jsonPayload = JsonSerializer.Serialize(modelInfo, new JsonSerializerOptions
+            {
+                PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+                WriteIndented = false
+            });
+
+            // Publish to MQTT
+            var message = new MqttApplicationMessageBuilder()
+                .WithTopic(modelTopic)
+                .WithPayload(jsonPayload)
+                .WithQualityOfServiceLevel((MqttQualityOfServiceLevel)output.QualityOfService)
+                .WithRetainFlag(output.Retain)
+                .Build();
+
+            await _mqttClient.EnqueueAsync(message);
+
+            // Update last publish time
+            _lastModelPublishTimes[modelKey] = DateTime.UtcNow;
+
+            Logger.LogDebug("Published model for node {NodePath} to topic {Topic}", 
+                node.FullPath, modelTopic);
+
+            // Recursively publish models for children
+            foreach (var child in node.Children)
+            {
+                await PublishModelForNodeAsync(output, child, hierarchyService);
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error publishing model for node {NodePath}", node.FullPath);
+        }
+    }
+
+    private async Task<object> BuildModelInfoAsync(NSTreeNode node, IHierarchyService hierarchyService)
+    {
+        var modelInfo = new Dictionary<string, object>
+        {
+            ["Type"] = node.NodeType == NSNodeType.HierarchyNode ? 
+                (node.HierarchyNode?.Name ?? "Unknown") : "Namespace",
+            ["Description"] = node.NodeType == NSNodeType.HierarchyNode ? 
+                (node.HierarchyNode?.Description ?? "Hierarchy node") : 
+                (node.Namespace?.Description ?? "Namespace"),
+            ["Metadata"] = new Dictionary<string, object>
+            {
+                ["NodeType"] = node.NodeType.ToString(),
+                ["CanHaveHierarchyChildren"] = node.CanHaveHierarchyChildren,
+                ["CanHaveNamespaceChildren"] = node.CanHaveNamespaceChildren,
+                ["FullPath"] = node.FullPath,
+                ["PublishedAt"] = DateTime.UtcNow.ToString("yyyy-MM-ddTHH:mm:ss.ffffffZ")
+            }
+        };
+
+        // Add hierarchy-specific metadata
+        if (node.NodeType == NSNodeType.HierarchyNode && node.HierarchyNode != null)
+        {
+            ((Dictionary<string, object>)modelInfo["Metadata"])["HierarchyNodeId"] = node.HierarchyNode.Id;
+            ((Dictionary<string, object>)modelInfo["Metadata"])["Order"] = node.HierarchyNode.Order;
+        }
+
+        // Add namespace-specific metadata
+        if (node.NodeType == NSNodeType.Namespace && node.Namespace != null)
+        {
+            ((Dictionary<string, object>)modelInfo["Metadata"])["NamespaceId"] = node.Namespace.Id;
+            ((Dictionary<string, object>)modelInfo["Metadata"])["NamespaceType"] = node.Namespace.Type.ToString();
+        }
+
+        // Add children information
+        if (node.Children.Any())
+        {
+            modelInfo["Children"] = node.Children.Select(child => new Dictionary<string, object>
+            {
+                ["Name"] = child.Name,
+                ["Type"] = child.NodeType == NSNodeType.HierarchyNode ? 
+                    (child.HierarchyNode?.Name ?? "Unknown") : "Namespace",
+                ["NodeType"] = child.NodeType.ToString(),
+                ["FullPath"] = child.FullPath
+            }).ToList();
+        }
+
+        return modelInfo;
+    }
+
+    protected override async Task<bool> OnStopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            // Stop model publishing timer
+            StopModelPublishing();
+
+            if (_mqttClient != null)
+            {
+                await _mqttClient.StopAsync();
+                _mqttClient.ApplicationMessageReceivedAsync -= OnMqttMessageReceived;
+                _mqttClient.ConnectedAsync -= OnMqttConnected;
+                _mqttClient.DisconnectedAsync -= OnMqttDisconnected;
+                _mqttClient.Dispose();
+                _mqttClient = null;
+            }
+
+            _isConnected = false;
+            Logger.LogInformation("Disconnected from MQTT broker");
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error disconnecting from MQTT broker");
+            return false;
+        }
     }
 }

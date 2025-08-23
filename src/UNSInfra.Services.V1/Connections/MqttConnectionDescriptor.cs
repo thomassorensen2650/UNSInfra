@@ -126,7 +126,8 @@ public class MqttConnectionDescriptor : BaseConnectionDescriptor
                 CreateGroup("basic", "Basic Settings", "Essential output configuration", 0),
                 CreateGroup("publishing", "Publishing Settings", "MQTT publishing options", 1),
                 CreateGroup("formatting", "Data Formatting", "How to format outgoing data", 2),
-                CreateGroup("filtering", "Data Filtering", "Which data to publish", 3)
+                CreateGroup("filtering", "Data Filtering", "Which data to publish", 3),
+                CreateGroup("model", "Model Publishing", "UNS tree model publishing options", 4, true, false)
             },
             Fields = new List<ConfigurationField>
             {
@@ -172,7 +173,16 @@ public class MqttConnectionDescriptor : BaseConnectionDescriptor
                     "Only publish when data values change", "filtering", 1),
                 
                 CreateField("MinPublishIntervalMs", "Min Publish Interval (ms)", ConfigurationFieldType.Number, false, 1000, 
-                    "Minimum time between publishes for the same topic", "filtering", 2)
+                    "Minimum time between publishes for the same topic", "filtering", 2),
+                
+                CreateField("PublishModels", "Publish Models", ConfigurationFieldType.Boolean, false, false, 
+                    "Publish UNS tree model information for each node", "model", 0),
+                
+                CreateField("ModelPublishIntervalMs", "Model Publish Interval (ms)", ConfigurationFieldType.Number, false, 30000, 
+                    "How often to publish model information (minimum 5000ms)", "model", 1),
+                
+                CreateField("ModelTopicSuffix", "Model Topic Suffix", ConfigurationFieldType.Text, false, "-model", 
+                    "Suffix added to node paths for model topics (e.g., 'Enterprise-model')", "model", 2)
             }
         };
     }
@@ -209,6 +219,6 @@ public class MqttConnectionDescriptor : BaseConnectionDescriptor
     public override IDataConnection CreateConnection(string connectionId, string name, IServiceProvider serviceProvider)
     {
         var logger = serviceProvider.GetRequiredService<ILogger<MqttConnection>>();
-        return new MqttConnection(connectionId, name, logger);
+        return new MqttConnection(connectionId, name, logger, serviceProvider);
     }
 }

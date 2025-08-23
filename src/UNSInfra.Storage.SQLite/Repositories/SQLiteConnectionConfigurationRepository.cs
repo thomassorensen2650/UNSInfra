@@ -186,9 +186,7 @@ public class SQLiteConnectionConfigurationRepository : IConnectionConfigurationR
                 PropertyNameCaseInsensitive = true
             };
 
-            var connectionConfig = string.IsNullOrEmpty(entity.ConnectionConfigJson) 
-                ? new object() 
-                : JsonSerializer.Deserialize<object>(entity.ConnectionConfigJson, options) ?? new object();
+            var connectionConfig = DeserializeConnectionConfigForType(entity.ConnectionConfigJson, entity.ConnectionType, options);
 
             var inputs = DeserializeInputsForConnectionType(entity.InputsJson, entity.ConnectionType, options);
             var outputs = DeserializeOutputsForConnectionType(entity.OutputsJson, entity.ConnectionType, options);
@@ -222,6 +220,30 @@ public class SQLiteConnectionConfigurationRepository : IConnectionConfigurationR
         {
             _logger.LogError(ex, "Failed to deserialize connection configuration {ConnectionId}", entity.Id);
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Deserializes connection configuration for a specific connection type to the correct strongly-typed object.
+    /// </summary>
+    private object DeserializeConnectionConfigForType(string connectionConfigJson, string connectionType, JsonSerializerOptions options)
+    {
+        if (string.IsNullOrEmpty(connectionConfigJson))
+            return new object();
+
+        try
+        {
+            return connectionType.ToLowerInvariant() switch
+            {
+                "mqtt" => JsonSerializer.Deserialize<UNSInfra.Services.V1.Models.MqttConnectionConfiguration>(connectionConfigJson, options) ?? new object(),
+                "socketio" => JsonSerializer.Deserialize<UNSInfra.Services.SocketIO.Models.SocketIOConnectionConfiguration>(connectionConfigJson, options) ?? new object(),
+                _ => JsonSerializer.Deserialize<object>(connectionConfigJson, options) ?? new object()
+            };
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to deserialize connection config for connection type {ConnectionType}", connectionType);
+            return new object();
         }
     }
 

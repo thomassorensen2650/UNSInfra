@@ -171,6 +171,22 @@ public class MqttOutputConfiguration
     /// </summary>
     [Range(0, int.MaxValue)]
     public int MinPublishIntervalMs { get; set; } = 1000;
+
+    /// <summary>
+    /// Whether to publish model information for UNS tree nodes
+    /// </summary>
+    public bool PublishModels { get; set; } = false;
+
+    /// <summary>
+    /// Interval for model publishing in milliseconds
+    /// </summary>
+    [Range(5000, int.MaxValue)]
+    public int ModelPublishIntervalMs { get; set; } = 30000; // 30 seconds default
+
+    /// <summary>
+    /// Topic suffix for model publishing (e.g., "-model" will create topics like "Enterprise-model")
+    /// </summary>
+    public string ModelTopicSuffix { get; set; } = "-model";
 }
 
 /// <summary>
