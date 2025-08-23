@@ -7,6 +7,7 @@ using UNSInfra.Models.Data;
 using UNSInfra.Models.Hierarchy;
 using UNSInfra.Repositories;
 using UNSInfra.Services.TopicBrowser.Events;
+using UNSInfra.Services.Events;
 using UNSInfra.Storage.Abstractions;
 
 namespace UNSInfra.Services.TopicBrowser;
@@ -20,6 +21,7 @@ public class CachedTopicBrowserService : ITopicBrowserService, IDisposable
     private readonly IServiceProvider _serviceProvider;
     private readonly ILogger<CachedTopicBrowserService> _logger;
     private readonly IConnectionManager? _connectionManager;
+    private readonly IEventBus? _eventBus;
     
     // Thread-safe caching - includes BOTH configured and discovered topics
     private readonly ConcurrentDictionary<string, TopicInfo> _topicCache = new();
@@ -56,6 +58,18 @@ public class CachedTopicBrowserService : ITopicBrowserService, IDisposable
         else
         {
             _logger.LogWarning("ConnectionManager not available - discovered topic cache will not be populated from data events");
+        }
+        
+        // Subscribe to event bus for topic auto-mapping updates
+        _eventBus = serviceProvider.GetService<IEventBus>();
+        if (_eventBus != null)
+        {
+            _eventBus.Subscribe<TopicAutoMappedEvent>(OnTopicAutoMapped);
+            _logger.LogDebug("Subscribed to TopicAutoMappedEvent for cache updates");
+        }
+        else
+        {
+            _logger.LogWarning("EventBus not available - cache will not be updated from auto-mapping events");
         }
     }
 
@@ -561,6 +575,152 @@ public class CachedTopicBrowserService : ITopicBrowserService, IDisposable
         }
     }
 
+    private async Task OnTopicAutoMapped(TopicAutoMappedEvent eventData)
+    {
+        try
+        {
+            _logger.LogDebug("Processing TopicAutoMappedEvent for topic: {Topic}", eventData.Topic);
+            
+            // Try to find the topic in either cache
+            TopicInfo? existingTopic = null;
+            bool isInConfiguredCache = _topicCache.TryGetValue(eventData.Topic, out existingTopic);
+            bool isInDiscoveredCache = false;
+            
+            if (!isInConfiguredCache)
+            {
+                isInDiscoveredCache = _discoveredTopicCache.TryGetValue(eventData.Topic, out existingTopic);
+            }
+            
+            if (existingTopic != null)
+            {
+                // Create updated topic with auto-mapping information
+                var updatedTopic = new TopicInfo
+                {
+                    Topic = existingTopic.Topic,
+                    Path = existingTopic.Path,
+                    IsActive = existingTopic.IsActive,
+                    SourceType = existingTopic.SourceType,
+                    CreatedAt = existingTopic.CreatedAt,
+                    ModifiedAt = DateTime.UtcNow,
+                    Description = existingTopic.Description,
+                    Metadata = new Dictionary<string, object>(existingTopic.Metadata)
+                    {
+                        ["AutoMapped"] = true,
+                        ["AutoMappingConfidence"] = eventData.Confidence,
+                        ["AutoMappingTimestamp"] = DateTime.UtcNow
+                    },
+                    NSPath = eventData.MappedNamespace, // This is the key update!
+                    UNSName = ExtractUNSNameFromNamespace(existingTopic.Topic)
+                };
+                
+                // Update the appropriate cache
+                if (isInConfiguredCache)
+                {
+                    _topicCache.TryUpdate(eventData.Topic, updatedTopic, existingTopic);
+                    _logger.LogDebug("Updated configured topic {Topic} with auto-mapping to namespace: {Namespace}", 
+                        eventData.Topic, eventData.MappedNamespace);
+                }
+                else
+                {
+                    _discoveredTopicCache.TryUpdate(eventData.Topic, updatedTopic, existingTopic);
+                    _logger.LogDebug("Updated discovered topic {Topic} with auto-mapping to namespace: {Namespace}", 
+                        eventData.Topic, eventData.MappedNamespace);
+                }
+                
+                // Save topic configuration to persistent storage
+                await SaveTopicConfigurationToPersistence(eventData, updatedTopic);
+                
+                // Update namespace index
+                await UpdateNamespaceIndexForTopic(updatedTopic);
+                
+                // Fire events to notify UI
+                TopicStructureChanged?.Invoke(this, new TopicStructureChangedEventArgs
+                {
+                    ChangeType = TopicChangeType.TopicsAutoMapped,
+                    AffectedTopics = new[] { eventData.Topic },
+                    AffectedNamespace = eventData.MappedNamespace,
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["AutoMapped"] = true,
+                        ["MappedNamespace"] = eventData.MappedNamespace,
+                        ["Confidence"] = eventData.Confidence
+                    }
+                });
+            }
+            else
+            {
+                _logger.LogWarning("Topic {Topic} not found in cache for auto-mapping", eventData.Topic);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error processing TopicAutoMappedEvent for topic: {Topic}", eventData.Topic);
+        }
+    }
+    
+    private string ExtractUNSNameFromNamespace(string namespacePath)
+    {
+        if (string.IsNullOrEmpty(namespacePath))
+            return string.Empty;
+            
+        var segments = namespacePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return segments.LastOrDefault() ?? string.Empty;
+    }
+    
+    private async Task SaveTopicConfigurationToPersistence(TopicAutoMappedEvent eventData, TopicInfo updatedTopic)
+    {
+        try
+        {
+            using var scope = _serviceProvider.CreateScope();
+            var repository = scope.ServiceProvider.GetRequiredService<ITopicConfigurationRepository>();
+            
+            // Create topic configuration for persistence
+            var configuration = new TopicConfiguration
+            {
+                Id = $"config_{eventData.Topic}",
+                Topic = eventData.Topic,
+                Path = updatedTopic.Path,
+                IsActive = updatedTopic.IsActive,
+                SourceType = updatedTopic.SourceType,
+                CreatedAt = updatedTopic.CreatedAt,
+                ModifiedAt = DateTime.UtcNow,
+                Description = updatedTopic.Description,
+                Metadata = updatedTopic.Metadata,
+                NSPath = eventData.MappedNamespace, // Persist the mapped namespace
+                UNSName = updatedTopic.UNSName,
+                IsVerified = false // Auto-mapped topics need verification
+            };
+            
+            await repository.SaveTopicConfigurationAsync(configuration);
+            _logger.LogDebug("Persisted auto-mapped topic configuration: {Topic} -> {Namespace}", 
+                eventData.Topic, eventData.MappedNamespace);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Failed to persist auto-mapped topic configuration for {Topic}", eventData.Topic);
+        }
+    }
+    
+    private async Task UpdateNamespaceIndexForTopic(TopicInfo topic)
+    {
+        if (string.IsNullOrEmpty(topic.NSPath))
+            return;
+            
+        // Add topic to namespace index for fast lookups
+        _namespaceIndex.AddOrUpdate(
+            topic.NSPath,
+            new List<TopicInfo> { topic },
+            (key, existingList) =>
+            {
+                var newList = new List<TopicInfo>(existingList);
+                // Remove any existing entries for this topic
+                newList.RemoveAll(t => t.Topic == topic.Topic);
+                // Add the updated topic
+                newList.Add(topic);
+                return newList;
+            });
+    }
+
     #endregion
 
     #region Legacy Event Methods (for compatibility)
@@ -624,6 +784,12 @@ public class CachedTopicBrowserService : ITopicBrowserService, IDisposable
         if (_connectionManager != null)
         {
             _connectionManager.DataReceived -= OnDataReceived;
+        }
+        
+        // Unsubscribe from event bus events
+        if (_eventBus != null)
+        {
+            _eventBus.Unsubscribe<TopicAutoMappedEvent>(OnTopicAutoMapped);
         }
         
         _cacheLock?.Dispose();

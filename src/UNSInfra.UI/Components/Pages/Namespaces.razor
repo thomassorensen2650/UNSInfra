@@ -293,6 +293,17 @@
         
         selectedNamespacePath = namespacePath;
         
+        try
+        {
+            // Refresh topics to get the latest including newly discovered ones
+            var topics = await CachedTopicBrowserService.GetLatestTopicStructureAsync();
+            allTopics = topics.ToList();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error refreshing topics for namespace assignment");
+        }
+        
         // Get topics that are not yet assigned to namespaces for selection
         availableTopicsForNamespace = allTopics.Where(t => string.IsNullOrEmpty(t.NSPath)).ToList();
         selectedTopicsForNamespace.Clear();

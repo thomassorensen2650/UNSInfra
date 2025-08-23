@@ -27,7 +27,7 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
     
     // Performance settings
     private readonly TimeSpan _processingInterval = TimeSpan.FromSeconds(2); // Process every 2 seconds
-    private readonly int _maxBatchSize = 50; // Process up to 50 topics per batch
+    private readonly int _maxBatchSize = 500; // Process up to 50 topics per batch
     
     // Statistics
     private int _processedTopics = 0;

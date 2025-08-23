@@ -1,5 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using UNSInfra.Services.AutoMapping;
+using UNSInfra.Services.DataIngestion;
+using UNSInfra.Core.Services.Caching;
 
 namespace UNSInfra.Core.Extensions;
 
@@ -16,6 +18,13 @@ public static class ServiceCollectionExtensions
     public static IServiceCollection AddUNSInfrastructureCore(this IServiceCollection services)
     {
         // Old data ingestion services removed - moved to ConnectionSDK system
+        
+        // Register data storage service for persisting incoming data
+        services.AddHostedService<DataStorageBackgroundService>();
+        
+        // Register multi-level caching system
+        services.AddSingleton<MultiLevelCacheManager>();
+        services.AddHostedService<MultiLevelCacheManager>(provider => provider.GetRequiredService<MultiLevelCacheManager>());
         
         // Register auto topic mapping services
         services.AddAutoTopicMapping();

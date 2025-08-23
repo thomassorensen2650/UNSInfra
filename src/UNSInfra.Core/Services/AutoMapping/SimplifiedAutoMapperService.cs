@@ -157,21 +157,35 @@ public class SimplifiedAutoMapperService : IDisposable
     /// <summary>
     /// Extract potential namespace paths from a topic by removing source prefixes.
     /// Example: "socket/virtualfactory/Enterprise1/KPI/MyKPI" -> ["Enterprise1/KPI/MyKPI", "KPI/MyKPI", "MyKPI"]
+    /// Also handles cases like "Enterprise/Dallas/Line2/Edge" -> ["Enterprise/Dallas/Line2/Edge", "Dallas/Line2/Edge", "Line2/Edge", "Edge"]
     /// </summary>
     private List<string> ExtractCandidatePaths(string topic)
     {
-        var parts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries).SkipLast(1).ToArray();
+        var allParts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries).SkipLast(1).ToArray();
         var candidates = new List<string>();
-        
-        // Extract all possible paths starting from different points
-        // Skip the first part (connection type like "socket", "mqtt") and try various combinations
-        for (int i = 1; i < parts.Length; i++)
+        // Generate candidates with both full paths and paths without the last segment
+        // This handles both namespace-like paths and property-like paths
+        for (int skipFromStart = 0; skipFromStart < allParts.Length && skipFromStart < 3; skipFromStart++)
         {
-            var candidatePath = string.Join("/", parts.Skip(i));
-            if (!string.IsNullOrEmpty(candidatePath))
-            {
-                candidates.Add(candidatePath);
-            }
+            // Try full remaining path (for namespace matching like Enterprise/Dallas/Line2/Edge)
+            //if (skipFromStart < allParts.Length)
+            //{
+                var fullPath = string.Join("/", allParts.Skip(skipFromStart));
+                if (!string.IsNullOrEmpty(fullPath) && !candidates.Contains(fullPath))
+                {
+                    candidates.Add(fullPath);
+                }
+            //}
+            
+            // Try path without last segment (for property-like topics like socket/server/Enterprise/KPI/MyProperty)
+            //if (skipFromStart < allParts.Length - 1)
+            //{
+            //    var pathWithoutLast = string.Join("/", allParts.Skip(skipFromStart).SkipLast(1));
+            //    if (!string.IsNullOrEmpty(pathWithoutLast) && !candidates.Contains(pathWithoutLast)) 
+            //    {
+            //        candidates.Add(pathWithoutLast);
+            //    }
+            //}
         }
         
         return candidates;

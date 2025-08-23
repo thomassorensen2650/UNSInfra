@@ -113,6 +113,8 @@
 
     private RenderFragment RenderField(ConfigurationField field)
     {
+        var isDictionaryField = Configuration?.GetType().GetProperty(field.Name)?.PropertyType == typeof(Dictionary<string, string>);
+        
         return @<div class="col-md-6 mb-3">
             <label class="form-label">
                 @field.DisplayName
@@ -126,15 +128,30 @@
                 }
             </label>
             @RenderFieldInput(field)
+            @if (isDictionaryField)
+            {
+                <div class="form-text">
+                    <small class="text-muted">Format: <code>key=value</code>, one mapping per line. Example:<br/>
+                    <code>Enterprise=$.company<br/>Site=$.location.site</code>
+                    </small>
+                </div>
+            }
         </div>;
     }
 
     private RenderFragment RenderFieldInput(ConfigurationField field)
     {
         var currentValue = GetFieldValue(field.Name);
+        
+        // Special handling for dictionary fields
+        var isDictionaryField = Configuration?.GetType().GetProperty(field.Name)?.PropertyType == typeof(Dictionary<string, string>);
 
         return field.Type switch
         {
+            ConfigurationFieldType.Text when isDictionaryField => @<textarea class="form-control" rows="4" 
+                placeholder="@(field.Placeholder ?? "Enter key=value pairs, one per line")" required="@field.IsRequired"
+                @oninput="@(e => SetFieldValue(field.Name, e.Value?.ToString()))">@currentValue</textarea>,
+
             ConfigurationFieldType.Text => @<input type="text" class="form-control" value="@currentValue" 
                 placeholder="@field.Placeholder" required="@field.IsRequired"
                 @oninput="@(e => SetFieldValue(field.Name, e.Value?.ToString()))" />,
@@ -202,6 +219,11 @@
             {
                 return string.Join("\n", stringList);
             }
+            else if (value is Dictionary<string, string> stringDict)
+            {
+                // Convert dictionary to key=value format, one per line
+                return string.Join("\n", stringDict.Select(kvp => $"{kvp.Key}={kvp.Value}"));
+            }
             
             return value;
         }
@@ -226,6 +248,29 @@
                                           .Where(line => !string.IsNullOrEmpty(line))
                                           .ToList();
                     property.SetValue(Configuration, lines);
+                }
+                else if (property.PropertyType == typeof(Dictionary<string, string>) && value is string dictStringValue)
+                {
+                    var dictionary = new Dictionary<string, string>();
+                    var lines = dictStringValue.Split(new[] { '\n', '\r' }, StringSplitOptions.RemoveEmptyEntries);
+                    foreach (var line in lines)
+                    {
+                        var trimmedLine = line.Trim();
+                        if (!string.IsNullOrEmpty(trimmedLine) && trimmedLine.Contains('='))
+                        {
+                            var parts = trimmedLine.Split(new[] { '=' }, 2); // Split into max 2 parts
+                            if (parts.Length == 2)
+                            {
+                                var key = parts[0].Trim();
+                                var val = parts[1].Trim();
+                                if (!string.IsNullOrEmpty(key))
+                                {
+                                    dictionary[key] = val;
+                                }
+                            }
+                        }
+                    }
+                    property.SetValue(Configuration, dictionary);
                 }
                 else if (property.PropertyType.IsEnum && value is string enumString)
                 {
