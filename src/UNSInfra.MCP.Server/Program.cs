@@ -26,7 +26,27 @@ builder.Logging.AddConsole(consoleLogOptions =>
 // Add UNSInfra Core services
 builder.Services.AddUNSInfrastructureCore();
 
-// Register configurable storage services
+// Add HTTP client for API calls to UI server
+builder.Services.AddHttpClient("UNSInfraAPI", client =>
+{
+    // Default to localhost, can be overridden via configuration
+    var apiBaseUrl = builder.Configuration.GetValue<string>("UNSInfra:ApiBaseUrl") ?? "http://localhost:5000";
+    client.BaseAddress = new Uri(apiBaseUrl);
+    client.DefaultRequestHeaders.Add("User-Agent", "UNSInfra-MCP-Server/1.0");
+});
+
+// Add GraphQL client for clean data access
+builder.Services.AddSingleton<GraphQL.Client.Abstractions.IGraphQLClient>(provider =>
+{
+    var httpClientFactory = provider.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.CreateClient("UNSInfraAPI");
+    var graphQLEndpoint = new Uri(httpClient.BaseAddress!, "/graphql");
+    
+    var graphQLClient = new GraphQL.Client.Http.GraphQLHttpClient(graphQLEndpoint.ToString(), new GraphQL.Client.Serializer.SystemTextJson.SystemTextJsonSerializer());
+    return graphQLClient;
+});
+
+// Register configurable storage services (kept for backward compatibility)
 builder.Services.AddConfigurableStorage(builder.Configuration);
 
 // Register additional required services
@@ -56,7 +76,7 @@ builder.Services.AddProductionSocketIOConnection();
 // Register SparkplugB decoder (if needed)
 builder.Services.AddSingleton<UNSInfra.Services.V1.SparkplugB.SparkplugBDecoder>();
 
-// Register MCP server
+// Register MCP server with GraphQL-powered tools
 builder.Services
     .AddMcpServer()
     .WithStdioServerTransport()

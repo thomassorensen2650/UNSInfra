@@ -61,6 +61,17 @@ builder.Logging.AddFilter("Microsoft.AspNetCore.SignalR.Internal.DefaultHubDispa
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
+// Add Web API controllers for MCP server integration
+builder.Services.AddControllers();
+
+// Add GraphQL server for clean API access
+builder.Services
+    .AddGraphQLServer()
+    .AddQueryType<UNSInfra.UI.GraphQL.Query>()
+    .AddType<UNSInfra.UI.GraphQL.Types.TopicType>()
+    .AddType<UNSInfra.UI.GraphQL.Types.SystemStatusType>()
+    .AddType<UNSInfra.UI.GraphQL.Types.ConnectionStatsType>();
+
 // Configure Blazor Server Circuit options for better stability
 builder.Services.Configure<Microsoft.AspNetCore.Components.Server.CircuitOptions>(options =>
 {
@@ -152,6 +163,12 @@ app.UseAntiforgery();
 app.MapStaticAssets();
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
+
+// Map Web API controllers
+app.MapControllers();
+
+// Map GraphQL endpoint
+app.MapGraphQL("/graphql");
 
 // Add health check endpoint for Docker containers
 app.MapGet("/health", () => Results.Ok(new { 

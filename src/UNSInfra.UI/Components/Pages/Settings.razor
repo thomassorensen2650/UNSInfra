@@ -564,7 +564,7 @@
                                 </div>
                                 <div class="card-body">
                                     <p class="card-text">
-                                        Export your complete UNS configuration including hierarchies, namespaces, and topic mappings to a JSON file.
+                                        Export your complete UNS configuration including connections, hierarchies, namespaces, and topic mappings to a JSON file.
                                     </p>
                                     
                                     @if (exportStatus.IsExporting)
@@ -1883,6 +1883,7 @@
             var topicConfigurations = await TopicConfigurationRepository.GetAllTopicConfigurationsAsync();
             var hierarchyConfigurations = await HierarchyConfigurationRepository.GetAllConfigurationsAsync();
             var namespaceConfigurations = await NamespaceConfigurationRepository.GetAllNamespaceConfigurationsAsync();
+            var connectionConfigurations = await ConnectionConfigurationRepository.GetAllConnectionsAsync(enabledOnly: false);
             var unsTreeStructure = await NamespaceStructureService.GetNamespaceStructureAsync();
 
             // Create export data structure
@@ -1891,9 +1892,10 @@
                 exportInfo = new
                 {
                     exportedAt = DateTime.UtcNow,
-                    version = "1.0.0",
+                    version = "1.5.0", // Updated version for ConnectionSDK support
                     description = "UNS Infrastructure Configuration Export",
-                    exportedBy = "UNS Infrastructure UI"
+                    exportedBy = "UNS Infrastructure UI",
+                    features = new[] { "ConnectionSDK", "AutoMapping", "Performance Monitoring" }
                 },
                 hierarchyConfigurations = hierarchyConfigurations.Select(h => new
                 {
@@ -1931,16 +1933,36 @@
                     nsPath = t.NSPath,
                     sourceType = t.SourceType,
                     isVerified = t.IsVerified,
+                    metadata = t.Metadata,
                     createdAt = t.CreatedAt,
                     modifiedAt = t.ModifiedAt
+                }).ToArray(),
+                connectionConfigurations = connectionConfigurations.Select(c => new
+                {
+                    id = c.Id,
+                    name = c.Name,
+                    description = c.Description,
+                    connectionType = c.ConnectionType,
+                    isEnabled = c.IsEnabled,
+                    autoStart = c.AutoStart,
+                    connectionConfig = c.ConnectionConfig, // Full connection configuration
+                    inputs = c.Inputs,
+                    outputs = c.Outputs,
+                    tags = c.Tags,
+                    metadata = c.Metadata,
+                    createdAt = c.CreatedAt,
+                    modifiedAt = c.ModifiedAt
                 }).ToArray(),
                 summary = new
                 {
                     totalHierarchyConfigurations = hierarchyConfigurations.Count(),
                     totalNamespaces = namespaceConfigurations.Count(),
                     totalTopicConfigurations = topicConfigurations.Count(),
+                    totalConnectionConfigurations = connectionConfigurations.Count(),
                     verifiedTopics = topicConfigurations.Count(t => t.IsVerified),
-                    unverifiedTopics = topicConfigurations.Count(t => !t.IsVerified)
+                    unverifiedTopics = topicConfigurations.Count(t => !t.IsVerified),
+                    enabledConnections = connectionConfigurations.Count(c => c.IsEnabled),
+                    autoStartConnections = connectionConfigurations.Count(c => c.AutoStart)
                 }
             };
 
@@ -1957,7 +1979,7 @@
             // Download the file
             await JSRuntime.InvokeVoidAsync("downloadFileFromString", fileName, json);
 
-            exportStatus = (false, $"Configuration exported successfully to {fileName}");
+            exportStatus = (false, $"Configuration exported successfully to {fileName} - {connectionConfigurations.Count()} connections, {topicConfigurations.Count()} topics, {hierarchyConfigurations.Count()} hierarchies, {namespaceConfigurations.Count()} namespaces");
         }
         catch (Exception ex)
         {
@@ -2035,9 +2057,11 @@
                 hierarchyImported = 0,
                 namespaceImported = 0,
                 topicsImported = 0,
+                connectionsImported = 0,
                 hierarchySkipped = 0,
                 namespaceSkipped = 0,
                 topicsSkipped = 0,
+                connectionsSkipped = 0,
                 errors = new List<string>()
             };
 
@@ -2197,8 +2221,132 @@
                 }
             }
 
-            var totalImported = importStats.hierarchyImported + importStats.namespaceImported + importStats.topicsImported;
-            var totalSkipped = importStats.hierarchySkipped + importStats.namespaceSkipped + importStats.topicsSkipped;
+            // Import connection configurations
+            if (importData.TryGetProperty("connectionConfigurations", out var connectionElement) && connectionElement.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var item in connectionElement.EnumerateArray())
+                {
+                    try
+                    {
+                        if (!item.TryGetProperty("id", out var idProp) || !item.TryGetProperty("name", out var nameProp) ||
+                            !item.TryGetProperty("connectionType", out var typeProp))
+                            continue;
+
+                        var id = idProp.GetString();
+                        var name = nameProp.GetString();
+                        var connectionType = typeProp.GetString();
+                        
+                        if (string.IsNullOrEmpty(id) || string.IsNullOrEmpty(name) || string.IsNullOrEmpty(connectionType))
+                            continue;
+
+                        var existing = await ConnectionConfigurationRepository.GetConnectionByIdAsync(id);
+                        if (existing != null && !overwriteExisting)
+                        {
+                            importStats = importStats with { connectionsSkipped = importStats.connectionsSkipped + 1 };
+                            continue;
+                        }
+
+                        var config = new ConnectionConfiguration
+                        {
+                            Id = id,
+                            Name = name,
+                            Description = item.TryGetProperty("description", out var desc) ? desc.GetString() : null,
+                            ConnectionType = connectionType,
+                            IsEnabled = item.TryGetProperty("isEnabled", out var enabled) ? enabled.GetBoolean() : true,
+                            AutoStart = item.TryGetProperty("autoStart", out var autoStart) ? autoStart.GetBoolean() : false,
+                            ConnectionConfig = new Dictionary<string, object>(),
+                            Inputs = new List<object>(),
+                            Outputs = new List<object>(),
+                            Tags = new List<string>(),
+                            Metadata = new Dictionary<string, object>(),
+                            CreatedAt = DateTime.UtcNow,
+                            ModifiedAt = DateTime.UtcNow
+                        };
+
+                        // Import connection configuration
+                        if (item.TryGetProperty("connectionConfig", out var configElement) && configElement.ValueKind == JsonValueKind.Object)
+                        {
+                            var configDict = new Dictionary<string, object>();
+                            foreach (var configProp in configElement.EnumerateObject())
+                            {
+                                object? value = configProp.Value.ValueKind switch
+                                {
+                                    JsonValueKind.String => configProp.Value.GetString(),
+                                    JsonValueKind.Number => configProp.Value.GetDecimal(),
+                                    JsonValueKind.True => true,
+                                    JsonValueKind.False => false,
+                                    _ => configProp.Value.GetRawText()
+                                };
+                                if (value != null)
+                                {
+                                    configDict[configProp.Name] = value;
+                                }
+                            }
+                            config.ConnectionConfig = configDict;
+                        }
+
+                        // Import inputs (as generic objects)
+                        if (item.TryGetProperty("inputs", out var inputsElement) && inputsElement.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var input in inputsElement.EnumerateArray())
+                            {
+                                config.Inputs.Add(JsonSerializer.Deserialize<object>(input.GetRawText()) ?? new object());
+                            }
+                        }
+
+                        // Import outputs (as generic objects)
+                        if (item.TryGetProperty("outputs", out var outputsElement) && outputsElement.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var output in outputsElement.EnumerateArray())
+                            {
+                                config.Outputs.Add(JsonSerializer.Deserialize<object>(output.GetRawText()) ?? new object());
+                            }
+                        }
+
+                        // Import tags
+                        if (item.TryGetProperty("tags", out var tagsElement) && tagsElement.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var tag in tagsElement.EnumerateArray())
+                            {
+                                if (tag.ValueKind == JsonValueKind.String)
+                                {
+                                    config.Tags.Add(tag.GetString() ?? "");
+                                }
+                            }
+                        }
+
+                        // Import metadata
+                        if (item.TryGetProperty("metadata", out var metadataElement) && metadataElement.ValueKind == JsonValueKind.Object)
+                        {
+                            foreach (var metaProp in metadataElement.EnumerateObject())
+                            {
+                                object? value = metaProp.Value.ValueKind switch
+                                {
+                                    JsonValueKind.String => metaProp.Value.GetString(),
+                                    JsonValueKind.Number => metaProp.Value.GetDecimal(),
+                                    JsonValueKind.True => true,
+                                    JsonValueKind.False => false,
+                                    _ => metaProp.Value.GetRawText()
+                                };
+                                if (value != null)
+                                {
+                                    config.Metadata[metaProp.Name] = value;
+                                }
+                            }
+                        }
+
+                        await ConnectionConfigurationRepository.SaveConnectionAsync(config);
+                        importStats = importStats with { connectionsImported = importStats.connectionsImported + 1 };
+                    }
+                    catch (Exception ex)
+                    {
+                        importStats.errors.Add($"Error importing connection item: {ex.Message}");
+                    }
+                }
+            }
+
+            var totalImported = importStats.hierarchyImported + importStats.namespaceImported + importStats.topicsImported + importStats.connectionsImported;
+            var totalSkipped = importStats.hierarchySkipped + importStats.namespaceSkipped + importStats.topicsSkipped + importStats.connectionsSkipped;
             
             var resultMessage = $"Import completed: {totalImported} items imported, {totalSkipped} skipped";
             if (importStats.errors.Any())

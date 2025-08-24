@@ -66,19 +66,44 @@ dotnet test src/UNSInfra.Services.V1.Tests/UNSInfra.Services.V1.Tests.csproj
 | **MQTT Data Ingestion** | Production MQTT client with SSL/TLS support | ✅ | ⚠️ | `UNSInfra.Services.V1.Tests/Mqtt/` |
 | **Sparkplug B Protocol** | Complete Sparkplug B message decoding | ✅ | ⚠️ | `UNSInfra.Services.V1.Tests/SparkplugB/` |
 | **Socket.IO Data Ingestion** | Real-time Socket.IO client integration | ⚠️ | ❌ | `UNSInfra.Services.SocketIO/` |
-| **Auto Topic Mapping** | Intelligent topic-to-namespace mapping | ✅ | ✅ | `UNSInfra.Core.Tests/Services/AutoMapping/` |
+| **Auto Topic Mapping** | Intelligent topic-to-namespace mapping with persistence | ✅ | ✅ | `UNSInfra.Core.Tests/Services/AutoMapping/` |
+| **High-Performance Caching** | Multi-level caching with L1/L2/L3 tiers and warming | ✅ | ⚠️ | `UNSInfra.Core/Services/Caching/` |
+| **Parallel Processing** | High-throughput parallel queue processing | ✅ | ⚠️ | `UNSInfra.Core/Services/Processing/` |
+| **Performance Monitoring** | Comprehensive system and application metrics | ✅ | ⚠️ | `UNSInfra.Core/Services/Monitoring/` |
 | **Schema Validation** | JSON schema validation for data quality | ✅ | ⚠️ | `UNSInfra.Core/Validation/` |
 | **Real-time Storage** | In-memory and persistent storage options | ✅ | ✅ | `UNSInfra.Storage.InMemory/`, `UNSInfra.Storage.SQLite/` |
 | **Historical Data** | Time-series data storage and querying | ✅ | ✅ | `UNSInfra.Storage.SQLite/` |
 | **Web UI** | Modern responsive Blazor Server interface | ❌ | ❌ | `UNSInfra.UI/` |
 | **Log Viewer** | Real-time log viewing with search | ❌ | ❌ | `UNSInfra.UI/Components/Pages/LogViewer.razor` |
-| **Configuration Management** | Dynamic service configuration | ⚠️ | ❌ | `UNSInfra.Core/Configuration/` |
+| **Configuration Management** | Dynamic service configuration with UI forms | ⚠️ | ❌ | `UNSInfra.Core/Configuration/` |
 | **Event-Driven Architecture** | Pub/sub messaging with background services | ✅ | ⚠️ | `UNSInfra.Core.Tests/Services/Events/` |
 
 **Legend:**
 - ✅ Complete coverage
 - ⚠️ Partial coverage or needs improvement
 - ❌ No coverage yet
+
+## 🆕 Recent Improvements (Latest Release)
+
+### Performance Optimizations
+- **Multi-Level Caching System**: Implemented L1 (hot), L2 (compressed), and L3 (cold storage) caching with automatic cache warming strategies for optimal performance
+- **Parallel Queue Processing**: Added high-throughput parallel processing with multiple lanes, priority queues, and adaptive load balancing
+- **Performance Monitoring**: Comprehensive system and application metrics collection with alerting and trend analysis
+
+### Auto-Mapping Enhancements
+- **Persistence Fix**: Auto-mapped topics now persist across application restarts via database storage
+- **Improved Algorithm**: Enhanced auto-mapping to handle both full topic paths and namespace-like structures
+- **Event-Driven Updates**: Real-time cache updates ensure immediate UI reflection of auto-mapping changes
+
+### UI/UX Improvements
+- **SocketIO Configuration**: Fixed dictionary field display in connection configuration forms with user-friendly key=value format
+- **Data Availability**: Resolved "no data available" issues in UNS tree and data browser
+- **Real-time Updates**: Enhanced topic discovery and display with proper event handling
+
+### System Reliability
+- **Event-Driven Architecture**: Improved event bus system with better subscription management
+- **Error Handling**: Enhanced error logging and recovery mechanisms
+- **Data Storage Pipeline**: Fixed missing data storage component in event processing chain
 
 ## 🏗️ Architecture Overview
 
@@ -93,8 +118,16 @@ graph TD
     D --> F[Topic Discovery]
     F --> G[Auto Mapping]
     G --> H[Namespace Structure]
+    
+    %% New Performance Components
+    C --> J[Multi-Level Cache]
+    D --> K[Parallel Queues]
+    K --> L[Performance Monitor]
+    
     E --> I[Web UI]
     H --> I
+    J --> I
+    L --> I
     
     subgraph "Data Sources"
         A1[MQTT Broker]
@@ -106,6 +139,16 @@ graph TD
         E1[Real-time Storage]
         E2[Historical Storage]
         E3[Configuration Storage]
+    end
+    
+    subgraph "Performance Layer"
+        J1[L1 Hot Cache]
+        J2[L2 Compressed]
+        J3[L3 Cold Storage]
+        K1[Processing Lanes]
+        K2[Priority Queues]
+        L1[System Metrics]
+        L2[Application Metrics]
     end
 ```
 
@@ -123,6 +166,9 @@ UNSInfra/
 │   │   │   ├── DataIngestion/            # Data ingestion abstractions
 │   │   │   ├── TopicBrowser/             # Topic discovery and management
 │   │   │   ├── AutoMapping/              # Auto topic-to-namespace mapping
+│   │   │   ├── Caching/                  # Multi-level caching system
+│   │   │   ├── Processing/               # Parallel queue processing
+│   │   │   ├── Monitoring/               # Performance monitoring
 │   │   │   └── Events/                   # Event-driven messaging
 │   │   ├── Validation/                   # Schema validation framework
 │   │   └── Repositories/                 # Data access abstractions
@@ -424,6 +470,24 @@ dotnet build --verbosity normal --configuration Release
 - [Configuration Reference](docs/configuration.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
+## 🔧 Common Issues & Solutions
+
+### Auto-Mapping Not Persisting
+**Issue**: Topics auto-map correctly but disappear after restart.
+**Solution**: Ensure `ITopicConfigurationRepository` is registered and database is accessible. Recent updates (v1.5) fixed this persistence issue.
+
+### "No Data Available" in UNS Tree
+**Issue**: Topics show up in data browser but not in UNS tree nodes.
+**Solution**: Recent fixes ensure proper event handling between topic discovery and UI updates. Restart application to apply fixes.
+
+### SocketIO Configuration Shows Dictionary Raw Type
+**Issue**: Path Mappings field shows `System.Collections.Generic.Dictionary`...
+**Solution**: Updated to v1.5 which provides user-friendly key=value format for dictionary fields.
+
+### Performance Issues with Large Topic Volumes
+**Issue**: System becomes slow with many topics.
+**Solution**: Enable the new multi-level caching system (automatically enabled in v1.5+) and parallel processing queues.
+
 ## 🔗 Related Technologies
 
 - **ISA-S95**: Manufacturing Operations Management standards
@@ -451,13 +515,25 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - [ ] Advanced analytics and dashboards
 - [ ] Multi-tenant support
 - [ ] Cloud deployment templates
+- [ ] Machine learning-based anomaly detection
 
-### Version 1.5
+### Version 1.5 ✅ (Recently Completed)
+- [x] **Performance optimization** - Multi-level caching, parallel processing
+- [x] **Auto-mapping persistence** - Topic mappings survive restarts
+- [x] **Enhanced UI forms** - Dictionary field support, better UX
+- [x] **Data pipeline fixes** - Resolved "no data available" issues
+- [x] **Performance monitoring** - Comprehensive metrics collection
 - [ ] REST API endpoints
 - [ ] Webhook support for external integrations
 - [ ] Advanced schema validation rules
-- [ ] Performance optimization
 - [ ] Comprehensive integration tests
+
+### Version 1.6 (Next Release)
+- [ ] Real-time dashboards and visualizations
+- [ ] Advanced alerting system with notification channels
+- [ ] OPC UA protocol support
+- [ ] Enhanced security with role-based access control
+- [ ] Distributed deployment support
 
 ---
 

@@ -8,7 +8,10 @@
     </PropertyGroup>
 
     <ItemGroup>
+      <PackageReference Include="GraphQL.Client" Version="6.0.2" />
+      <PackageReference Include="GraphQL.Client.Serializer.SystemTextJson" Version="6.0.2" />
       <PackageReference Include="Microsoft.Extensions.Hosting" Version="9.0.8" />
+      <PackageReference Include="Microsoft.Extensions.Http" Version="8.0.0" />
       <PackageReference Include="ModelContextProtocol" Version="0.3.0-preview.3" />
     </ItemGroup>
 
