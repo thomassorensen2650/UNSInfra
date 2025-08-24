@@ -2,26 +2,91 @@
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Configuration;
-using ModelContextProtocol.Server;
-using System.ComponentModel;
 using UNSInfra.Core.Extensions;
-using UNSInfra.Storage.InMemory.Extensions;
 using UNSInfra.Storage.SQLite.Extensions;
 using UNSInfra.Services.TopicDiscovery;
-using UNSInfra.Repositories;
-using UNSInfra.Storage.Abstractions;
 // using UNSInfra.Core.Services; // Removed - old data ingestion services
 using UNSInfra.Services;
 using UNSInfra.Extensions;
 using UNSInfra.Services.V1.Extensions;
 using UNSInfra.Services.SocketIO.Extensions;
+using Serilog;
+using Serilog.Events;
 
 var builder = Host.CreateApplicationBuilder(args);
-builder.Logging.AddConsole(consoleLogOptions =>
+
+// Build a temporary configuration to read logging settings
+var tempConfig = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: true)
+    .AddEnvironmentVariables()
+    .AddCommandLine(args)
+    .Build();
+
+// Get logging configuration values with defaults
+var loggingConfig = tempConfig.GetSection("UNSInfra:Logging");
+var filePath = loggingConfig["FilePath"] ?? "logs/uns-mcp-server-.log";
+var errorFilePath = loggingConfig["ErrorFilePath"] ?? "logs/uns-mcp-server-errors-.log";
+var retainedFileCount = int.Parse(loggingConfig["RetainedFileCountLimit"] ?? "30");
+var errorRetainedFileCount = int.Parse(loggingConfig["ErrorRetainedFileCountLimit"] ?? "90");
+var enableConsoleLogging = bool.Parse(loggingConfig["EnableConsoleLogging"] ?? "true");
+
+// Parse log levels with fallbacks
+Enum.TryParse<LogEventLevel>(loggingConfig["MinimumFileLogLevel"], out var minFileLogLevel);
+if (minFileLogLevel == 0) minFileLogLevel = LogEventLevel.Warning;
+
+Enum.TryParse<LogEventLevel>(loggingConfig["MinimumErrorLogLevel"], out var minErrorLogLevel);
+if (minErrorLogLevel == 0) minErrorLogLevel = LogEventLevel.Error;
+
+Enum.TryParse<LogEventLevel>(loggingConfig["MinimumConsoleLogLevel"], out var minConsoleLogLevel);
+if (minConsoleLogLevel == 0) minConsoleLogLevel = LogEventLevel.Information;
+
+// Ensure logs directory exists
+Directory.CreateDirectory(Path.GetDirectoryName(filePath) ?? "logs");
+if (errorFilePath != filePath)
 {
-    // Configure all logs to go to stderr
-    consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
-});
+    Directory.CreateDirectory(Path.GetDirectoryName(errorFilePath) ?? "logs");
+}
+
+// Configure Serilog for comprehensive logging
+var loggerConfig = new LoggerConfiguration()
+    .MinimumLevel.Debug()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Information)
+    .MinimumLevel.Override("System", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "UNSInfra-MCP-Server")
+    .WriteTo.File(
+        path: filePath,
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: retainedFileCount,
+        restrictedToMinimumLevel: minFileLogLevel,
+        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] {Application} - {SourceContext}: {Message:lj}{NewLine}{Exception}",
+        shared: true)
+    .WriteTo.File(
+        path: errorFilePath, 
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: errorRetainedFileCount,
+        restrictedToMinimumLevel: minErrorLogLevel,
+        outputTemplate: "[{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} {Level:u3}] {Application} - {SourceContext}: {Message:lj}{NewLine}{Exception}",
+        shared: true);
+
+// Add console logging if enabled
+if (enableConsoleLogging)
+{
+    loggerConfig.WriteTo.Console(
+        outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}",
+        restrictedToMinimumLevel: minConsoleLogLevel);
+}
+
+Log.Logger = loggerConfig.CreateLogger();
+
+// Replace default logging with Serilog
+builder.Services.AddSerilog();
+
+// Clear default logging providers and add Serilog
+builder.Logging.ClearProviders();
+builder.Logging.AddSerilog();
 
 // Add UNSInfra Core services
 builder.Services.AddUNSInfrastructureCore();
@@ -90,4 +155,16 @@ await host.Services.InitializeConfigurableStorageAsync(builder.Configuration);
 // Register connection types
 host.Services.RegisterConnectionTypes();
 
-await host.RunAsync();
+try
+{
+    Log.Information("Starting UNS Infrastructure MCP Server");
+    await host.RunAsync();
+}
+catch (Exception ex)
+{
+    Log.Fatal(ex, "UNS Infrastructure MCP Server terminated unexpectedly");
+}
+finally
+{
+    await Log.CloseAndFlushAsync();
+}

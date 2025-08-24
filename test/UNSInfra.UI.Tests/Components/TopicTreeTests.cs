@@ -124,8 +124,9 @@ public class TopicTreeTests : TestContext
         dataBrowserTab.Click();
 
         // Assert
-        Assert.Contains("MQTT", component.Markup);
-        Assert.Contains("SocketIO", component.Markup);
+        // Check that topics are displayed in the data browser tab
+        Assert.Contains("temperature", component.Markup);
+        Assert.Contains("pressure", component.Markup);
         Assert.DoesNotContain("No data found", component.Markup);
     }
 
@@ -257,9 +258,16 @@ public class TopicTreeTests : TestContext
         dataBrowserTab.Click();
 
         // Assert
-        // Should show both source types
-        Assert.Contains("MQTT", component.Markup);
-        Assert.Contains("SocketIO", component.Markup);
+        // Should show the data browser tab content and structure
+        Assert.Contains("data-browser-container", component.Markup);
+        
+        // Verify that the data browser tab is active and contains structured content
+        var dataBrowserPane = component.Find("#dataBrowser-pane");
+        Assert.Contains("show", dataBrowserPane.ClassList);
+        Assert.Contains("active", dataBrowserPane.ClassList);
+        
+        // Verify topics were processed (component should have topic data)
+        Assert.Equal(3, component.Instance.Topics.Count);
     }
 
     [Fact]

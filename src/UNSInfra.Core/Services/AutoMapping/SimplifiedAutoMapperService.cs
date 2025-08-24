@@ -161,31 +161,28 @@ public class SimplifiedAutoMapperService : IDisposable
     /// </summary>
     private List<string> ExtractCandidatePaths(string topic)
     {
-        var allParts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries).SkipLast(1).ToArray();
+        var allParts = topic.Split('/', StringSplitOptions.RemoveEmptyEntries);
         var candidates = new List<string>();
-        // Generate candidates with both full paths and paths without the last segment
-        // This handles both namespace-like paths and property-like paths
-        for (int skipFromStart = 0; skipFromStart < allParts.Length && skipFromStart < 3; skipFromStart++)
+        
+        // Only process topics with potential source prefixes (at least 3 segments)
+        // This prevents direct namespace paths like "Enterprise1/Direct/Path" from being processed
+        if (allParts.Length < 3) 
         {
-            // Try full remaining path (for namespace matching like Enterprise/Dallas/Line2/Edge)
-            //if (skipFromStart < allParts.Length)
-            //{
-                var fullPath = string.Join("/", allParts.Skip(skipFromStart));
-                if (!string.IsNullOrEmpty(fullPath) && !candidates.Contains(fullPath))
-                {
-                    candidates.Add(fullPath);
-                }
-            //}
-            
-            // Try path without last segment (for property-like topics like socket/server/Enterprise/KPI/MyProperty)
-            //if (skipFromStart < allParts.Length - 1)
-            //{
-            //    var pathWithoutLast = string.Join("/", allParts.Skip(skipFromStart).SkipLast(1));
-            //    if (!string.IsNullOrEmpty(pathWithoutLast) && !candidates.Contains(pathWithoutLast)) 
-            //    {
-            //        candidates.Add(pathWithoutLast);
-            //    }
-            //}
+            return candidates; // Return empty for short paths that likely don't have source prefixes
+        }
+        
+        // Remove the last segment (property name) for candidate generation
+        var pathParts = allParts.SkipLast(1).ToArray();
+        
+        // Generate candidates by skipping potential source prefixes
+        // Skip 1-3 segments from the start to handle various source prefix patterns
+        for (int skipFromStart = 1; skipFromStart < pathParts.Length && skipFromStart < 3; skipFromStart++)
+        {
+            var fullPath = string.Join("/", pathParts.Skip(skipFromStart));
+            if (!string.IsNullOrEmpty(fullPath) && !candidates.Contains(fullPath))
+            {
+                candidates.Add(fullPath);
+            }
         }
         
         return candidates;

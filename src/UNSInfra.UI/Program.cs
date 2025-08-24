@@ -178,3 +178,6 @@ app.MapGet("/health", () => Results.Ok(new {
 }));
 
 app.Run();
+
+// Make Program class public for integration testing
+public partial class Program { }
