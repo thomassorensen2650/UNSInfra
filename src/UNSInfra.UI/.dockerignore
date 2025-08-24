@@ -1,0 +1,161 @@
+# UNS Infrastructure UI - Docker Ignore File
+# Excludes unnecessary files from Docker build context
+
+# .NET build artifacts
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/.idea/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+*~
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+*.sqlite
+*.db
+
+# Coverage directory used by tools like istanbul
+coverage/
+*.lcov
+
+# nyc test coverage
+.nyc_output
+
+# Dependency directories
+node_modules/
+jspm_packages/
+
+# Optional npm cache directory
+.npm
+
+# Optional REPL history
+.node_repl_history
+
+# Output of 'npm pack'
+*.tgz
+
+# Yarn Integrity file
+.yarn-integrity
+
+# parcel-bundler cache (https://parceljs.org/)
+.cache
+.parcel-cache
+
+# next.js build output
+.next
+
+# nuxt.js build output
+.nuxt
+
+# vuepress build output
+.vuepress/dist
+
+# Serverless directories
+.serverless
+
+# FuseBox cache
+.fusebox/
+
+# DynamoDB Local files
+.dynamodb/
+
+# TernJS port file
+.tern-port
+
+# Stores VSCode versions used for testing VSCode extensions
+.vscode-test
+
+# Git
+.git/
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+docs/
+README*
+LICENSE*
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+azure-pipelines.yml
+Jenkinsfile
+
+# Docker
+Dockerfile*
+docker-compose*.yml
+.dockerignore
+
+# Test files
+**/*Tests/
+**/*Test/
+**/TestResults/
+*.trx
+
+# Temporary files
+tmp/
+temp/
+**/wwwroot/temp/
+
+# User-specific files
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.sln.ide
+
+# NuGet
+*.nupkg
+.nuget/packages/
+**/packages/
+
+# JetBrains
+.idea/
+
+# Visual Studio Code
+.vscode/
+
+# Local development environment files
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Local data directories (will be mounted as volumes)
+data/
+logs/
+uploads/
+
+# Backup files
+*.bak
+*.backup
+*.old
+*.orig
+
+# Editor temp files
+*~
+.#*
+\#*#
+.*.swp
+.*.swo

@@ -1,0 +1,124 @@
+# UNS Infrastructure UI - Docker Compose Configuration
+# For standalone UI development and testing
+
+version: '3.8'
+
+services:
+  # UNS Infrastructure UI Application
+  unsinfra-ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: final
+    container_name: unsinfra-ui
+    ports:
+      - "5000:8080"    # HTTP
+      - "5001:8081"    # HTTPS (if configured)
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080
+      - DOTNET_RUNNING_IN_CONTAINER=true
+      
+      # Database Configuration
+      - Storage__ConnectionString=Data Source=/app/data/unsinfra.db
+      - HistoricalStorage__SQLite__DatabasePath=/app/data/unsinfra-historical.db
+      
+      # Logging Configuration
+      - Logging__LogLevel__Default=Information
+      - Logging__LogLevel__UNSInfra=Debug
+      - Logging__Console__FormatterName=simple
+      
+      # Performance Settings
+      - DOTNET_gcServer=1
+      - DOTNET_GCRetainVM=1
+      
+      # MQTT Configuration (optional - for external broker)
+      - MqttConfiguration__BrokerHost=host.docker.internal
+      - MqttConfiguration__BrokerPort=1883
+      - MqttConfiguration__ClientId=UNSInfra-UI-Docker
+      
+      # Socket.IO Configuration (optional)
+      - SocketIOConfiguration__ServerUrl=http://host.docker.internal:3000
+      
+    volumes:
+      # Persist database and logs
+      - unsinfra-data:/app/data
+      - unsinfra-logs:/app/logs
+      
+      # For development: mount source code (uncomment for hot reload)
+      # - ./:/app/src:ro
+    
+    networks:
+      - unsinfra-network
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    
+    # Restart policy
+    restart: unless-stopped
+    
+    # Resource limits
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 256M
+          cpus: '0.25'
+
+  # Optional: Local MQTT Broker for testing
+  mqtt-broker:
+    image: eclipse-mosquitto:2.0
+    container_name: unsinfra-mqtt
+    ports:
+      - "1883:1883"    # MQTT
+      - "9001:9001"    # WebSocket
+    volumes:
+      - mqtt-data:/mosquitto/data
+      - mqtt-logs:/mosquitto/log
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+    networks:
+      - unsinfra-network
+    restart: unless-stopped
+    profiles:
+      - with-mqtt
+
+  # Optional: Database viewer for debugging
+  sqlite-web:
+    image: coleifer/sqlite-web
+    container_name: unsinfra-db-viewer
+    ports:
+      - "8081:8080"
+    volumes:
+      - unsinfra-data:/data
+    command: ["sqlite_web", "/data/unsinfra.db", "--host", "0.0.0.0", "--port", "8080"]
+    networks:
+      - unsinfra-network
+    restart: unless-stopped
+    profiles:
+      - debug
+
+# Named volumes for data persistence
+volumes:
+  unsinfra-data:
+    driver: local
+  unsinfra-logs:
+    driver: local
+  mqtt-data:
+    driver: local
+  mqtt-logs:
+    driver: local
+
+# Network configuration
+networks:
+  unsinfra-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
