@@ -339,6 +339,11 @@ public static class GraphQLMcpTools
         }
     }
 
+
+    [McpServerTool, Description("Echoes the message back to the client.")]
+    public static string Echo(string message) => $"hello {message}";
+
+        
     [McpServerTool]
     [Description("Get system status and statistics")]
     public static async Task<string> GetSystemStatusAsync(
@@ -350,7 +355,7 @@ public static class GraphQLMcpTools
         try
         {
             logger.LogDebug("Getting system status via GraphQL");
-
+            
             var query = new GraphQLRequest
             {
                 Query = @"

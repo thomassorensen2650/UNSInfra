@@ -23,6 +23,7 @@ var tempConfig = new ConfigurationBuilder()
     .AddCommandLine(args)
     .Build();
 
+/*
 // Get logging configuration values with defaults
 var loggingConfig = tempConfig.GetSection("UNSInfra:Logging");
 var filePath = loggingConfig["FilePath"] ?? "logs/uns-mcp-server-.log";
@@ -55,6 +56,7 @@ var loggerConfig = new LoggerConfiguration()
     .MinimumLevel.Override("System", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.Hosting.Lifetime", LogEventLevel.Information)
     .Enrich.FromLogContext()
+    
     .Enrich.WithProperty("Application", "UNSInfra-MCP-Server")
     .WriteTo.File(
         path: filePath,
@@ -80,13 +82,19 @@ if (enableConsoleLogging)
 }
 
 Log.Logger = loggerConfig.CreateLogger();
+*/
 
+builder.Logging.AddConsole(consoleLogOptions =>
+{
+    // Configure all logs to go to stderr
+    consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
+});
 // Replace default logging with Serilog
-builder.Services.AddSerilog();
+//builder.Services.AddSerilog();
 
 // Clear default logging providers and add Serilog
-builder.Logging.ClearProviders();
-builder.Logging.AddSerilog();
+//builder.Logging.ClearProviders();
+//builder.Logging.AddSerilog();
 
 // Add UNSInfra Core services
 builder.Services.AddUNSInfrastructureCore();
@@ -95,7 +103,7 @@ builder.Services.AddUNSInfrastructureCore();
 builder.Services.AddHttpClient("UNSInfraAPI", client =>
 {
     // Default to localhost, can be overridden via configuration
-    var apiBaseUrl = builder.Configuration.GetValue<string>("UNSInfra:ApiBaseUrl") ?? "http://localhost:5000";
+    var apiBaseUrl = builder.Configuration.GetValue<string>("UNSInfra:ApiBaseUrl") ?? "https://localhost:5001";
     client.BaseAddress = new Uri(apiBaseUrl);
     client.DefaultRequestHeaders.Add("User-Agent", "UNSInfra-MCP-Server/1.0");
 });
@@ -154,6 +162,7 @@ await host.Services.InitializeConfigurableStorageAsync(builder.Configuration);
 
 // Register connection types
 host.Services.RegisterConnectionTypes();
+
 
 try
 {
