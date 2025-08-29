@@ -1,19 +1,42 @@
 ﻿using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Configuration;
-using UNSInfra.Core.Extensions;
-using UNSInfra.Storage.SQLite.Extensions;
-using UNSInfra.Services.TopicDiscovery;
-// using UNSInfra.Core.Services; // Removed - old data ingestion services
-using UNSInfra.Services;
-using UNSInfra.Extensions;
-using UNSInfra.Services.V1.Extensions;
-using UNSInfra.Services.SocketIO.Extensions;
-using Serilog;
-using Serilog.Events;
+using ModelContextProtocol.Server;
+using System.ComponentModel;
 
+using ModelContextProtocol.Server;
+using System.ComponentModel;
+using GraphQL.Client.Abstractions;
+using Microsoft.AspNetCore.Builder;
+using Microsoft.Extensions.Configuration;
+using Serilog;
+
+var builder = WebApplication.CreateBuilder(args);
+builder.Services.AddMcpServer()
+    .WithHttpTransport()
+    .WithStdioServerTransport()
+    .WithToolsFromAssembly();
+
+builder.Logging.AddConsole(consoleLogOptions =>
+{
+    // Configure all logs to go to stderr
+    consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
+});
+
+
+/*
 var builder = Host.CreateApplicationBuilder(args);
+builder.Logging.AddConsole(consoleLogOptions =>
+{
+    // Configure all logs to go to stderr
+    consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
+});
+builder.Services
+    .AddMcpServer()
+    .WithStdioServerTransport()
+    .WithToolsFromAssembly();
+await builder.Build().RunAsync();
+return;
 
 // Build a temporary configuration to read logging settings
 var tempConfig = new ConfigurationBuilder()
@@ -22,7 +45,7 @@ var tempConfig = new ConfigurationBuilder()
     .AddEnvironmentVariables()
     .AddCommandLine(args)
     .Build();
-
+*/
 /*
 // Get logging configuration values with defaults
 var loggingConfig = tempConfig.GetSection("UNSInfra:Logging");
@@ -84,11 +107,6 @@ if (enableConsoleLogging)
 Log.Logger = loggerConfig.CreateLogger();
 */
 
-builder.Logging.AddConsole(consoleLogOptions =>
-{
-    // Configure all logs to go to stderr
-    consoleLogOptions.LogToStandardErrorThreshold = LogLevel.Trace;
-});
 // Replace default logging with Serilog
 //builder.Services.AddSerilog();
 
@@ -97,7 +115,7 @@ builder.Logging.AddConsole(consoleLogOptions =>
 //builder.Logging.AddSerilog();
 
 // Add UNSInfra Core services
-builder.Services.AddUNSInfrastructureCore();
+//builder.Services.AddUNSInfrastructureCore();
 
 // Add HTTP client for API calls to UI server
 builder.Services.AddHttpClient("UNSInfraAPI", client =>
@@ -120,54 +138,46 @@ builder.Services.AddSingleton<GraphQL.Client.Abstractions.IGraphQLClient>(provid
 });
 
 // Register configurable storage services (kept for backward compatibility)
-builder.Services.AddConfigurableStorage(builder.Configuration);
+//uilder.Services.AddConfigurableStorage(builder.Configuration);
 
 // Register additional required services
-builder.Services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
+//builder.Services.AddScoped<ITopicDiscoveryService, TopicDiscoveryService>();
 
 // Register hierarchy service
-builder.Services.AddScoped<IHierarchyService, HierarchyService>();
+//builder.Services.AddScoped<IHierarchyService, HierarchyService>();
 
 // Register namespace structure service
-builder.Services.AddScoped<INamespaceStructureService, NamespaceStructureService>();
+//builder.Services.AddScoped<INamespaceStructureService, NamespaceStructureService>();
 
 // Add event-driven services for better performance
-builder.Services.AddEventDrivenServices();
+//builder.Services.AddEventDrivenServices();
 
 // Register topic configuration notification service
-builder.Services.AddSingleton<ITopicConfigurationNotificationService, TopicConfigurationNotificationService>();
+//builder.Services.AddSingleton<ITopicConfigurationNotificationService, TopicConfigurationNotificationService>();
 
 // Register schema validation services
-builder.Services.AddScoped<UNSInfra.Repositories.ISchemaRepository, UNSInfra.Repositories.InMemorySchemaRepository>();
-builder.Services.AddScoped<UNSInfra.Validation.ISchemaValidator, UNSInfra.Validation.JsonSchemaValidator>();
+//builder.Services.AddScoped<UNSInfra.Repositories.ISchemaRepository, UNSInfra.Repositories.InMemorySchemaRepository>();
+//builder.Services.AddScoped<UNSInfra.Validation.ISchemaValidator, UNSInfra.Validation.JsonSchemaValidator>();
 
 // Register connection services
-builder.Services.AddConnectionServices();
-builder.Services.AddProductionMqttConnection();
-builder.Services.AddProductionSocketIOConnection();
+//builder.Services.AddConnectionServices();
+//builder.Services.AddProductionMqttConnection();
+//builder.Services.AddProductionSocketIOConnection();
 
 // Register SparkplugB decoder (if needed)
-builder.Services.AddSingleton<UNSInfra.Services.V1.SparkplugB.SparkplugBDecoder>();
+//builder.Services.AddSingleton<UNSInfra.Services.V1.SparkplugB.SparkplugBDecoder>();
 
-// Register MCP server with GraphQL-powered tools
-builder.Services
-    .AddMcpServer()
-    .WithStdioServerTransport()
-    .WithToolsFromAssembly();
 
-var host = builder.Build();
+var app = builder.Build();
 
-// Initialize configurable storage
-await host.Services.InitializeConfigurableStorageAsync(builder.Configuration);
-
-// Register connection types
-host.Services.RegisterConnectionTypes();
-
+// Map MCP endpoints
+app.MapMcp();
 
 try
 {
     Log.Information("Starting UNS Infrastructure MCP Server");
-    await host.RunAsync();
+    //await app.RunAsync();
+    app.Run("http://localhost:3001");
 }
 catch (Exception ex)
 {

@@ -1,0 +1,27 @@
+{
+  "name": "unsinfra",
+  "version": "1.0.0",
+  "description": "![License](https://img.shields.io/badge/license-MIT-blue.svg) ![.NET](https://img.shields.io/badge/.NET-8.0%2F9.0-blue.svg) ![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)",
+  "main": "test_mcp_vs_ui.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/thomassorensen2650/UNSInfra.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/thomassorensen2650/UNSInfra/issues"
+  },
+  "homepage": "https://github.com/thomassorensen2650/UNSInfra#readme",
+  "dependencies": {
+    "graphql-request": "^7.2.0"
+  }
+}

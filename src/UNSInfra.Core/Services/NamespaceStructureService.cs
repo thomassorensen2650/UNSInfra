@@ -235,7 +235,7 @@ public class NamespaceStructureService : INamespaceStructureService
         return instance.GetHierarchicalPath(allInstances.ToList(), hierarchyConfig);
     }
 
-    private async Task<HierarchyConfiguration?> GetActiveHierarchyConfigurationAsync()
+    public async Task<HierarchyConfiguration?> GetActiveHierarchyConfigurationAsync()
     {
         var configs = await _hierarchyRepository.GetAllConfigurationsAsync();
         return configs.FirstOrDefault(c => c.IsActive);

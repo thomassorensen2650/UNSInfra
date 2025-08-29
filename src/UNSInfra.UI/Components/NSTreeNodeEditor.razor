@@ -2,9 +2,10 @@
 @using UNSInfra.Models.Hierarchy
 @using UNSInfra.Models.Namespace
 @using UNSInfra.Services.TopicBrowser
+@using UNSInfra.Services.TopicBrowser.Events
 @using System.Linq
 @inject INamespaceStructureService NamespaceStructureService
-@inject ITopicBrowserService TopicBrowserService
+@inject CachedTopicBrowserService CachedTopicBrowserService
 @inject ITopicConfigurationNotificationService NotificationService
 @inject IJSRuntime JSRuntime
 @inject ILogger<NSTreeNodeEditor> Logger
@@ -277,10 +278,30 @@
         }
     }
     
+    private async void OnCachedTopicStructureChanged(object? sender, TopicStructureChangedEventArgs e)
+    {
+        if (Node?.NodeType == NSNodeType.Namespace && !string.IsNullOrEmpty(Node.FullPath))
+        {
+            try
+            {
+                await InvokeAsync(async () =>
+                {
+                    await RefreshAssignedTopics();
+                    StateHasChanged();
+                });
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error handling cached topic structure change");
+            }
+        }
+    }
+    
     public void Dispose()
     {
         // Unsubscribe from events before disposing
         NotificationService.TopicConfigurationChanged -= OnTopicConfigurationChanged;
+        CachedTopicBrowserService.TopicStructureChanged -= OnCachedTopicStructureChanged;
         _cancellationTokenSource?.Cancel();
         _cancellationTokenSource?.Dispose();
     }
@@ -553,6 +574,10 @@
             // Subscribe to topic configuration changes for namespace nodes
             NotificationService.TopicConfigurationChanged -= OnTopicConfigurationChanged; // Remove existing subscription
             NotificationService.TopicConfigurationChanged += OnTopicConfigurationChanged; // Add new subscription
+            
+            // Also subscribe to cached topic structure changes
+            CachedTopicBrowserService.TopicStructureChanged -= OnCachedTopicStructureChanged; // Remove existing subscription
+            CachedTopicBrowserService.TopicStructureChanged += OnCachedTopicStructureChanged; // Add new subscription
         }
         
         // Initialize expansion state - hierarchy nodes start expanded, namespaces start collapsed
@@ -573,7 +598,9 @@
         try
         {
             // Get topics specifically for this namespace path - more efficient than loading all topics
-            assignedTopics = (await TopicBrowserService.GetTopicsForNamespaceAsync(Node.FullPath)).ToList();
+            // Use cached service to ensure consistency with topic assignment operations
+            var allTopics = await CachedTopicBrowserService.GetLatestTopicStructureAsync();
+            assignedTopics = allTopics.Where(t => !string.IsNullOrEmpty(t.NSPath) && t.NSPath.Equals(Node.FullPath, StringComparison.OrdinalIgnoreCase)).ToList();
                 
             Logger.LogDebug("Loading topics for namespace: {NamespacePath}", Node.FullPath);
             Logger.LogDebug("Found {TopicCount} assigned topics", assignedTopics.Count);

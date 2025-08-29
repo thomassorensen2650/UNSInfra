@@ -73,6 +73,12 @@ public interface INamespaceStructureService
     /// <param name="instanceId">The instance ID</param>
     /// <returns>True if it can be deleted</returns>
     Task<bool> CanDeleteInstanceAsync(string instanceId);
+
+    /// <summary>
+    /// Gets the active hierarchy configuration.
+    /// </summary>
+    /// <returns>The active hierarchy configuration, or null if none is active</returns>
+    Task<HierarchyConfiguration?> GetActiveHierarchyConfigurationAsync();
 }
 
 /// <summary>

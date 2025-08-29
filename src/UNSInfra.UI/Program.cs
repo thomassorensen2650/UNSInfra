@@ -70,7 +70,10 @@ builder.Services
     .AddQueryType<UNSInfra.UI.GraphQL.Query>()
     .AddType<UNSInfra.UI.GraphQL.Types.TopicType>()
     .AddType<UNSInfra.UI.GraphQL.Types.SystemStatusType>()
-    .AddType<UNSInfra.UI.GraphQL.Types.ConnectionStatsType>();
+    .AddType<UNSInfra.UI.GraphQL.Types.ConnectionStatsType>()
+    .AddType<UNSInfra.UI.GraphQL.Types.NamespaceStructureNode>()
+    .AddType<UNSInfra.UI.GraphQL.Types.HierarchyNodeInfo>()
+    .AddType<UNSInfra.UI.GraphQL.Types.NamespaceInfo>();
 
 // Configure Blazor Server Circuit options for better stability
 builder.Services.Configure<Microsoft.AspNetCore.Components.Server.CircuitOptions>(options =>
