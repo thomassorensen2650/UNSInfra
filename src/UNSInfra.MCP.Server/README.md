@@ -57,14 +57,21 @@ Logging can be configured in `appsettings.json`:
 
 ## Available MCP Tools
 
-### GetUnsHierarchyAsync
-Retrieves the complete UNS hierarchy structure showing all namespaces and topics.
+### GetUnsHierarchyTreeAsync
+Retrieves the complete UNS hierarchy structure as a clean tree showing all namespaces and topics organized hierarchically.
 
 ### GetTopicAsync
 Gets detailed information for a specific topic by name.
 
 ### GetTopicsByNamespaceAsync
-Returns all topics within a specified namespace.
+Returns all topics within a specified namespace path, including their latest values.
+
+### GetTopicCurrentValueByPathAsync
+Gets the current value and metadata for a specific topic by its path. The path parameter can match any of:
+- Topic name
+- UNS name 
+- Namespace path
+- Hierarchical path
 
 ### SearchTopicsAsync
 Searches for topics matching a given search term.

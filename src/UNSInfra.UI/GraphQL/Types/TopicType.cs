@@ -47,5 +47,16 @@ public class TopicType : ObjectType<TopicInfo>
         descriptor.Field(t => t.Metadata)
             .Description("Additional metadata for this topic")
             .Type<AnyType>();
+
+        descriptor.Field("currentValue")
+            .Description("The latest/current value for this topic")
+            .Type<AnyType>()
+            .Resolve(async ctx =>
+            {
+                var topic = ctx.Parent<TopicInfo>();
+                var realtimeStorage = ctx.Service<UNSInfra.Storage.Abstractions.IRealtimeStorage>();
+                var latestDataPoint = await realtimeStorage.GetLatestAsync(topic.Topic);
+                return latestDataPoint?.Value;
+            });
     }
 }
