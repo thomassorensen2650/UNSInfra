@@ -89,15 +89,38 @@ All MCP tools include comprehensive error handling:
 
 ## Usage
 
-The MCP server connects to the UNS Infrastructure UI server's GraphQL endpoint at `http://localhost:5000/graphql` by default. This can be configured via:
+The MCP server runs on both HTTP and HTTPS ports and connects to the UNS Infrastructure UI server's GraphQL endpoint. 
+
+### Server Endpoints
+- **HTTP**: `http://localhost:3001` (default)
+- **HTTPS**: `https://localhost:3002` (default)
+
+### Configuration
+
+Configure the server via `appsettings.json`:
 
 ```json
 {
+  "Urls": "http://localhost:3001;https://localhost:3002",
   "UNSInfra": {
-    "ApiBaseUrl": "http://localhost:5000"
+    "ApiBaseUrl": "https://localhost:5001/"
   }
 }
 ```
+
+### HTTPS Support
+
+The server supports both HTTP and HTTPS endpoints:
+- HTTPS will use the default development certificate
+- For production, configure a proper SSL certificate via Kestrel configuration
+- The `Urls` setting accepts multiple endpoints separated by semicolons
+
+### Transport Modes
+
+The MCP server supports multiple transport modes:
+- **STDIO**: Default mode for MCP clients (starts automatically when run via `dotnet run`)
+- **HTTP**: Available for web-based access on configured HTTP/HTTPS ports
+- **Both modes run simultaneously** when the server starts
 
 ## Monitoring
 

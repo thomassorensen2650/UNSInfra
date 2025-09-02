@@ -7,6 +7,7 @@ using UNSInfra.Storage.InMemory;
 using UNSInfra.Storage.SQLite.Extensions;
 using UNSInfra.Services.V1.Extensions;
 using UNSInfra.Services.SocketIO.Extensions;
+using UNSInfra.Services.OPCUA.Extensions;
 using UNSInfra.Core.Extensions;
 // using UNSInfra.Core.Services; // Removed - old data ingestion services
 using UNSInfra.Services;
@@ -136,6 +137,7 @@ builder.Services.AddUNSInfrastructureCore();
 builder.Services.AddConnectionServices();
 builder.Services.AddProductionMqttConnection();
 builder.Services.AddProductionSocketIOConnection();
+builder.Services.AddOPCUAConnection();
 
 // Register SparkplugB decoder for MQTT service
 builder.Services.AddSingleton<UNSInfra.Services.V1.SparkplugB.SparkplugBDecoder>();
