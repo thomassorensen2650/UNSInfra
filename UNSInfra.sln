@@ -42,6 +42,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.MCP.Server.Tests",
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.MCP.Server.Tests", "src\UNSInfra.MCP.Server.Tests\UNSInfra.MCP.Server.Tests.csproj", "{E285C957-15AF-4928-977A-19AB6F20A2B1}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "UNSInfra.Services.OPCUA", "src\UNSInfra.Services.OPCUA\UNSInfra.Services.OPCUA.csproj", "{C269AA04-ECB4-4D10-8825-6F606980DBF3}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -226,6 +228,18 @@ Global
 		{E285C957-15AF-4928-977A-19AB6F20A2B1}.Release|x64.Build.0 = Release|Any CPU
 		{E285C957-15AF-4928-977A-19AB6F20A2B1}.Release|x86.ActiveCfg = Release|Any CPU
 		{E285C957-15AF-4928-977A-19AB6F20A2B1}.Release|x86.Build.0 = Release|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Debug|x64.Build.0 = Debug|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Debug|x86.Build.0 = Debug|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Release|x64.ActiveCfg = Release|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Release|x64.Build.0 = Release|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Release|x86.ActiveCfg = Release|Any CPU
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -233,5 +247,6 @@ Global
 	GlobalSection(NestedProjects) = preSolution
 		{C5EE8881-47A5-4A2B-8277-66A7AADF25E2} = {0C88DD14-F956-CE84-757C-A364CCF449FC}
 		{E285C957-15AF-4928-977A-19AB6F20A2B1} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{C269AA04-ECB4-4D10-8825-6F606980DBF3} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal
