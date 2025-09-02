@@ -79,6 +79,20 @@ public interface INamespaceStructureService
     /// </summary>
     /// <returns>The active hierarchy configuration, or null if none is active</returns>
     Task<HierarchyConfiguration?> GetActiveHierarchyConfigurationAsync();
+
+    /// <summary>
+    /// Deletes a namespace and all its child namespaces, along with cleaning up topic mappings.
+    /// </summary>
+    /// <param name="namespaceId">The ID of the namespace to delete</param>
+    /// <returns>True if deletion was successful, false otherwise</returns>
+    Task<bool> DeleteNamespaceAsync(string namespaceId);
+
+    /// <summary>
+    /// Checks if a namespace can be deleted safely.
+    /// </summary>
+    /// <param name="namespaceId">The namespace ID to check</param>
+    /// <returns>True if it can be deleted, along with any warnings or blocking reasons</returns>
+    Task<(bool CanDelete, string? Reason)> CanDeleteNamespaceAsync(string namespaceId);
 }
 
 /// <summary>

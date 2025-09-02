@@ -97,6 +97,10 @@
                     <button class="dropdown-item" @onclick="() => AddDataToNamespace()">
                         <i class="bi bi-database me-2"></i>Add Data
                     </button>
+                    <div class="dropdown-divider"></div>
+                    <button class="dropdown-item text-danger" @onclick="() => DeleteNamespace()">
+                        <i class="bi bi-trash me-2"></i>Delete Namespace
+                    </button>
                 }
                 @if (Node.NodeType == NSNodeType.HierarchyNode)
                 {
@@ -407,6 +411,17 @@
         if (string.IsNullOrEmpty(selectedHierarchyNodeId) || string.IsNullOrEmpty(newInstanceName))
             return;
 
+        // Client-side validation for duplicate hierarchy instance names
+        if (Node?.Children?.Any(child => 
+            child.NodeType == NSNodeType.HierarchyNode && 
+            string.Equals(child.Name, newInstanceName, StringComparison.OrdinalIgnoreCase)) == true)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", 
+                $"A hierarchy instance named '{newInstanceName}' already exists in this location. " +
+                "Instance names must be unique within the same parent location.");
+            return;
+        }
+
         try
         {
             var parentInstanceId = Node?.Instance?.Id;
@@ -469,6 +484,17 @@
 
         var namespaceType = (NamespaceType)typeInt;
 
+        // Client-side validation for duplicate names
+        if (Node?.Children?.Any(child => 
+            child.NodeType == NSNodeType.Namespace && 
+            string.Equals(child.Name, newNamespaceName, StringComparison.OrdinalIgnoreCase)) == true)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", 
+                $"A namespace named '{newNamespaceName}' already exists in this location. " +
+                "Namespace names must be unique within the same parent location.");
+            return;
+        }
+
         try
         {
             // Create the namespace configuration with safe hierarchical path construction
@@ -523,6 +549,51 @@
         catch (Exception ex)
         {
             await JSRuntime.InvokeVoidAsync("alert", $"Error creating namespace: {ex.Message}");
+        }
+    }
+
+    private async Task DeleteNamespace()
+    {
+        if (Node?.Namespace == null) return;
+
+        showContextMenu = false;
+        
+        try
+        {
+            // Check if namespace can be deleted and get details about what will be affected
+            var (canDelete, reason) = await NamespaceStructureService.CanDeleteNamespaceAsync(Node.Namespace.Id);
+            
+            if (!canDelete)
+            {
+                await JSRuntime.InvokeVoidAsync("alert", $"Cannot delete namespace: {reason}");
+                return;
+            }
+
+            // Build confirmation message
+            var confirmMessage = $"Are you sure you want to delete the namespace '{Node.Name}'?";
+            if (!string.IsNullOrEmpty(reason))
+            {
+                confirmMessage += $"\n\n{reason}";
+            }
+            confirmMessage += "\n\nThis action cannot be undone.";
+
+            var confirmed = await JSRuntime.InvokeAsync<bool>("confirm", confirmMessage);
+            if (confirmed)
+            {
+                var success = await NamespaceStructureService.DeleteNamespaceAsync(Node.Namespace.Id);
+                if (success)
+                {
+                    await OnNodeChanged.InvokeAsync();
+                }
+                else
+                {
+                    await JSRuntime.InvokeVoidAsync("alert", "Failed to delete namespace. Please try again.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error deleting namespace: {ex.Message}");
         }
     }
 

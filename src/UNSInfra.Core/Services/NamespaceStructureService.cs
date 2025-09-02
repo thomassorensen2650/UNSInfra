@@ -2,6 +2,7 @@ using UNSInfra.Models.Namespace;
 using UNSInfra.Models.Hierarchy;
 using UNSInfra.Repositories;
 using UNSInfra.Services.Events;
+using UNSInfra.Services.TopicBrowser;
 
 namespace UNSInfra.Services;
 
@@ -14,17 +15,20 @@ public class NamespaceStructureService : INamespaceStructureService
     private readonly INamespaceConfigurationRepository _namespaceRepository;
     private readonly INSTreeInstanceRepository _nsTreeInstanceRepository;
     private readonly IEventBus _eventBus;
+    private readonly CachedTopicBrowserService _topicBrowserService;
 
     public NamespaceStructureService(
         IHierarchyConfigurationRepository hierarchyRepository,
         INamespaceConfigurationRepository namespaceRepository,
         INSTreeInstanceRepository nsTreeInstanceRepository,
-        IEventBus eventBus)
+        IEventBus eventBus,
+        CachedTopicBrowserService topicBrowserService)
     {
         _hierarchyRepository = hierarchyRepository;
         _namespaceRepository = namespaceRepository;
         _nsTreeInstanceRepository = nsTreeInstanceRepository;
         _eventBus = eventBus;
+        _topicBrowserService = topicBrowserService;
     }
 
     public async Task<IEnumerable<NSTreeNode>> GetNamespaceStructureAsync()
@@ -181,6 +185,9 @@ public class NamespaceStructureService : INamespaceStructureService
 
     public async Task<NSTreeNode> CreateNamespaceAsync(string parentPath, NamespaceConfiguration namespaceConfig)
     {
+        // Validate that no namespace with the same name exists in the same parent path
+        await ValidateUniqueNamespaceNameAsync(parentPath, namespaceConfig.Name, namespaceConfig.HierarchicalPath);
+        
         await _namespaceRepository.SaveNamespaceConfigurationAsync(namespaceConfig);
         
         var fullPath = string.IsNullOrEmpty(parentPath) ? namespaceConfig.Name : $"{parentPath}/{namespaceConfig.Name}";
@@ -333,6 +340,9 @@ public class NamespaceStructureService : INamespaceStructureService
 
     public async Task<NSTreeInstance> AddHierarchyInstanceAsync(string hierarchyNodeId, string name, string? parentInstanceId)
     {
+        // Validate that no hierarchy instance with the same name exists under the same parent
+        await ValidateUniqueHierarchyInstanceNameAsync(name, parentInstanceId);
+        
         var instance = new NSTreeInstance
         {
             Id = Guid.NewGuid().ToString(),
@@ -410,6 +420,335 @@ public class NamespaceStructureService : INamespaceStructureService
     {
         // Simple version for synchronous use - just return all values joined
         return string.Join("/", path.Values.Values.Where(v => !string.IsNullOrEmpty(v)));
+    }
+
+    /// <summary>
+    /// Validates that a namespace name is unique within the same parent path and hierarchical location.
+    /// </summary>
+    /// <param name="parentPath">The parent path where the namespace will be created</param>
+    /// <param name="namespaceName">The name of the namespace to validate</param>
+    /// <param name="hierarchicalPath">The hierarchical path of the namespace</param>
+    /// <exception cref="InvalidOperationException">Thrown when a duplicate namespace name is found</exception>
+    private async Task ValidateUniqueNamespaceNameAsync(string parentPath, string namespaceName, HierarchicalPath hierarchicalPath)
+    {
+        // Only check for duplicates within the same parent path in the NS tree structure
+        // This is the most reliable check since it validates against actual configured namespaces
+        var nsTreeStructure = await GetNamespaceStructureAsync();
+        var parentNode = FindNodeByPath(nsTreeStructure, parentPath);
+        
+        if (parentNode != null)
+        {
+            var existingChildNamespaces = parentNode.Children
+                .Where(child => child.NodeType == NSNodeType.Namespace && child.Namespace != null)
+                .Select(child => child.Name);
+
+            if (existingChildNamespaces.Any(name => 
+                string.Equals(name, namespaceName, StringComparison.OrdinalIgnoreCase)))
+            {
+                throw new InvalidOperationException(
+                    $"A namespace named '{namespaceName}' already exists under '{parentPath}'. " +
+                    "Namespace names must be unique within the same parent location.");
+            }
+        }
+        
+        // Secondary check: Look for actual namespace configurations with the same name and exact hierarchical context
+        var existingNamespaces = await _namespaceRepository.GetAllNamespaceConfigurationsAsync(activeOnly: true);
+        var parentNamespaceId = await GetParentNamespaceIdAsync(parentPath);
+        
+        // Check for conflicts within the same parent namespace OR same hierarchical level
+        var conflictingNamespaces = existingNamespaces.Where(ns => 
+            string.Equals(ns.Name, namespaceName, StringComparison.OrdinalIgnoreCase) &&
+            (ns.ParentNamespaceId == parentNamespaceId ||
+             (parentNamespaceId == null && ns.ParentNamespaceId == null && 
+              HierarchicalPathsAreSameLevel(ns.HierarchicalPath, hierarchicalPath))));
+
+        if (conflictingNamespaces.Any())
+        {
+            var conflictInfo = conflictingNamespaces.First();
+            var conflictPathStr = await GetHierarchicalPathDisplayAsync(conflictInfo.HierarchicalPath);
+            throw new InvalidOperationException(
+                $"A namespace named '{namespaceName}' already exists at '{conflictPathStr}'. " +
+                "Namespace names must be unique within the same hierarchical level.");
+        }
+    }
+
+    /// <summary>
+    /// Checks if two hierarchical paths are at the same level (same values for all hierarchy levels).
+    /// Used to prevent namespace conflicts only within the same hierarchical context.
+    /// </summary>
+    /// <param name="path1">First hierarchical path</param>
+    /// <param name="path2">Second hierarchical path</param>
+    /// <returns>True if paths are at exactly the same hierarchical level</returns>
+    private bool HierarchicalPathsAreSameLevel(HierarchicalPath path1, HierarchicalPath path2)
+    {
+        // Two paths are at the same level if all their hierarchy values match exactly
+        var keys = new[] { "Enterprise", "Site", "Area", "WorkCenter", "WorkUnit" };
+        
+        foreach (var key in keys)
+        {
+            var value1 = path1.GetValue(key) ?? "";
+            var value2 = path2.GetValue(key) ?? "";
+            
+            if (!string.Equals(value1, value2, StringComparison.OrdinalIgnoreCase))
+                return false;
+        }
+        
+        return true;
+    }
+
+    /// <summary>
+    /// Gets a display string for a hierarchical path.
+    /// </summary>
+    /// <param name="hierarchicalPath">The hierarchical path to display</param>
+    /// <returns>A formatted display string</returns>
+    private async Task<string> GetHierarchicalPathDisplayAsync(HierarchicalPath hierarchicalPath)
+    {
+        return await GetHierarchyPathKeyAsync(hierarchicalPath);
+    }
+
+    /// <summary>
+    /// Gets the parent namespace ID from a parent path by finding the namespace at that path
+    /// </summary>
+    private async Task<string?> GetParentNamespaceIdAsync(string parentPath)
+    {
+        if (string.IsNullOrEmpty(parentPath))
+            return null;
+            
+        // Find the namespace that corresponds to this parent path
+        var nsTreeStructure = await GetNamespaceStructureAsync();
+        var parentNode = FindNodeByPath(nsTreeStructure, parentPath);
+        
+        // Return the namespace ID if the parent node is a namespace
+        return parentNode?.NodeType == NSNodeType.Namespace ? parentNode.Namespace?.Id : null;
+    }
+
+    /// <summary>
+    /// Finds a node in the NS tree structure by its full path.
+    /// </summary>
+    /// <param name="nodes">The root nodes to search</param>
+    /// <param name="path">The path to find</param>
+    /// <returns>The node if found, null otherwise</returns>
+    private NSTreeNode? FindNodeByPath(IEnumerable<NSTreeNode> nodes, string path)
+    {
+        if (string.IsNullOrEmpty(path))
+            return null;
+
+        foreach (var node in nodes)
+        {
+            if (string.Equals(node.FullPath, path, StringComparison.OrdinalIgnoreCase))
+                return node;
+
+            var foundInChildren = FindNodeByPath(node.Children, path);
+            if (foundInChildren != null)
+                return foundInChildren;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Validates that a hierarchy instance name is unique within the same parent.
+    /// </summary>
+    /// <param name="instanceName">The name of the instance to validate</param>
+    /// <param name="parentInstanceId">The parent instance ID (null for root level)</param>
+    /// <exception cref="InvalidOperationException">Thrown when a duplicate instance name is found</exception>
+    private async Task ValidateUniqueHierarchyInstanceNameAsync(string instanceName, string? parentInstanceId)
+    {
+        var existingInstances = await _nsTreeInstanceRepository.GetAllInstancesAsync(activeOnly: true);
+        
+        // Check for instances with the same name under the same parent
+        var conflictingInstances = existingInstances.Where(instance =>
+            string.Equals(instance.Name, instanceName, StringComparison.OrdinalIgnoreCase) &&
+            instance.ParentInstanceId == parentInstanceId);
+
+        if (conflictingInstances.Any())
+        {
+            var locationDescription = string.IsNullOrEmpty(parentInstanceId)
+                ? "the root level"
+                : $"the same parent location";
+                
+            throw new InvalidOperationException(
+                $"A hierarchy instance named '{instanceName}' already exists at {locationDescription}. " +
+                "Instance names must be unique within the same parent location.");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<(bool CanDelete, string? Reason)> CanDeleteNamespaceAsync(string namespaceId)
+    {
+        try
+        {
+            var namespaceConfig = await _namespaceRepository.GetNamespaceConfigurationAsync(namespaceId);
+            if (namespaceConfig == null)
+            {
+                return (false, "Namespace not found");
+            }
+
+            // Check for child namespaces
+            var allNamespaces = await _namespaceRepository.GetAllNamespaceConfigurationsAsync(activeOnly: true);
+            var childNamespaces = allNamespaces.Where(ns => ns.ParentNamespaceId == namespaceId).ToList();
+
+            // Check for topics mapped to this namespace
+            var allTopics = await _topicBrowserService.GetLatestTopicStructureAsync();
+            var nsTreeStructure = await GetNamespaceStructureAsync();
+            var targetNode = FindNamespaceNodeById(nsTreeStructure, namespaceId);
+            
+            var mappedTopics = new List<string>();
+            if (targetNode != null)
+            {
+                // Find topics mapped to this namespace path and all child namespace paths
+                var namespacePaths = new List<string> { targetNode.FullPath };
+                await CollectChildNamespacePaths(targetNode, namespacePaths);
+
+                mappedTopics = allTopics
+                    .Where(topic => namespacePaths.Any(path => 
+                        !string.IsNullOrEmpty(topic.NSPath) && 
+                        topic.NSPath.StartsWith(path, StringComparison.OrdinalIgnoreCase)))
+                    .Select(topic => topic.Topic)
+                    .ToList();
+            }
+
+            // Build warning message
+            var warnings = new List<string>();
+            if (childNamespaces.Any())
+            {
+                warnings.Add($"{childNamespaces.Count} child namespace(s)");
+            }
+            if (mappedTopics.Any())
+            {
+                warnings.Add($"{mappedTopics.Count} mapped topic(s)");
+            }
+
+            var reason = warnings.Any() 
+                ? $"This will also delete: {string.Join(", ", warnings)}"
+                : null;
+
+            return (true, reason);
+        }
+        catch (Exception ex)
+        {
+            return (false, $"Error checking deletion status: {ex.Message}");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> DeleteNamespaceAsync(string namespaceId)
+    {
+        try
+        {
+            var namespaceConfig = await _namespaceRepository.GetNamespaceConfigurationAsync(namespaceId);
+            if (namespaceConfig == null)
+            {
+                return false;
+            }
+
+            // Get the full namespace tree structure to find the namespace path
+            var nsTreeStructure = await GetNamespaceStructureAsync();
+            var targetNode = FindNamespaceNodeById(nsTreeStructure, namespaceId);
+            if (targetNode == null)
+            {
+                return false;
+            }
+
+            // Collect all namespace paths that will be affected (this namespace + all children)
+            var affectedNamespacePaths = new List<string> { targetNode.FullPath };
+            await CollectChildNamespacePaths(targetNode, affectedNamespacePaths);
+
+            // 1. Clean up topic mappings for all affected namespace paths
+            var allTopics = await _topicBrowserService.GetLatestTopicStructureAsync();
+            var topicsToUpdate = allTopics
+                .Where(topic => affectedNamespacePaths.Any(path => 
+                    !string.IsNullOrEmpty(topic.NSPath) && 
+                    topic.NSPath.StartsWith(path, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+
+            foreach (var topic in topicsToUpdate)
+            {
+                // Clear the namespace mapping
+                await _topicBrowserService.UpdateTopicConfigurationAsync(new TopicConfiguration
+                {
+                    Topic = topic.Topic,
+                    NSPath = string.Empty, // Clear namespace mapping
+                    UNSName = topic.UNSName,
+                    Description = topic.Description,
+                    Path = new HierarchicalPath(), // Reset to empty hierarchical path
+                    IsActive = topic.IsActive,
+                    CreatedAt = topic.CreatedAt,
+                    ModifiedAt = DateTime.UtcNow
+                });
+            }
+
+            // 2. Delete all child namespaces recursively
+            var allNamespaces = await _namespaceRepository.GetAllNamespaceConfigurationsAsync(activeOnly: true);
+            var childNamespaceIds = new List<string>();
+            await CollectChildNamespaceIds(namespaceId, allNamespaces.ToList(), childNamespaceIds);
+
+            foreach (var childId in childNamespaceIds)
+            {
+                await _namespaceRepository.DeleteNamespaceConfigurationAsync(childId);
+            }
+
+            // 3. Delete the target namespace
+            await _namespaceRepository.DeleteNamespaceConfigurationAsync(namespaceId);
+
+            // 4. Publish namespace structure changed event
+            var namespaceChangedEvent = new NamespaceStructureChangedEvent(
+                ChangedNamespace: targetNode.FullPath,
+                ChangeType: "Deleted",
+                ChangedBy: "user"
+            );
+            await _eventBus.PublishAsync(namespaceChangedEvent);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            // Log error but don't expose internal details
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// Finds a namespace node by its namespace ID in the tree structure.
+    /// </summary>
+    private NSTreeNode? FindNamespaceNodeById(IEnumerable<NSTreeNode> nodes, string namespaceId)
+    {
+        foreach (var node in nodes)
+        {
+            if (node.NodeType == NSNodeType.Namespace && node.Namespace?.Id == namespaceId)
+                return node;
+
+            var foundInChildren = FindNamespaceNodeById(node.Children, namespaceId);
+            if (foundInChildren != null)
+                return foundInChildren;
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Recursively collects all child namespace paths under a given namespace node.
+    /// </summary>
+    private async Task CollectChildNamespacePaths(NSTreeNode namespaceNode, List<string> collectedPaths)
+    {
+        foreach (var child in namespaceNode.Children.Where(c => c.NodeType == NSNodeType.Namespace))
+        {
+            collectedPaths.Add(child.FullPath);
+            await CollectChildNamespacePaths(child, collectedPaths);
+        }
+    }
+
+    /// <summary>
+    /// Recursively collects all child namespace IDs under a given namespace.
+    /// </summary>
+    private async Task CollectChildNamespaceIds(string parentNamespaceId, List<NamespaceConfiguration> allNamespaces, List<string> collectedIds)
+    {
+        var children = allNamespaces.Where(ns => ns.ParentNamespaceId == parentNamespaceId).ToList();
+        
+        foreach (var child in children)
+        {
+            collectedIds.Add(child.Id);
+            await CollectChildNamespaceIds(child.Id, allNamespaces, collectedIds);
+        }
     }
 }
 
