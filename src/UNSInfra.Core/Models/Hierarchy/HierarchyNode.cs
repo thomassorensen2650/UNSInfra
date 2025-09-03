@@ -43,6 +43,13 @@ public class HierarchyNode
     public string? ParentNodeId { get; set; }
 
     /// <summary>
+    /// Gets or sets whether topics can be directly mapped to instances of this hierarchy node.
+    /// When true, topics can be mapped to hierarchical paths that end at this level.
+    /// Defaults to true for backward compatibility.
+    /// </summary>
+    public bool AllowTopics { get; set; } = true;
+
+    /// <summary>
     /// Gets or sets additional metadata for this node that can be used by MCP or other integrations.
     /// </summary>
     public Dictionary<string, object> Metadata { get; set; } = new();

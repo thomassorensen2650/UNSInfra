@@ -53,6 +53,14 @@ public interface IHierarchyService
     /// <param name="levelName">The level name (e.g., "Enterprise", "Site")</param>
     /// <returns>The hierarchy node if found, null otherwise</returns>
     Task<HierarchyNode?> GetNodeByNameAsync(string levelName);
+
+    /// <summary>
+    /// Validates whether topics can be mapped to a specific hierarchical path.
+    /// Checks the AllowTopics setting of the deepest (rightmost) hierarchy node in the path.
+    /// </summary>
+    /// <param name="path">The hierarchical path to validate for topic mapping</param>
+    /// <returns>Validation result indicating whether topics can be mapped to this path</returns>
+    Task<ValidationResult> ValidateTopicMappingAsync(HierarchicalPath path);
 }
 
 /// <summary>

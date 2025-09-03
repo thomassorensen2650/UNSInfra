@@ -9,6 +9,7 @@
 @inject ITopicConfigurationNotificationService NotificationService
 @inject IJSRuntime JSRuntime
 @inject ILogger<NSTreeNodeEditor> Logger
+@inject UNSInfra.UI.Services.TreeExpansionStateService TreeExpansionStateService
 @implements IDisposable
 
 @if (Node != null)
@@ -116,7 +117,10 @@
             </div>
         }
 
-        @if (isExpanded && (Node?.Children?.Any() == true || (Node?.NodeType == NSNodeType.Namespace && assignedTopics?.Any() == true)))
+        @if (isExpanded && (Node?.Children?.Any() == true || 
+                           ((Node?.NodeType == NSNodeType.Namespace || 
+                             (Node?.NodeType == NSNodeType.HierarchyNode && Node?.HierarchyNode?.AllowTopics == true)) && 
+                            assignedTopics?.Any() == true)))
         {
             <div class="ms-3 mt-1">
                 @foreach (var child in Node?.Children ?? Enumerable.Empty<NSTreeNode>())
@@ -124,8 +128,8 @@
                     <NSTreeNodeEditor Node="child" OnNodeChanged="HandleChildNodeChanged" OnAddDataToNamespace="OnAddDataToNamespace" OnTopicSelected="OnTopicSelected" />
                 }
                 
-                @* Show topics assigned to this namespace *@
-                @if (Node?.NodeType == NSNodeType.Namespace && assignedTopics?.Any() == true)
+                @* Show topics assigned to this namespace or hierarchical node *@
+                @if (assignedTopics?.Any() == true)
                 {
                     @foreach (var topic in assignedTopics)
                     {
@@ -175,6 +179,13 @@
                     <div class="mb-3">
                         <label class="form-label">Instance Name</label>
                         <input type="text" class="form-control" @bind="newInstanceName" placeholder="e.g., Enterprise1, Site2, Production" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" rows="3" @bind="newInstanceDescription" placeholder="Describe this hierarchy instance..."></textarea>
+                        <div class="form-text">
+                            Optional description to provide context about this instance.
+                        </div>
                     </div>
                 </div>
                 <div class="modal-footer">
@@ -232,6 +243,43 @@
     </div>
 }
 
+<!-- Edit Hierarchy Node Modal -->
+@if (showEditModal)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="position: fixed; top: 0; left: 0; width: 100%; height: 100%; background-color: rgba(0,0,0,0.5); z-index: 1050;">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Edit @Node?.HierarchyNode?.Name Instance</h5>
+                    <button type="button" class="btn-close" @onclick="HideEditModal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Instance Name</label>
+                        <input type="text" class="form-control" @bind="editInstanceName" placeholder="e.g., Enterprise1, Site2, Production" />
+                        <div class="form-text">
+                            The display name for this @Node?.HierarchyNode?.Name.ToLower() instance.
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Description</label>
+                        <textarea class="form-control" rows="3" @bind="editInstanceDescription" placeholder="Describe this @Node?.HierarchyNode?.Name.ToLower() instance..."></textarea>
+                        <div class="form-text">
+                            Optional description to provide context about this instance.
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" @onclick="HideEditModal">Cancel</button>
+                    <button type="button" class="btn btn-primary" @onclick="UpdateInstance" disabled="@(string.IsNullOrEmpty(editInstanceName))">
+                        Update Instance
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
 @code {
     [Parameter] public NSTreeNode? Node { get; set; }
     [Parameter] public EventCallback OnNodeChanged { get; set; }
@@ -242,12 +290,16 @@
     private bool showQuickAddMenu = false;
     private bool showAddHierarchyModal = false;
     private bool showAddNamespaceModal = false;
+    private bool showEditModal = false;
     private bool isExpanded = false;
     
     private List<TopicInfo>? assignedTopics = null;
 
     private string selectedHierarchyNodeId = "";
     private string newInstanceName = "";
+    private string newInstanceDescription = "";
+    private string editInstanceName = "";
+    private string editInstanceDescription = "";
     private List<HierarchyNode>? availableHierarchyNodes;
     
     private string selectedNamespaceType = "";
@@ -263,14 +315,15 @@
     
     private async void OnTopicConfigurationChanged(object? sender, TopicConfigurationChangedEventArgs e)
     {
-        if (Node?.NodeType == NSNodeType.Namespace && !string.IsNullOrEmpty(Node.FullPath))
+        if ((Node?.NodeType == NSNodeType.Namespace || 
+            (Node?.NodeType == NSNodeType.HierarchyNode && Node?.HierarchyNode?.AllowTopics == true)) && 
+            !string.IsNullOrEmpty(Node.FullPath))
         {
             try
             {
-                // Only refresh if this change might affect our assigned topics
+                // Only refresh if this change affects topic assignment or display in UNS Tree
                 if (e.ChangeType == TopicConfigurationChangeType.UNSNameChanged ||
-                    e.ChangeType == TopicConfigurationChangeType.NamespaceAssignmentChanged ||
-                    e.ChangeType == TopicConfigurationChangeType.Updated)
+                    e.ChangeType == TopicConfigurationChangeType.NamespaceAssignmentChanged)
                 {
                     await RefreshAssignedTopics();
                 }
@@ -284,19 +337,27 @@
     
     private async void OnCachedTopicStructureChanged(object? sender, TopicStructureChangedEventArgs e)
     {
-        if (Node?.NodeType == NSNodeType.Namespace && !string.IsNullOrEmpty(Node.FullPath))
+        if ((Node?.NodeType == NSNodeType.Namespace || 
+            (Node?.NodeType == NSNodeType.HierarchyNode && Node?.HierarchyNode?.AllowTopics == true)) && 
+            !string.IsNullOrEmpty(Node.FullPath))
         {
-            try
+            // Only refresh for changes that affect hierarchy/namespace topic assignment
+            if (e.ChangeType == TopicChangeType.TopicsAdded ||
+                e.ChangeType == TopicChangeType.TopicsAutoMapped ||
+                e.ChangeType == TopicChangeType.TopicsRemoved)
             {
-                await InvokeAsync(async () =>
+                try
                 {
-                    await RefreshAssignedTopics();
-                    StateHasChanged();
-                });
-            }
-            catch (Exception ex)
-            {
-                Logger.LogError(ex, "Error handling cached topic structure change");
+                    await InvokeAsync(async () =>
+                    {
+                        await RefreshAssignedTopics();
+                        StateHasChanged();
+                    });
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogError(ex, "Error handling cached topic structure change");
+                }
             }
         }
     }
@@ -373,6 +434,7 @@
         showAddHierarchyModal = true;
         selectedHierarchyNodeId = "";
         newInstanceName = "";
+        newInstanceDescription = "";
         StateHasChanged();
     }
 
@@ -402,8 +464,39 @@
     private void ShowEditModal()
     {
         showContextMenu = false;
-        // TODO: Implement edit modal functionality
+        showEditModal = true;
+        
+        // Populate current values
+        editInstanceName = Node?.Name ?? "";
+        editInstanceDescription = Node?.Instance?.Metadata.TryGetValue("description", out var desc) == true ? desc.ToString() : "";
+        
         StateHasChanged();
+    }
+    
+    private void HideEditModal()
+    {
+        showEditModal = false;
+        StateHasChanged();
+    }
+
+    private async Task UpdateInstance()
+    {
+        if (string.IsNullOrEmpty(editInstanceName) || Node?.Instance == null)
+            return;
+
+        // Server-side validation will handle duplicate name checking
+
+        try
+        {
+            await NamespaceStructureService.UpdateInstanceAsync(Node.Instance.Id, editInstanceName, editInstanceDescription);
+            
+            HideEditModal();
+            await OnNodeChanged.InvokeAsync();
+        }
+        catch (Exception ex)
+        {
+            await JSRuntime.InvokeVoidAsync("alert", $"Error updating hierarchy instance: {ex.Message}");
+        }
     }
 
     private async Task AddHierarchyInstance()
@@ -425,7 +518,7 @@
         try
         {
             var parentInstanceId = Node?.Instance?.Id;
-            await NamespaceStructureService.AddHierarchyInstanceAsync(selectedHierarchyNodeId, newInstanceName, parentInstanceId);
+            await NamespaceStructureService.AddHierarchyInstanceAsync(selectedHierarchyNodeId, newInstanceName, parentInstanceId, newInstanceDescription);
             
             HideAddHierarchyModal();
             await OnNodeChanged.InvokeAsync();
@@ -609,14 +702,21 @@
     private async Task HandleChildNodeChanged()
     {
         // Refresh assigned topics when child nodes change (e.g., when data is added)
-        if (Node?.NodeType == NSNodeType.Namespace)
+        if (Node?.NodeType == NSNodeType.Namespace || 
+            (Node?.NodeType == NSNodeType.HierarchyNode && Node?.HierarchyNode?.AllowTopics == true))
         {
             await LoadAssignedTopics();
             
-            // Auto-expand namespace nodes when topics are assigned to them
+            // Auto-expand nodes when topics are assigned to them
             if (assignedTopics?.Any() == true && !isExpanded)
             {
                 isExpanded = true;
+                
+                // Save the auto-expansion state
+                if (Node?.FullPath != null)
+                {
+                    TreeExpansionStateService.SetExpansionState(Node.FullPath, isExpanded);
+                }
             }
         }
         
@@ -629,7 +729,8 @@
     /// </summary>
     public async Task RefreshAssignedTopics()
     {
-        if (Node?.NodeType == NSNodeType.Namespace)
+        if (Node?.NodeType == NSNodeType.Namespace || 
+            (Node?.NodeType == NSNodeType.HierarchyNode && Node?.HierarchyNode?.AllowTopics == true))
         {
             await LoadAssignedTopics();
             StateHasChanged();
@@ -638,11 +739,12 @@
     
     protected override async Task OnParametersSetAsync()
     {
-        if (Node?.NodeType == NSNodeType.Namespace)
+        if (Node?.NodeType == NSNodeType.Namespace || 
+            (Node?.NodeType == NSNodeType.HierarchyNode && Node?.HierarchyNode?.AllowTopics == true))
         {
             await LoadAssignedTopics();
             
-            // Subscribe to topic configuration changes for namespace nodes
+            // Subscribe to topic configuration changes for namespace nodes and hierarchy nodes with AllowTopics
             NotificationService.TopicConfigurationChanged -= OnTopicConfigurationChanged; // Remove existing subscription
             NotificationService.TopicConfigurationChanged += OnTopicConfigurationChanged; // Add new subscription
             
@@ -651,16 +753,29 @@
             CachedTopicBrowserService.TopicStructureChanged += OnCachedTopicStructureChanged; // Add new subscription
         }
         
-        // Initialize expansion state - hierarchy nodes start expanded, namespaces start collapsed
-        if (Node?.NodeType == NSNodeType.HierarchyNode)
+        // Initialize expansion state from service, or use defaults
+        if (Node?.FullPath != null)
         {
-            isExpanded = true;
+            var savedState = TreeExpansionStateService.GetExpansionState(Node.FullPath);
+            if (savedState.HasValue)
+            {
+                isExpanded = savedState.Value;
+            }
+            else
+            {
+                // Default behavior: hierarchy nodes start expanded, namespaces start collapsed
+                isExpanded = Node.NodeType == NSNodeType.HierarchyNode;
+                // Save the default state
+                TreeExpansionStateService.SetExpansionState(Node.FullPath, isExpanded);
+            }
         }
     }
 
     private async Task LoadAssignedTopics()
     {
-        if (Node?.NodeType != NSNodeType.Namespace || Node?.FullPath == null)
+        if (Node?.FullPath == null || 
+            (Node.NodeType != NSNodeType.Namespace && 
+             (Node.NodeType != NSNodeType.HierarchyNode || Node.HierarchyNode?.AllowTopics != true)))
         {
             assignedTopics = null;
             return;
@@ -701,6 +816,13 @@
         if (HasChildren())
         {
             isExpanded = !isExpanded;
+            
+            // Save expansion state to service
+            if (Node?.FullPath != null)
+            {
+                TreeExpansionStateService.SetExpansionState(Node.FullPath, isExpanded);
+            }
+            
             StateHasChanged();
         }
     }

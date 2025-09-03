@@ -49,6 +49,9 @@ builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Information)
 builder.Services.AddSingleton<UNSInfra.UI.Services.InMemoryLogService>();
 builder.Services.AddSingleton<UNSInfra.UI.Services.IInMemoryLogService>(provider => 
     provider.GetRequiredService<UNSInfra.UI.Services.InMemoryLogService>());
+
+// Add tree expansion state service
+builder.Services.AddSingleton<UNSInfra.UI.Services.TreeExpansionStateService>();
 builder.Logging.AddProvider(new UNSInfra.UI.Services.InMemoryLoggerProvider(
     builder.Services.BuildServiceProvider().GetRequiredService<UNSInfra.UI.Services.InMemoryLogService>()));
 

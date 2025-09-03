@@ -120,4 +120,39 @@ public class HierarchyService : IHierarchyService
             string.Equals(n.Name, levelName, StringComparison.OrdinalIgnoreCase));
     }
 
+    public async Task<ValidationResult> ValidateTopicMappingAsync(HierarchicalPath path)
+    {
+        var result = new ValidationResult { IsValid = true };
+        var config = await GetActiveConfigurationAsync();
+        var nodes = config.Nodes.OrderBy(n => n.Order).ToList();
+
+        // Find the deepest (rightmost) hierarchy node that has a value in the path
+        HierarchyNode? deepestNode = null;
+        foreach (var node in nodes.OrderByDescending(n => n.Order))
+        {
+            var value = path.GetValue(node.Name);
+            if (!string.IsNullOrEmpty(value))
+            {
+                deepestNode = node;
+                break;
+            }
+        }
+
+        if (deepestNode == null)
+        {
+            result.IsValid = false;
+            result.Errors.Add("No hierarchy levels specified in path");
+            return result;
+        }
+
+        // Check if the deepest node allows topics
+        if (!deepestNode.AllowTopics)
+        {
+            result.IsValid = false;
+            result.Errors.Add($"Topics cannot be mapped to hierarchy level '{deepestNode.Name}'. Topic mapping is disabled for this level.");
+        }
+
+        return result;
+    }
+
 }

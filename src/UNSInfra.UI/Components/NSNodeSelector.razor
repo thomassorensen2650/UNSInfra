@@ -17,14 +17,32 @@
         <div class="flex-grow-1 d-flex align-items-center">
             @if (Node.NodeType == NSNodeType.HierarchyNode)
             {
-                <i class="bi bi-folder text-primary me-1"></i>
-                <span class="fw-medium">@Node.Name</span>
-                <small class="text-muted ms-1">(@Node.HierarchyNode?.Name)</small>
+                @if (Node.HierarchyNode?.AllowTopics == true)
+                {
+                    <button class="btn btn-link btn-sm p-0 text-start flex-grow-1 namespace-select-btn @(IsSelected ? "selected" : "")" 
+                            @onclick="SelectNode">
+                        <i class="bi bi-folder text-primary me-1"></i>
+                        <span class="fw-medium">@Node.Name</span>
+                        <small class="text-muted ms-1">(@Node.HierarchyNode?.Name)</small>
+                        @if (IsSelected)
+                        {
+                            <i class="bi bi-check-circle text-success ms-2"></i>
+                        }
+                    </button>
+                }
+                else
+                {
+                    <div class="d-flex align-items-center">
+                        <i class="bi bi-folder text-muted me-1"></i>
+                        <span class="fw-medium text-muted">@Node.Name</span>
+                        <small class="text-muted ms-1">(@Node.HierarchyNode?.Name) - Topics not allowed</small>
+                    </div>
+                }
             }
             else if (Node.NodeType == NSNodeType.Namespace)
             {
                 <button class="btn btn-link btn-sm p-0 text-start flex-grow-1 namespace-select-btn @(IsSelected ? "selected" : "")" 
-                        @onclick="SelectNamespace">
+                        @onclick="SelectNode">
                     <i class="bi @GetNamespaceIcon() @GetNamespaceColor() me-1"></i>
                     <span>@Node.Name</span>
                     <small class="text-muted ms-1">(@Node.Namespace?.Type.GetDisplayName())</small>
@@ -65,9 +83,10 @@
         StateHasChanged();
     }
     
-    private async Task SelectNamespace()
+    private async Task SelectNode()
     {
-        if (Node.NodeType == NSNodeType.Namespace)
+        if (Node.NodeType == NSNodeType.Namespace || 
+            (Node.NodeType == NSNodeType.HierarchyNode && Node.HierarchyNode?.AllowTopics == true))
         {
             await OnNodeSelected.InvokeAsync(Node.FullPath);
         }

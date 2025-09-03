@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using UNSInfra.Models.Data;
+using UNSInfra.Models.Hierarchy;
+using UNSInfra.Services;
 using UNSInfra.Services.TopicBrowser;
 using UNSInfra.Services.Events;
 
@@ -15,6 +17,7 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
 {
     private readonly SimplifiedAutoMapperService _autoMapper;
     private readonly IEventBus _eventBus;
+    private readonly IServiceScopeFactory _serviceScopeFactory;
     private readonly ILogger<SimplifiedAutoMappingBackgroundService> _logger;
     
     // Queue for processing topics that need auto-mapping
@@ -37,10 +40,12 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
     public SimplifiedAutoMappingBackgroundService(
         SimplifiedAutoMapperService autoMapper,
         IEventBus eventBus,
+        IServiceScopeFactory serviceScopeFactory,
         ILogger<SimplifiedAutoMappingBackgroundService> logger)
     {
         _autoMapper = autoMapper;
         _eventBus = eventBus;
+        _serviceScopeFactory = serviceScopeFactory;
         _logger = logger;
     }
 
@@ -181,6 +186,26 @@ public class SimplifiedAutoMappingBackgroundService : BackgroundService
                     lock (_failedTopicsLock)
                     {
                         _failedTopicsCache.Remove(topic.Topic);
+                    }
+                    
+                    // Validate that topics can be mapped to this hierarchical path
+                    using var scope = _serviceScopeFactory.CreateScope();
+                    var hierarchyService = scope.ServiceProvider.GetRequiredService<IHierarchyService>();
+                    var hierarchicalPath = await hierarchyService.CreatePathFromStringAsync(namespacePath);
+                    var validation = await hierarchyService.ValidateTopicMappingAsync(hierarchicalPath);
+                    
+                    if (!validation.IsValid)
+                    {
+                        _logger.LogWarning("Cannot map topic '{Topic}' to namespace '{Namespace}': {Errors}", 
+                            topic.Topic, namespacePath, string.Join(", ", validation.Errors));
+                        
+                        // Store as failed topic
+                        lock (_failedTopicsLock)
+                        {
+                            _failedTopicsCache[topic.Topic] = topic;
+                        }
+                        _failedTopics++;
+                        continue;
                     }
                     
                     // Publish successful mapping event

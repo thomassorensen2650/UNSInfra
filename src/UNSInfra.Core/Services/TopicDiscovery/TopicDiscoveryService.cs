@@ -78,10 +78,21 @@ public class TopicDiscoveryService : ITopicDiscoveryService
     /// <returns>The newly created topic configuration</returns>
     public async Task<TopicConfiguration> CreateUnverifiedTopicAsync(string topic, string sourceType, HierarchicalPath? suggestedPath = null)
     {
+        var path = suggestedPath ?? await GenerateDefaultPathAsync(topic);
+        
+        // Validate that topics can be mapped to this hierarchical path
+        var validation = await _hierarchyService.ValidateTopicMappingAsync(path);
+        if (!validation.IsValid)
+        {
+            _logger.LogWarning("Cannot create topic configuration for '{Topic}': {Errors}", 
+                topic, string.Join(", ", validation.Errors));
+            throw new InvalidOperationException($"Cannot map topic '{topic}' to hierarchical path: {string.Join(", ", validation.Errors)}");
+        }
+
         var configuration = new TopicConfiguration
         {
             Topic = topic,
-            Path = suggestedPath ?? await GenerateDefaultPathAsync(topic),
+            Path = path,
             IsVerified = false,
             SourceType = sourceType,
             CreatedBy = "AutoDiscovery",
@@ -132,7 +143,20 @@ public class TopicDiscoveryService : ITopicDiscoveryService
                         }
                     }
                     
-                    return await _hierarchyService.CreatePathFromStringAsync(pathString);
+                    var generatedPath = await _hierarchyService.CreatePathFromStringAsync(pathString);
+                    
+                    // Validate that topics can be mapped to this path
+                    var validation = await _hierarchyService.ValidateTopicMappingAsync(generatedPath);
+                    if (validation.IsValid)
+                    {
+                        return generatedPath;
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Generated path for topic '{Topic}' failed validation: {Errors}", 
+                            topic, string.Join(", ", validation.Errors));
+                        continue; // Try next rule
+                    }
                 }
             }
             catch (Exception ex)

@@ -58,8 +58,18 @@ public interface INamespaceStructureService
     /// <param name="hierarchyNodeId">The hierarchy node type ID</param>
     /// <param name="name">The instance name</param>
     /// <param name="parentInstanceId">The parent instance ID, or null for root</param>
+    /// <param name="description">Optional description for the instance</param>
     /// <returns>The created NS tree instance</returns>
-    Task<NSTreeInstance> AddHierarchyInstanceAsync(string hierarchyNodeId, string name, string? parentInstanceId);
+    Task<NSTreeInstance> AddHierarchyInstanceAsync(string hierarchyNodeId, string name, string? parentInstanceId, string? description = null);
+
+    /// <summary>
+    /// Updates an existing hierarchy node instance.
+    /// </summary>
+    /// <param name="instanceId">The instance ID to update</param>
+    /// <param name="name">The new instance name</param>
+    /// <param name="description">The new description (stored in metadata)</param>
+    /// <returns>The updated NS tree instance</returns>
+    Task<NSTreeInstance> UpdateInstanceAsync(string instanceId, string name, string? description = null);
 
     /// <summary>
     /// Deletes an NS tree instance and all its children.

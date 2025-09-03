@@ -81,9 +81,16 @@
                         <div class="payload-container">
                             @if (SelectedPayload != null)
                             {
-                                <!--<pre class="payload-content">@System.Text.Json.JsonSerializer.Serialize(SelectedPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true })</pre> -->
+                                <div class="d-flex justify-content-between align-items-center mb-2">
+                                    <span class="text-muted small">Current Value</span>
+                                    @if (SelectedPayloadLastUpdated.HasValue)
+                                    {
+                                        <span class="text-muted small">
+                                            <i class="bi bi-clock me-1"></i>Last Updated: @SelectedPayloadLastUpdated.Value.ToString("yyyy-MM-dd HH:mm:ss")
+                                        </span>
+                                    }
+                                </div>
                                 <pre class="payload-content">@SelectedPayload</pre>
-
                             }
                             else
                             {
@@ -273,6 +280,7 @@
     private HashSet<string> HighlightedPaths = new();
     private TopicInfo? SelectedTopic;
     private object? SelectedPayload;
+    private DateTime? SelectedPayloadLastUpdated;
     private bool _refreshScheduled = false;
     private DateTime _lastRefresh = DateTime.MinValue;
     private const int RefreshThrottleMs = 2000; // Limit UI updates to every 2 seconds for better performance
@@ -392,15 +400,34 @@
                 fullPath = $"{dataBrowserSectionName}/{topicInfo.SourceType}/{topicInfo.Topic}";
             }
             
-            // Start blinking animation in the tree - this is sufficient for showing updates
+            // Start blinking animation in the tree
             if (TopicTreeComponent != null)
             {
                 _ = InvokeAsync(() => TopicTreeComponent.BlinkNode(fullPath));
             }
         }
         
-        // Remove the persistent yellow highlighting to reduce visual noise
-        // The blinking animation already shows data updates effectively
+        // Update Data tab payload if this is the currently selected topic
+        if (SelectedTopic != null && SelectedTopic.Topic == e.Topic && activeDetailTab == "data")
+        {
+            _ = InvokeAsync(async () =>
+            {
+                try
+                {
+                    var data = await TopicBrowserService.GetDataForTopicAsync(e.Topic);
+                    if (SelectedTopic?.Topic == e.Topic) // Double-check topic still selected
+                    {
+                        SelectedPayload = data?.Value ?? "No data available";
+                        SelectedPayloadLastUpdated = data?.Timestamp ?? DateTime.Now;
+                        StateHasChanged();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Logger.LogWarning(ex, "Error updating payload for topic {Topic}", e.Topic);
+                }
+            });
+        }
         
         // DATA UPDATES should NOT trigger topic structure refresh
         // The hierarchical paths are static and only change via manual edits
@@ -467,6 +494,7 @@
         // Immediately update UI to show loading state
         SelectedTopic = topic;
         SelectedPayload = null; // This triggers the loading spinner
+        SelectedPayloadLastUpdated = null; // Clear timestamp
         StateHasChanged(); // Force immediate UI update
         
         try
@@ -479,6 +507,7 @@
             if (SelectedTopic?.Topic == topic.Topic)
             {
                 SelectedPayload = data?.Value ?? "No data available";
+                SelectedPayloadLastUpdated = data?.Timestamp ?? DateTime.Now;
                 StateHasChanged();
             }
         }

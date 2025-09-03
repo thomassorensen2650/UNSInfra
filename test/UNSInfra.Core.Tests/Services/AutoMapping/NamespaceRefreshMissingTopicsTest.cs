@@ -69,6 +69,7 @@ public class NamespaceRefreshMissingTopicsTest : IDisposable
         _backgroundService = new SimplifiedAutoMappingBackgroundService(
             _autoMapperService,
             _eventBusMock.Object,
+            Mock.Of<IServiceScopeFactory>(),
             _backgroundServiceLoggerMock.Object);
     }
 

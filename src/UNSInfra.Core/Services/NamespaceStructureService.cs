@@ -338,7 +338,7 @@ public class NamespaceStructureService : INamespaceStructureService
         }
     }
 
-    public async Task<NSTreeInstance> AddHierarchyInstanceAsync(string hierarchyNodeId, string name, string? parentInstanceId)
+    public async Task<NSTreeInstance> AddHierarchyInstanceAsync(string hierarchyNodeId, string name, string? parentInstanceId, string? description = null)
     {
         // Validate that no hierarchy instance with the same name exists under the same parent
         await ValidateUniqueHierarchyInstanceNameAsync(name, parentInstanceId);
@@ -354,6 +354,12 @@ public class NamespaceStructureService : INamespaceStructureService
             ModifiedAt = DateTime.UtcNow
         };
 
+        // Add description to metadata if provided
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            instance.Metadata["description"] = description;
+        }
+
         await _nsTreeInstanceRepository.SaveInstanceAsync(instance);
         
         // Publish namespace structure changed event for auto-mapper cache refresh
@@ -364,6 +370,41 @@ public class NamespaceStructureService : INamespaceStructureService
         );
         await _eventBus.PublishAsync(namespaceChangedEvent);
         
+        return instance;
+    }
+
+    public async Task<NSTreeInstance> UpdateInstanceAsync(string instanceId, string name, string? description = null)
+    {
+        var instance = await _nsTreeInstanceRepository.GetInstanceByIdAsync(instanceId);
+        if (instance == null)
+            throw new ArgumentException($"Instance with ID '{instanceId}' not found", nameof(instanceId));
+
+        // Validate that no other hierarchy instance with the same name exists under the same parent
+        await ValidateUniqueHierarchyInstanceNameAsync(name, instance.ParentInstanceId, instanceId);
+
+        instance.Name = name;
+        instance.ModifiedAt = DateTime.UtcNow;
+
+        // Update description in metadata
+        if (!string.IsNullOrWhiteSpace(description))
+        {
+            instance.Metadata["description"] = description;
+        }
+        else
+        {
+            instance.Metadata.Remove("description");
+        }
+
+        await _nsTreeInstanceRepository.SaveInstanceAsync(instance);
+
+        // Publish namespace structure changed event for auto-mapper cache refresh
+        var namespaceChangedEvent = new NamespaceStructureChangedEvent(
+            ChangedNamespace: name,
+            ChangeType: "Updated",
+            ChangedBy: "user"
+        );
+        await _eventBus.PublishAsync(namespaceChangedEvent);
+
         return instance;
     }
 
@@ -455,12 +496,28 @@ public class NamespaceStructureService : INamespaceStructureService
         var existingNamespaces = await _namespaceRepository.GetAllNamespaceConfigurationsAsync(activeOnly: true);
         var parentNamespaceId = await GetParentNamespaceIdAsync(parentPath);
         
-        // Check for conflicts within the same parent namespace OR same hierarchical level
+        // Check for conflicts within the exact same parent namespace
+        // When ParentNamespaceId is null, also check hierarchical path context
         var conflictingNamespaces = existingNamespaces.Where(ns => 
-            string.Equals(ns.Name, namespaceName, StringComparison.OrdinalIgnoreCase) &&
-            (ns.ParentNamespaceId == parentNamespaceId ||
-             (parentNamespaceId == null && ns.ParentNamespaceId == null && 
-              HierarchicalPathsAreSameLevel(ns.HierarchicalPath, hierarchicalPath))));
+        {
+            if (!string.Equals(ns.Name, namespaceName, StringComparison.OrdinalIgnoreCase))
+                return false;
+                
+            // If both have the same non-null parent namespace, it's a conflict
+            if (parentNamespaceId != null && ns.ParentNamespaceId == parentNamespaceId)
+                return true;
+                
+            // If both have null parent but are at different hierarchical paths, allow it
+            if (parentNamespaceId == null && ns.ParentNamespaceId == null)
+            {
+                // Compare the hierarchical paths - only conflict if they're identical
+                var existingPathKey = GetHierarchyPathKey(ns.HierarchicalPath);
+                var newPathKey = GetHierarchyPathKey(hierarchicalPath);
+                return string.Equals(existingPathKey, newPathKey, StringComparison.OrdinalIgnoreCase);
+            }
+                
+            return false;
+        });
 
         if (conflictingNamespaces.Any())
         {
@@ -472,29 +529,6 @@ public class NamespaceStructureService : INamespaceStructureService
         }
     }
 
-    /// <summary>
-    /// Checks if two hierarchical paths are at the same level (same values for all hierarchy levels).
-    /// Used to prevent namespace conflicts only within the same hierarchical context.
-    /// </summary>
-    /// <param name="path1">First hierarchical path</param>
-    /// <param name="path2">Second hierarchical path</param>
-    /// <returns>True if paths are at exactly the same hierarchical level</returns>
-    private bool HierarchicalPathsAreSameLevel(HierarchicalPath path1, HierarchicalPath path2)
-    {
-        // Two paths are at the same level if all their hierarchy values match exactly
-        var keys = new[] { "Enterprise", "Site", "Area", "WorkCenter", "WorkUnit" };
-        
-        foreach (var key in keys)
-        {
-            var value1 = path1.GetValue(key) ?? "";
-            var value2 = path2.GetValue(key) ?? "";
-            
-            if (!string.Equals(value1, value2, StringComparison.OrdinalIgnoreCase))
-                return false;
-        }
-        
-        return true;
-    }
 
     /// <summary>
     /// Gets a display string for a hierarchical path.
@@ -551,15 +585,17 @@ public class NamespaceStructureService : INamespaceStructureService
     /// </summary>
     /// <param name="instanceName">The name of the instance to validate</param>
     /// <param name="parentInstanceId">The parent instance ID (null for root level)</param>
+    /// <param name="excludeInstanceId">Optional instance ID to exclude from validation (for updates)</param>
     /// <exception cref="InvalidOperationException">Thrown when a duplicate instance name is found</exception>
-    private async Task ValidateUniqueHierarchyInstanceNameAsync(string instanceName, string? parentInstanceId)
+    private async Task ValidateUniqueHierarchyInstanceNameAsync(string instanceName, string? parentInstanceId, string? excludeInstanceId = null)
     {
         var existingInstances = await _nsTreeInstanceRepository.GetAllInstancesAsync(activeOnly: true);
         
-        // Check for instances with the same name under the same parent
+        // Check for instances with the same name under the same parent (excluding the current instance if updating)
         var conflictingInstances = existingInstances.Where(instance =>
             string.Equals(instance.Name, instanceName, StringComparison.OrdinalIgnoreCase) &&
-            instance.ParentInstanceId == parentInstanceId);
+            instance.ParentInstanceId == parentInstanceId &&
+            instance.Id != excludeInstanceId);
 
         if (conflictingInstances.Any())
         {

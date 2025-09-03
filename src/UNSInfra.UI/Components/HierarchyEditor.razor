@@ -67,6 +67,7 @@
                                         <th>Order</th>
                                         <th>Name</th>
                                         <th>Required</th>
+                                        <th>Allow Topics</th>
                                         <th>Description</th>
                                         <th>Parent</th>
                                         <th>Actions</th>
@@ -107,6 +108,19 @@
                                                 else
                                                 {
                                                     <input type="checkbox" class="form-check-input" checked="@node.IsRequired" disabled />
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!currentConfiguration.IsSystemDefined)
+                                                {
+                                                    <input type="checkbox" class="form-check-input" 
+                                                           @bind="node.AllowTopics" @bind:after="OnConfigurationChanged" 
+                                                           title="Allow topics to be mapped to this hierarchy level" />
+                                                }
+                                                else
+                                                {
+                                                    <input type="checkbox" class="form-check-input" checked="@node.AllowTopics" disabled 
+                                                           title="Allow topics to be mapped to this hierarchy level" />
                                                 }
                                             </td>
                                             <td>

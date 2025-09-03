@@ -1,7 +1,9 @@
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
 using UNSInfra.Models.Data;
 using UNSInfra.Models.Hierarchy;
+using UNSInfra.Services;
 using UNSInfra.Services.AutoMapping;
 using UNSInfra.Services.Events;
 using UNSInfra.Services.TopicBrowser;
@@ -29,6 +31,7 @@ public class SimplifiedAutoMappingBackgroundServiceTests : IDisposable
         _backgroundService = new SimplifiedAutoMappingBackgroundService(
             _autoMapperMock.Object,
             _eventBusMock.Object,
+            Mock.Of<IServiceScopeFactory>(),
             _loggerMock.Object);
     }
 
