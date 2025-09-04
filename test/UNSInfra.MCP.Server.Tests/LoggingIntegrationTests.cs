@@ -18,7 +18,7 @@ namespace UNSInfra.MCP.Server.Tests;
 public class LoggingIntegrationTests : IDisposable
 {
     private readonly Mock<IGraphQLClient> _mockGraphQLClient;
-    private readonly Mock<ILogger> _mockLogger;
+    private readonly Mock<MicrosoftLogger> _mockLogger;
     private readonly IDisposable _testCorrelator;
 
     public LoggingIntegrationTests()

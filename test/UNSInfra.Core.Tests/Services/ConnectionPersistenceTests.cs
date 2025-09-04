@@ -5,6 +5,7 @@ using UNSInfra.Core.Repositories;
 using UNSInfra.Models;
 using UNSInfra.Storage.SQLite;
 using UNSInfra.Storage.SQLite.Repositories;
+using Microsoft.Data.Sqlite;
 using Xunit;
 
 namespace UNSInfra.Core.Tests.Services;
@@ -13,13 +14,18 @@ public class ConnectionPersistenceTests : IDisposable
 {
     private readonly IServiceProvider _serviceProvider;
     private readonly UNSInfraDbContext _context;
+    private readonly SqliteConnection _keepAliveConnection;
 
     public ConnectionPersistenceTests()
     {
         var services = new ServiceCollection();
         
-        // Use a shared in-memory connection string that persists for the test
-        var connectionString = $"Data Source=:memory:?cache=shared&foreign_keys=true";
+        // Use a unique in-memory connection string for each test instance to ensure isolation
+        var connectionString = $"Data Source=:memory:{Guid.NewGuid()}?cache=shared&foreign_keys=true";
+        
+        // Keep connection alive for the duration of the test to prevent in-memory database destruction
+        _keepAliveConnection = new SqliteConnection(connectionString);
+        _keepAliveConnection.Open();
         
         // Configure in-memory SQLite database for testing
         services.AddDbContext<UNSInfraDbContext>(options =>
@@ -214,6 +220,7 @@ public class ConnectionPersistenceTests : IDisposable
     public void Dispose()
     {
         _context?.Dispose();
+        _keepAliveConnection?.Dispose();
         _serviceProvider?.GetService<IServiceScope>()?.Dispose();
     }
 }

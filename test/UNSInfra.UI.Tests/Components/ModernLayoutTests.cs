@@ -52,18 +52,18 @@ public class ModernLayoutTests : TestContext
 
         // Assert
         Assert.Contains("Data Model", component.Markup);
-        Assert.Contains("Ingress", component.Markup);
-        Assert.Contains("Egress", component.Markup);
+        Assert.Contains("Namespaces", component.Markup);
+        Assert.Contains("Configuration", component.Markup);
         
         // Check navigation links
         var dataModelLink = component.Find("a[href='data-model']");
         Assert.Contains("Data Model", dataModelLink.TextContent);
         
-        var ingressLink = component.Find("a[href='ingress']");
-        Assert.Contains("Ingress", ingressLink.TextContent);
+        var namespacesLink = component.Find("a[href='namespaces']");
+        Assert.Contains("Namespaces", namespacesLink.TextContent);
         
-        var egressLink = component.Find("a[href='egress']");
-        Assert.Contains("Egress", egressLink.TextContent);
+        var settingsLink = component.Find("a[href='settings']");
+        Assert.Contains("Configuration", settingsLink.TextContent);
     }
 
     [Fact]
@@ -157,13 +157,14 @@ public class ModernLayoutTests : TestContext
 
         // Assert mobile navigation items exist
         var mobileNavItems = component.FindAll(".mobile-nav-item");
-        Assert.Equal(6, mobileNavItems.Count); // Data Model, Ingress, Egress, Status, Logs, Settings
+        Assert.Equal(5, mobileNavItems.Count); // Data Model, Namespaces, Configuration, Status, Logs
 
         // Check specific mobile nav items
         Assert.Contains("Data Model", component.Markup);
-        Assert.Contains("Status", component.Markup);
+        Assert.Contains("Namespaces", component.Markup);
+        Assert.Contains("Connection Status", component.Markup);
         Assert.Contains("Logs", component.Markup);
-        Assert.Contains("Settings", component.Markup);
+        Assert.Contains("Configuration", component.Markup);
     }
 
     [Fact]
@@ -247,11 +248,10 @@ public class ModernLayoutTests : TestContext
 
         // Assert navigation icons
         Assert.Contains("bi-diagram-3", component.Markup); // Data Model icon
-        Assert.Contains("bi-arrow-down-circle", component.Markup); // Ingress icon
-        Assert.Contains("bi-arrow-up-circle", component.Markup); // Egress icon
-        Assert.Contains("bi-activity", component.Markup); // Status icon
+        Assert.Contains("bi-folder-fill", component.Markup); // Namespaces icon
+        Assert.Contains("bi-activity", component.Markup); // Connection Status icon
         Assert.Contains("bi-journal-text", component.Markup); // Logs icon
-        Assert.Contains("bi-gear", component.Markup); // Settings icon
+        Assert.Contains("bi-gear", component.Markup); // Configuration/Settings icon
     }
 
     [Fact]

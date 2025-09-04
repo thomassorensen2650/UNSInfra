@@ -2,12 +2,14 @@ using Xunit;
 using UNSInfra.Services;
 using UNSInfra.Models.Hierarchy;
 using UNSInfra.Models.Namespace;
-using UNSInfra.Core.Repositories;
+using UNSInfra.Repositories;
 using UNSInfra.Storage.Abstractions;
 using Microsoft.Extensions.Logging;
 using Moq;
 using UNSInfra.Services.TopicBrowser;
 using UNSInfra.Services.Events;
+using UNSInfra.Models.Data;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace UNSInfra.Core.Tests;
 
@@ -17,10 +19,9 @@ public class NamespaceValidationTest
     public async Task CreateNamespaceAsync_ShouldAllowMESAtDifferentWorkCenters()
     {
         // Arrange
-        var logger = new Mock<ILogger<NamespaceStructureService>>();
-        var namespaceRepo = new Mock<INamespaceRepository>();
-        var hierarchyRepo = new Mock<IHierarchyRepository>();
-        var cachedTopicBrowser = new Mock<ICachedTopicBrowserService>();
+        var namespaceRepo = new Mock<INamespaceConfigurationRepository>();
+        var hierarchyRepo = new Mock<IHierarchyConfigurationRepository>();
+        var nsTreeRepo = new Mock<INSTreeInstanceRepository>();
         var eventBus = new Mock<IEventBus>();
 
         // Setup existing MES at Line2
@@ -54,19 +55,22 @@ public class NamespaceValidationTest
                 new HierarchyNode { Name = "WorkUnit", Order = 4 }
             }
         };
-        hierarchyRepo.Setup(x => x.GetActiveHierarchyConfigurationAsync())
+        hierarchyRepo.Setup(x => x.GetActiveConfigurationAsync())
                     .ReturnsAsync(hierarchyConfig);
 
-        // Setup empty NS tree structure (no parent namespaces)
-        cachedTopicBrowser.Setup(x => x.GetCachedTopicTreeAsync())
-                         .ReturnsAsync(new Dictionary<string, object>());
+        // Create real CachedTopicBrowserService for first test
+        var serviceCollection1 = new ServiceCollection();
+        serviceCollection1.AddLogging(builder => builder.AddConsole());
+        var serviceProvider1 = serviceCollection1.BuildServiceProvider();
+        var topicBrowserLogger1 = serviceProvider1.GetRequiredService<ILogger<CachedTopicBrowserService>>();
+        var cachedTopicBrowserInstance1 = new CachedTopicBrowserService(serviceProvider1, topicBrowserLogger1);
 
         var service = new NamespaceStructureService(
-            logger.Object,
-            namespaceRepo.Object,
             hierarchyRepo.Object,
-            cachedTopicBrowser.Object,
-            eventBus.Object);
+            namespaceRepo.Object,
+            nsTreeRepo.Object,
+            eventBus.Object,
+            cachedTopicBrowserInstance1);
 
         // Act - Try to create MES at Line1
         var newMES = new NamespaceConfiguration
@@ -93,10 +97,9 @@ public class NamespaceValidationTest
     public async Task CreateNamespaceAsync_ShouldPreventDuplicateInSameLocation()
     {
         // Arrange
-        var logger = new Mock<ILogger<NamespaceStructureService>>();
-        var namespaceRepo = new Mock<INamespaceRepository>();
-        var hierarchyRepo = new Mock<IHierarchyRepository>();
-        var cachedTopicBrowser = new Mock<ICachedTopicBrowserService>();
+        var namespaceRepo = new Mock<INamespaceConfigurationRepository>();
+        var hierarchyRepo = new Mock<IHierarchyConfigurationRepository>();
+        var nsTreeRepo = new Mock<INSTreeInstanceRepository>();
         var eventBus = new Mock<IEventBus>();
 
         // Setup existing MES at Line1 (same location)
@@ -130,71 +133,24 @@ public class NamespaceValidationTest
                 new HierarchyNode { Name = "WorkUnit", Order = 4 }
             }
         };
-        hierarchyRepo.Setup(x => x.GetActiveHierarchyConfigurationAsync())
+        hierarchyRepo.Setup(x => x.GetActiveConfigurationAsync())
                     .ReturnsAsync(hierarchyConfig);
 
-        // Setup NS tree structure that shows existing MES
-        var nsTreeStructure = new List<NSTreeNode>
-        {
-            new NSTreeNode
-            {
-                Name = "Enterprise",
-                FullPath = "Enterprise",
-                NodeType = NSNodeType.HierarchyNode,
-                Children = new List<NSTreeNode>
-                {
-                    new NSTreeNode
-                    {
-                        Name = "Dallas",
-                        FullPath = "Enterprise/Dallas",
-                        NodeType = NSNodeType.HierarchyNode,
-                        Children = new List<NSTreeNode>
-                        {
-                            new NSTreeNode
-                            {
-                                Name = "Press",
-                                FullPath = "Enterprise/Dallas/Press",
-                                NodeType = NSNodeType.HierarchyNode,
-                                Children = new List<NSTreeNode>
-                                {
-                                    new NSTreeNode
-                                    {
-                                        Name = "Line1",
-                                        FullPath = "Enterprise/Dallas/Press/Line1",
-                                        NodeType = NSNodeType.HierarchyNode,
-                                        Children = new List<NSTreeNode>
-                                        {
-                                            new NSTreeNode
-                                            {
-                                                Name = "MES",
-                                                FullPath = "Enterprise/Dallas/Press/Line1/MES",
-                                                NodeType = NSNodeType.Namespace,
-                                                Namespace = existingMES
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        };
 
-        cachedTopicBrowser.Setup(x => x.GetCachedTopicTreeAsync())
-                         .ReturnsAsync(new Dictionary<string, object>());
+        // Create real CachedTopicBrowserService instance for second test
+        var serviceCollection2 = new ServiceCollection();
+        serviceCollection2.AddLogging(builder => builder.AddConsole());
+        var serviceProvider2 = serviceCollection2.BuildServiceProvider();
+        var topicBrowserLogger2 = serviceProvider2.GetRequiredService<ILogger<CachedTopicBrowserService>>();
+        var cachedTopicBrowserInstance2 = new CachedTopicBrowserService(serviceProvider2, topicBrowserLogger2);
 
         var service = new NamespaceStructureService(
-            logger.Object,
-            namespaceRepo.Object,
             hierarchyRepo.Object,
-            cachedTopicBrowser.Object,
-            eventBus.Object);
+            namespaceRepo.Object,
+            nsTreeRepo.Object,
+            eventBus.Object,
+            cachedTopicBrowserInstance2);
 
-        // Use reflection to set the tree structure (since GetNamespaceStructureAsync is called internally)
-        var serviceType = typeof(NamespaceStructureService);
-        var getNamespaceStructureMethod = serviceType.GetMethod("GetNamespaceStructureAsync");
-        
         // Act & Assert - Try to create another MES at same Line1 location
         var duplicateMES = new NamespaceConfiguration
         {
